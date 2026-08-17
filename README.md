@@ -5,7 +5,8 @@ An attempt to implement QSL (card) handling support, to the taste of DL9ET. Also
 
 # High Level Requirements (WIP)
 
-# QSO source
+# QSL sending
+## QSO source
 * The logbook is the source for the QSL information, this should be integrated.
 * My current log is LOg4OM however I also send to QRZ,Clublog and others so these may be sources as well (reducing integration effort).
 * It should not rely on UDP QSO propagation, this is unreliable.
@@ -24,8 +25,16 @@ Not all QSOs shall be eligible for QSL cards. Some QSOs are non-eligible by simp
 ## Synchronous and Asynchronous mode 
 At times, I want to prepare the QSL card 
 
-## Hand-written or printed QSL cards
-* It should be possible to print
-* 
+## QSO data printing
+It should be possible to print the QSO data (DX call, DX op name, date, time, band, report) directly on the QSL card, using a configurable template.
+
+
+## Hand-written QSL cards
+When hand-writing QSL cards (usually when operating synchronously, ie at the end of each QSO), this should be supported.
+  
 Out-of-scope: Any form of electronic QSL (qrz,lotw,email) whathaveyou, this is left to the logbook.
 
+# Recieving QSL
+* It should be possible to quickly enter recieved QSL cards
+  * Eg enter Dx callsign, show last QSOs with that station, pick the QSOs in question (using just a keyboard) and register this and print response card if "PSE QSL".
+* Optionaly, it should be possible to take pictures of the recieved QSL cards and use this to extract the QSO data
