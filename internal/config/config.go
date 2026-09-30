@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"time"
@@ -20,6 +21,29 @@ type Config struct {
 	Qualify QualifyCfg `yaml:"qualify"`
 	Store   StoreCfg   `yaml:"store"`
 	UDP     UDPCfg     `yaml:"udp"`
+}
+
+// LocalURL is the base URL for windows opened on this machine (tray menu,
+// compact window). A wildcard bind address (0.0.0.0, ::, or no host at all,
+// as in ":8473") is fine to listen on but not a destination a browser opens, so
+// it maps to loopback.
+func (s ServerCfg) LocalURL() string {
+	host, port, err := net.SplitHostPort(s.Addr)
+	if err != nil {
+		return "http://" + s.Addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+// Wildcard reports whether the server listens on every interface, i.e. is
+// reachable from other machines on the network.
+func (s ServerCfg) Wildcard() bool {
+	host, _, err := net.SplitHostPort(s.Addr)
+	return err == nil && (host == "" || host == "0.0.0.0" || host == "::")
 }
 
 type ServerCfg struct {

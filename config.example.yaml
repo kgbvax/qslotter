@@ -4,7 +4,8 @@
 # Secrets can be sourced from environment variables via ${VAR}.
 
 server:
-  addr: 127.0.0.1:8473
+  addr: 127.0.0.1:8473   # loopback only. 0.0.0.0:8473 = all IPv4 interfaces (reachable from the LAN;
+                         # the UI has no login - trusted network only, and open the firewall for it)
   tray: false          # Windows: system-tray icon with compact-queue/log/receive menu
   open_compact: false  # open the compact queue window on startup
 

@@ -131,6 +131,9 @@ func main() {
 
 	go func() {
 		log.Printf("qslotter listening on http://%s", cfg.Server.Addr)
+		if cfg.Server.Wildcard() {
+			log.Printf("server.addr is a wildcard: the UI is reachable from the network and has no login - keep it on a trusted LAN")
+		}
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
@@ -141,7 +144,7 @@ func main() {
 	trayDone := make(chan struct{})
 	if cfg.Server.Tray {
 		go tray.Run(tray.Options{
-			BaseURL:            "http://" + cfg.Server.Addr,
+			BaseURL:            cfg.Server.LocalURL(),
 			OpenCompactOnStart: cfg.Server.OpenCompact,
 			OnExit:             func() { close(trayDone) },
 		})
