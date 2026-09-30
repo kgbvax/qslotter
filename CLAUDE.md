@@ -51,6 +51,35 @@ There is no Makefile or CI config; use the standard Go toolchain.
 
 On Windows, install or bundle SumatraPDF under `third_party/sumatrapdf/` for printing. macOS and Linux use `lp`/`lpstat`.
 
+## Deploying to the shack PC (bwpc)
+
+The production instance runs on **bwpc** (`192.168.1.197`, also `bwpc.local`) —
+a German-locale Windows 11 box. SSH: `iotte@bwpc`, key auth (use
+`ConnectTimeout >= 20`; the first banner is slow). Deploy dir:
+`C:\Users\iotte\qslotter\` with `qslotter.exe`, `config.yaml` (real secrets,
+absolute `store.path`), `third_party\sumatrapdf\SumatraPDF.exe` (must stay on
+**3.5.x** — the 3.6 print engine hangs).
+
+Deploy cycle:
+
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o qslotter.exe ./cmd/qslotter
+    ssh iotte@bwpc "taskkill /im qslotter.exe /f"   # a running exe locks the file
+    scp qslotter.exe iotte@bwpc:qslotter/
+    ssh iotte@bwpc "schtasks /run /tn qslotter"     # at-logon task, interactive
+
+Verify from the box itself — the server binds `127.0.0.1:8473` and is not
+reachable from the mac:
+
+    ssh iotte@bwpc "powershell -NoProfile -c \"(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8473/decide -TimeoutSec 5).StatusCode\""
+
+Gotchas learned the hard way: templates/static are embedded in the binary, so
+a fresh checkout run without `go build` fails to parse pages; SSH-spawned
+processes die when the session closes (use the scheduled task, not
+`start /b`, for durable runs); action URLs take the QSL key as a query/form
+value (`?key=`), never as a path segment — keys contain `|` and portable
+calls contain `/`. Never write config credentials into shell commands; edit
+`config.yaml` on the box or use the /settings view.
+
 ## High-level architecture
 
 ### Data flow
