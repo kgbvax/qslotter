@@ -8,6 +8,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,7 +36,20 @@ type Store interface {
 	QueueGet(qslKey string) (*QueueItem, error)
 	QueueSetStatus(qslKey, status string) error
 	QueueSetMethod(qslKey, method, manager string) error
+	// Guarded queue transitions: each moves one item between statuses inside a
+	// transaction (queue row + qsos columns + event) and returns ErrConflict
+	// when the item is not in a state the transition may start from.
+	QueueList(statuses ...string) ([]*QueueItem, error)
+	QueueDecide(qslKey, method, manager string) error
+	QueueWritten(qslKey string) error
+	QueuePrinted(qslKey string) error
+	QueueDecline(qslKey string) error
+	QueueBack(qslKey string) error
+	QueueReopen(qslKey string) (pushed bool, err error)
+	QueueCloseSentElsewhere(qslKey string) error
+	QueueCounts() (queued, decided, pendingPush int, err error)
 	AppendEvent(e *Event) error
+	CallHistory(call string, limit int) ([]*HistoryRow, error)
 	GetStation(callsign string) (*StationInfo, error)
 	PutStation(si *StationInfo) error
 }
@@ -84,10 +98,46 @@ func (s *SQLiteStore) ensureSchema() error {
 		{"qsos", "qsl_sent_as", `ALTER TABLE qsos ADD COLUMN qsl_sent_as TEXT`},
 		{"station_info", "qsl_confidence", `ALTER TABLE station_info ADD COLUMN qsl_confidence TEXT`},
 		{"station_info", "qsl_reason", `ALTER TABLE station_info ADD COLUMN qsl_reason TEXT`},
+		{"station_info", "name", `ALTER TABLE station_info ADD COLUMN name TEXT DEFAULT ''`},
+		{"station_info", "attn", `ALTER TABLE station_info ADD COLUMN attn TEXT DEFAULT ''`},
+		{"station_info", "not_found", `ALTER TABLE station_info ADD COLUMN not_found INTEGER DEFAULT 0`},
 	}
 	for _, m := range migrations {
 		if _, err := s.db.Exec(m.ddl); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate %s.%s: %w", m.table, m.col, err)
+		}
+	}
+	// ALTER TABLE ADD COLUMN leaves NULL in pre-existing rows, but the scan
+	// targets are plain strings (a NULL fails the whole row scan and the QSO
+	// silently drops out of every list). Backfill to '' - idempotent, and a
+	// no-op on fresh databases.
+	backfills := []string{
+		`UPDATE qsos SET name='' WHERE name IS NULL`,
+		`UPDATE qsos SET qth='' WHERE qth IS NULL`,
+		`UPDATE station_info SET qsl_confidence='' WHERE qsl_confidence IS NULL`,
+		`UPDATE station_info SET qsl_reason='' WHERE qsl_reason IS NULL`,
+	}
+	for _, b := range backfills {
+		if _, err := s.db.Exec(b); err != nil {
+			return fmt.Errorf("backfill: %w", err)
+		}
+	}
+	// Legacy repair: older builds stopped at status "printed" (never marked
+	// sent, never pushed, listed nowhere). A printed card with a recorded route
+	// is a sent card; without one it goes back to the decision queue.
+	legacy := []string{
+		`UPDATE qsos SET qsl_sent_local='Y',
+			qsl_sent_method_local=(SELECT q.desired_method FROM qsl_work_queue q WHERE q.qsl_key=qsos.qsl_key),
+			qslsdate_local=(SELECT replace(substr(COALESCE(q.printed_at, q.added_at),1,10),'-','') FROM qsl_work_queue q WHERE q.qsl_key=qsos.qsl_key)
+			WHERE qsl_sent_local IS NULL AND (qsl_sent IS NULL OR qsl_sent <> 'Y')
+			AND qsl_key IN (SELECT qsl_key FROM qsl_work_queue WHERE status='printed' AND desired_method IN ('B','D','M'))`,
+		`UPDATE qsl_work_queue SET status='sent', sent_at=COALESCE(printed_at, added_at)
+			WHERE status='printed' AND desired_method IN ('B','D','M')`,
+		`UPDATE qsl_work_queue SET status='queued' WHERE status='printed'`,
+	}
+	for _, l := range legacy {
+		if _, err := s.db.Exec(l); err != nil {
+			return fmt.Errorf("legacy repair: %w", err)
 		}
 	}
 	_, err = s.db.Exec(`INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)`, schemaVersion)
@@ -126,7 +176,7 @@ CREATE TABLE IF NOT EXISTS qsos (
   first_seen_at TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   qsl_sent_local TEXT,                  -- qslotter-managed, not yet pushed to Clublog
-  qsl_sent_method_local TEXT,           -- B/D/E/M used when sending (goes to QSL_SENT_AS)
+  qsl_sent_method_local TEXT,           -- B/D/E/M used when sending (goes to QSL_SENT_VIA)
   qsl_rcvd_local TEXT,
   qslsdate_local  TEXT,
   qslrdate_local  TEXT,
@@ -155,6 +205,9 @@ CREATE TABLE IF NOT EXISTS station_info (
   refuse_paper    INTEGER DEFAULT 0,
   qsl_confidence  TEXT,                 -- high/medium/low
   qsl_reason      TEXT,                 -- human-readable why
+  name            TEXT DEFAULT '',      -- QRZ first + last name
+  attn            TEXT DEFAULT '',      -- QRZ "attn" line for the address
+  not_found       INTEGER DEFAULT 0,    -- QRZ has no record (negative cache)
   fetched_at      TEXT NOT NULL
 );
 
@@ -229,7 +282,7 @@ type QSO struct {
 	FirstSeenAt        string
 	UpdatedAt          string
 	QSLSentLocal       sql.NullString
-	QSLSentMethodLocal sql.NullString // B/D/E/M chosen in qslotter (goes to QSL_SENT_AS)
+	QSLSentMethodLocal sql.NullString // B/D/E/M chosen in qslotter (goes to QSL_SENT_VIA)
 	QSLRcvdLocal       sql.NullString
 	QSLSDateLocal      sql.NullString
 	QSLRDateLocal      sql.NullString
@@ -345,15 +398,7 @@ func scanQSOs(rows *sql.Rows) ([]*QSO, error) {
 	var out []*QSO
 	for rows.Next() {
 		q := &QSO{}
-		err := rows.Scan(
-			&q.QSLKey, &q.Call, &q.QSODate, &q.TimeOn, &q.Band, &q.Mode, &q.Freq,
-			&q.RSTSent, &q.RSTRcvd, &q.QSLSent, &q.QSLRcvd, &q.QSLSDate, &q.QSLRDate,
-			&q.LoTWQSLRcvd, &q.DXCC, &q.PropMode, &q.Gridsquare, &q.Operator, &q.Notes,
-			&q.Name, &q.QTH,
-			&q.Hash, &q.FirstSeenAt, &q.UpdatedAt,
-			&q.QSLSentLocal, &q.QSLSentMethodLocal, &q.QSLRcvdLocal, &q.QSLSDateLocal, &q.QSLRDateLocal, &q.QSLSentAs,
-		)
-		if err != nil {
+		if err := scanQSOInto(q, rows); err != nil {
 			return nil, err
 		}
 		out = append(out, q)
@@ -361,10 +406,122 @@ func scanQSOs(rows *sql.Rows) ([]*QSO, error) {
 	return out, rows.Err()
 }
 
+// qsoColumns is the column list scanQSOInto expects, with a table prefix
+// (e.g. "q.") for joined queries.
+func qsoColumns(prefix string) string {
+	cols := []string{"qsl_key", "call", "qso_date", "time_on", "band", "mode", "freq",
+		"rst_sent", "rst_rcvd", "qsl_sent", "qsl_rcvd", "qslsdate", "qslrdate",
+		"lotw_qsl_rcvd", "dxcc", "prop_mode", "gridsquare", "operator", "notes",
+		"name", "qth", "hash", "first_seen_at", "updated_at",
+		"qsl_sent_local", "qsl_sent_method_local", "qsl_rcvd_local", "qslsdate_local", "qslrdate_local", "qsl_sent_as"}
+	for i := range cols {
+		cols[i] = prefix + cols[i]
+	}
+	return strings.Join(cols, ", ")
+}
+
+// scanQSOInto scans one row (columns in qsoColumns order, then any extra
+// destinations) into q.
+func scanQSOInto(q *QSO, sc interface{ Scan(dest ...any) error }, extra ...any) error {
+	dest := []any{
+		&q.QSLKey, &q.Call, &q.QSODate, &q.TimeOn, &q.Band, &q.Mode, &q.Freq,
+		&q.RSTSent, &q.RSTRcvd, &q.QSLSent, &q.QSLRcvd, &q.QSLSDate, &q.QSLRDate,
+		&q.LoTWQSLRcvd, &q.DXCC, &q.PropMode, &q.Gridsquare, &q.Operator, &q.Notes,
+		&q.Name, &q.QTH,
+		&q.Hash, &q.FirstSeenAt, &q.UpdatedAt,
+		&q.QSLSentLocal, &q.QSLSentMethodLocal, &q.QSLRcvdLocal, &q.QSLSDateLocal, &q.QSLRDateLocal, &q.QSLSentAs,
+	}
+	return sc.Scan(append(dest, extra...)...)
+}
+
+// EffectiveSent reports whether a paper QSL for this QSO counts as sent, with
+// the method and date. qslotter's local state (not yet pushed) wins over what
+// Clublog last reported.
+func (q *QSO) EffectiveSent() (sent bool, method, date string) {
+	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
+		return true, q.QSLSentMethodLocal.String, q.QSLSDateLocal.String
+	}
+	if q.QSLSent == "Y" {
+		return true, q.QSLSentAs.String, q.QSLSDate
+	}
+	return false, "", ""
+}
+
+// EffectiveRcvd reports whether a card from the other station is on record
+// (local state first, then Clublog), with the date.
+func (q *QSO) EffectiveRcvd() (rcvd bool, date string) {
+	if q.QSLRcvdLocal.Valid && q.QSLRcvdLocal.String == "Y" {
+		return true, q.QSLRDateLocal.String
+	}
+	if q.QSLRcvd == "Y" {
+		return true, q.QSLRDate
+	}
+	return false, ""
+}
+
+// BaseCall reduces a callsign with prefix/suffix to the operator's base call:
+// "EA8/DL1ABC/P" -> "DL1ABC", "W1AW/1" -> "W1AW". Suffix parts (P, M, MM, AM,
+// QRP, a single letter/digit) are dropped; of the remaining parts the longest
+// is the base.
+func BaseCall(call string) string {
+	call = strings.ToUpper(strings.TrimSpace(call))
+	best := ""
+	for _, p := range strings.Split(call, "/") {
+		switch p {
+		case "", "P", "M", "MM", "AM", "QRP", "QRPP", "LH":
+			continue
+		}
+		if len(p) <= 1 {
+			continue
+		}
+		if len(p) > len(best) {
+			best = p
+		}
+	}
+	if best == "" {
+		return call
+	}
+	return best
+}
+
+// HistoryRow is one QSO with a station and where its card stands.
+type HistoryRow struct {
+	QSO           *QSO
+	QueueStatus   string // "" when the QSO was never queued
+	DesiredMethod string
+	Manager       string
+}
+
+// CallHistory returns the newest QSOs with a station, base-call aware: a
+// portable operation (EA8/DL1ABC, DL1ABC/P) is the same station as DL1ABC.
+// Each row carries the card's queue state.
+func (s *SQLiteStore) CallHistory(call string, limit int) ([]*HistoryRow, error) {
+	base := BaseCall(call)
+	rows, err := s.db.Query(`SELECT `+qsoColumns("q.")+`,
+		COALESCE(w.status,''), COALESCE(w.desired_method,''), COALESCE(w.manager,'')
+		FROM qsos q LEFT JOIN qsl_work_queue w ON w.qsl_key = q.qsl_key
+		WHERE q.call = ? OR q.call LIKE ? OR q.call LIKE ? OR q.call LIKE ?
+		ORDER BY q.qso_date DESC, q.time_on DESC, q.qsl_key LIMIT ?`,
+		base, base+"/%", "%/"+base, "%/"+base+"/%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*HistoryRow
+	for rows.Next() {
+		h := &HistoryRow{QSO: &QSO{}}
+		if err := scanQSOInto(h.QSO, rows, &h.QueueStatus, &h.DesiredMethod, &h.Manager); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // SetQSLSentLocal marks a QSO as sent in qslotter's local state with the given
 // method (B/D/E/M) and today's date. The flag stored in qsl_sent_local is
 // always "Y" (the ADIF QSL_SENT enum); the method goes to
-// qsl_sent_method_local and is uploaded as QSL_SENT_AS on push-back. These
+// qsl_sent_method_local and is uploaded as QSL_SENT_VIA on push-back. These
 // columns drive push-back to Clublog.
 func (s *SQLiteStore) SetQSLSentLocal(qslKey, method string) error {
 	today := time.Now().UTC().Format("20060102")
@@ -389,10 +546,16 @@ func (s *SQLiteStore) SetQSLRcvdLocal(qslKey string) error {
 	return err
 }
 
+// pendingPushWhere selects QSOs whose local QSL state diverges from what
+// Clublog last reported.
+const pendingPushWhere = `(qsl_sent_local IS NOT NULL AND (qsl_sent IS NULL OR qsl_sent <> qsl_sent_local))
+	   OR (qsl_sent_method_local IS NOT NULL AND (qsl_sent_as IS NULL OR qsl_sent_as <> qsl_sent_method_local))
+	   OR (qsl_rcvd_local IS NOT NULL AND (qsl_rcvd IS NULL OR qsl_rcvd <> qsl_rcvd_local))`
+
 // PendingPushBack returns all QSOs whose local QSL state diverges from the
 // Clublog-sourced state (i.e. we have a local change not yet pushed). A QSO
 // whose sent-flag already matches but whose chosen send method was not yet
-// uploaded also counts as pending (QSL_SENT_AS needs updating).
+// uploaded also counts as pending (QSL_SENT_VIA needs updating).
 func (s *SQLiteStore) PendingPushBack() ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
@@ -400,9 +563,7 @@ func (s *SQLiteStore) PendingPushBack() ([]*QSO, error) {
 		name, qth, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos
-		WHERE (qsl_sent_local IS NOT NULL AND (qsl_sent IS NULL OR qsl_sent <> qsl_sent_local))
-		   OR (qsl_sent_method_local IS NOT NULL AND (qsl_sent_as IS NULL OR qsl_sent_as <> qsl_sent_method_local))
-		   OR (qsl_rcvd_local IS NOT NULL AND (qsl_rcvd IS NULL OR qsl_rcvd <> qsl_rcvd_local))`)
+		WHERE ` + pendingPushWhere)
 	if err != nil {
 		return nil, err
 	}
@@ -457,11 +618,11 @@ func (s *SQLiteStore) Enqueue(item *QueueItem) error {
 	if item.Status == "" {
 		item.Status = "queued"
 	}
+	// DO NOTHING: an existing item keeps its status and decision - enqueueing
+	// (UDP, pull, recompute) must never reset work the operator already did.
 	_, err := s.db.Exec(`INSERT INTO qsl_work_queue(qsl_key, desired_method, manager, status, override_reason, added_at)
 		VALUES(?,?,?,?,?,?)
-		ON CONFLICT(qsl_key) DO UPDATE SET
-			desired_method=excluded.desired_method, manager=excluded.manager,
-			status=excluded.status, override_reason=excluded.override_reason`,
+		ON CONFLICT(qsl_key) DO NOTHING`,
 		item.QSLKey, item.DesiredMethod, item.Manager, item.Status, item.OverrideReason, item.AddedAt)
 	return err
 }
@@ -523,6 +684,248 @@ func (s *SQLiteStore) QueueSetMethod(qslKey, method, manager string) error {
 	return err
 }
 
+// --- guarded queue transitions ---
+
+// ErrConflict is returned by the queue transitions when the item is missing or
+// not in a state the transition may start from: a stale page, a second window
+// or a double click already handled it.
+var ErrConflict = errors.New("card was already handled (stale page?)")
+
+// queueTx runs fn in a transaction after checking that the item's current
+// status is one of from. Only tx may be used inside fn (in-memory databases
+// give every extra connection its own empty schema).
+func (s *SQLiteStore) queueTx(key string, from []string, fn func(tx *sql.Tx, cur *QueueItem) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	cur := &QueueItem{QSLKey: key}
+	var method, manager sql.NullString
+	err = tx.QueryRow(`SELECT status, desired_method, manager FROM qsl_work_queue WHERE qsl_key=?`, key).
+		Scan(&cur.Status, &method, &manager)
+	if err == sql.ErrNoRows {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	cur.DesiredMethod, cur.Manager = method.String, manager.String
+	allowed := false
+	for _, f := range from {
+		if cur.Status == f {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return ErrConflict
+	}
+	if err := fn(tx, cur); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func appendEventTx(tx *sql.Tx, e *Event) error {
+	_, err := tx.Exec(`INSERT INTO qsl_events(qsl_key, direction, method, via, date, source, note)
+		VALUES(?,?,?,?,?,'manual',?)`, e.QSLKey, e.Direction, e.Method, e.Via,
+		time.Now().UTC().Format("20060102"), e.Note)
+	return err
+}
+
+// QueueList returns the items in any of the given statuses, newest QSO first
+// (the QSO just logged is the one to decide). Items whose QSO row is gone are
+// not listed.
+func (s *SQLiteStore) QueueList(statuses ...string) ([]*QueueItem, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(statuses))
+	for i, st := range statuses {
+		args[i] = st
+	}
+	rows, err := s.db.Query(`SELECT q.qsl_key, COALESCE(q.desired_method,''), COALESCE(q.manager,''), q.status,
+		COALESCE(q.override_reason,''), q.added_at, q.printed_at, q.sent_at
+		FROM qsl_work_queue q JOIN qsos s ON s.qsl_key = q.qsl_key
+		WHERE q.status IN (`+strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")+`)
+		ORDER BY s.qso_date DESC, s.time_on DESC, q.qsl_key`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*QueueItem
+	for rows.Next() {
+		qi := &QueueItem{}
+		if err := rows.Scan(&qi.QSLKey, &qi.DesiredMethod, &qi.Manager, &qi.Status, &qi.OverrideReason, &qi.AddedAt, &qi.PrintedAt, &qi.SentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, qi)
+	}
+	return out, rows.Err()
+}
+
+// QueueDecide records a Bureau / Direct / Via-manager decision: queued ->
+// decided. The card is not produced yet; it now belongs to the work queue.
+func (s *SQLiteStore) QueueDecide(key, method, manager string) error {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	switch method {
+	case "B", "D", "M":
+	default:
+		return fmt.Errorf("decision must be B, D or M, got %q", method)
+	}
+	manager = strings.ToUpper(strings.TrimSpace(manager))
+	if method != "M" {
+		manager = ""
+	}
+	return s.queueTx(key, []string{"queued"}, func(tx *sql.Tx, _ *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='decided', desired_method=?, manager=? WHERE qsl_key=?`,
+			method, manager, key); err != nil {
+			return err
+		}
+		note := "decided"
+		if manager != "" {
+			note += " via " + manager
+		}
+		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Method: method, Via: manager, Note: note})
+	})
+}
+
+// finishSent completes a card: status sent, local sent state for push-back.
+// A card with a recorded route (B/D/M) sends with that method; without one
+// (card written on the spot) the item is marked "W" and no route is pushed.
+func finishSent(tx *sql.Tx, key string, cur *QueueItem, how string) error {
+	now := time.Now().UTC()
+	desired, sendMethod := "W", ""
+	switch m := strings.ToUpper(cur.DesiredMethod); m {
+	case "B", "D", "M":
+		desired, sendMethod = m, m
+	}
+	var printedAt sql.NullString
+	if how == "printed" {
+		printedAt = sql.NullString{String: now.Format(time.RFC3339), Valid: true}
+	}
+	if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='sent', desired_method=?, sent_at=?,
+		printed_at=COALESCE(?, printed_at) WHERE qsl_key=?`,
+		desired, now.Format(time.RFC3339), printedAt, key); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE qsos SET qsl_sent_local='Y', qsl_sent_method_local=?, qslsdate_local=? WHERE qsl_key=?`,
+		sendMethod, now.Format("20060102"), key); err != nil {
+		return err
+	}
+	via := ""
+	if sendMethod == "M" {
+		via = cur.Manager
+	}
+	return appendEventTx(tx, &Event{QSLKey: key, Direction: "sent", Method: sendMethod, Via: via, Note: how})
+}
+
+// QueueWritten marks a card done by hand: from queued (decide-and-write in one
+// go, no route) or decided (written for a decided route).
+func (s *SQLiteStore) QueueWritten(key string) error {
+	return s.queueTx(key, []string{"queued", "decided"}, func(tx *sql.Tx, cur *QueueItem) error {
+		return finishSent(tx, key, cur, "written")
+	})
+}
+
+// QueuePrinted marks a decided card printed (and therefore sent).
+func (s *SQLiteStore) QueuePrinted(key string) error {
+	return s.queueTx(key, []string{"decided"}, func(tx *sql.Tx, cur *QueueItem) error {
+		return finishSent(tx, key, cur, "printed")
+	})
+}
+
+// QueueDecline records the "no paper card" decision: queued/decided -> skipped.
+func (s *SQLiteStore) QueueDecline(key string) error {
+	return s.queueTx(key, []string{"queued", "decided"}, func(tx *sql.Tx, _ *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='skipped', desired_method='N', manager='' WHERE qsl_key=?`, key); err != nil {
+			return err
+		}
+		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Method: "N", Note: "decision: no paper QSL"})
+	})
+}
+
+// QueueBack takes a decided card back to the decision queue (decided -> queued).
+func (s *SQLiteStore) QueueBack(key string) error {
+	return s.queueTx(key, []string{"decided"}, func(tx *sql.Tx, _ *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='queued', desired_method='', manager='' WHERE qsl_key=?`, key); err != nil {
+			return err
+		}
+		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Note: "back to decision"})
+	})
+}
+
+// QueueReopen puts a finished card (sent or declined) back into the decision
+// queue and clears its unpushed local sent state. pushed reports that Clublog
+// already has QSL_SENT=Y for the QSO: reopening cannot undo that there.
+func (s *SQLiteStore) QueueReopen(key string) (pushed bool, err error) {
+	err = s.queueTx(key, []string{"sent", "skipped"}, func(tx *sql.Tx, cur *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='queued', desired_method='', manager='',
+			sent_at=NULL, printed_at=NULL WHERE qsl_key=?`, key); err != nil {
+			return err
+		}
+		if cur.Status == "sent" {
+			if _, err := tx.Exec(`UPDATE qsos SET qsl_sent_local=NULL, qsl_sent_method_local=NULL, qslsdate_local=NULL
+				WHERE qsl_key=?`, key); err != nil {
+				return err
+			}
+			var sent sql.NullString
+			if err := tx.QueryRow(`SELECT qsl_sent FROM qsos WHERE qsl_key=?`, key).Scan(&sent); err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			pushed = sent.String == "Y"
+		}
+		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Note: "reopened"})
+	})
+	return pushed, err
+}
+
+// QueueCloseSentElsewhere closes a card that is still open (queued/decided)
+// because Clublog reports QSL_SENT=Y for the QSO - the card went out through
+// another tool. Local sent columns are left alone: there is nothing to push.
+func (s *SQLiteStore) QueueCloseSentElsewhere(key string) error {
+	return s.queueTx(key, []string{"queued", "decided"}, func(tx *sql.Tx, _ *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='sent', sent_at=? WHERE qsl_key=?`,
+			time.Now().UTC().Format(time.RFC3339), key); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`INSERT INTO qsl_events(qsl_key, direction, method, via, date, source, note)
+			VALUES(?, 'sent', '', '', ?, 'clublog', 'closed: Clublog reports QSL sent')`,
+			key, time.Now().UTC().Format("20060102"))
+		return err
+	})
+}
+
+// QueueCounts feeds the nav badges: cards awaiting a decision, cards awaiting
+// production, and QSOs with local QSL state not yet pushed to Clublog.
+func (s *SQLiteStore) QueueCounts() (queued, decided, pendingPush int, err error) {
+	rows, err := s.db.Query(`SELECT status, COUNT(*) FROM qsl_work_queue
+		WHERE status IN ('queued','decided') GROUP BY status`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	for rows.Next() {
+		var st string
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			rows.Close()
+			return 0, 0, 0, err
+		}
+		if st == "queued" {
+			queued = n
+		} else {
+			decided = n
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, 0, err
+	}
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE ` + pendingPushWhere).Scan(&pendingPush)
+	return queued, decided, pendingPush, err
+}
+
 // --- events ---
 
 type Event struct {
@@ -563,20 +966,23 @@ type StationInfo struct {
 	RefusePaper   bool
 	QSLConfidence string // high/medium/low (from qsldetermine)
 	QSLReason     string
+	Name          string // QRZ first + last name
+	Attn          string // QRZ "attn" line
+	NotFound      bool   // QRZ has no record of this call (negative cache entry)
 	FetchedAt     string
 }
 
 func (s *SQLiteStore) GetStation(callsign string) (*StationInfo, error) {
 	callsign = strings.ToUpper(callsign)
 	si := &StationInfo{Callsign: callsign}
-	var refuse int
+	var refuse, notFound int
 	err := s.db.QueryRow(`SELECT callsign, qslmgr, eqsl, mqsl, lotw, email, addr1, addr2,
 		state, zip, country, dxcc, bio_text, qsl_method, qsl_route, refuse_paper,
-		qsl_confidence, qsl_reason, fetched_at
+		qsl_confidence, qsl_reason, COALESCE(name,''), COALESCE(attn,''), COALESCE(not_found,0), fetched_at
 		FROM station_info WHERE callsign=?`, callsign).Scan(
 		&si.Callsign, &si.QSLMgr, &si.EQSL, &si.MQSL, &si.LoTW, &si.Email, &si.Addr1, &si.Addr2,
 		&si.State, &si.Zip, &si.Country, &si.DXCC, &si.BioText, &si.QSLMethod, &si.QSLRoute, &refuse,
-		&si.QSLConfidence, &si.QSLReason, &si.FetchedAt)
+		&si.QSLConfidence, &si.QSLReason, &si.Name, &si.Attn, &notFound, &si.FetchedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -584,6 +990,7 @@ func (s *SQLiteStore) GetStation(callsign string) (*StationInfo, error) {
 		return nil, err
 	}
 	si.RefusePaper = refuse != 0
+	si.NotFound = notFound != 0
 	return si, nil
 }
 
@@ -596,19 +1003,24 @@ func (s *SQLiteStore) PutStation(si *StationInfo) error {
 	if si.FetchedAt == "" {
 		si.FetchedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	nf := 0
+	if si.NotFound {
+		nf = 1
+	}
 	_, err := s.db.Exec(`INSERT INTO station_info (callsign, qslmgr, eqsl, mqsl, lotw, email,
 		addr1, addr2, state, zip, country, dxcc, bio_text, qsl_method, qsl_route, refuse_paper,
-		qsl_confidence, qsl_reason, fetched_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?)
+		qsl_confidence, qsl_reason, name, attn, not_found, fetched_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?)
 		ON CONFLICT(callsign) DO UPDATE SET
 			qslmgr=excluded.qslmgr, eqsl=excluded.eqsl, mqsl=excluded.mqsl, lotw=excluded.lotw,
 			email=excluded.email, addr1=excluded.addr1, addr2=excluded.addr2, state=excluded.state,
 			zip=excluded.zip, country=excluded.country, dxcc=excluded.dxcc, bio_text=excluded.bio_text,
 			qsl_method=excluded.qsl_method, qsl_route=excluded.qsl_route,
 			refuse_paper=excluded.refuse_paper, qsl_confidence=excluded.qsl_confidence,
-			qsl_reason=excluded.qsl_reason, fetched_at=excluded.fetched_at`,
+			qsl_reason=excluded.qsl_reason, name=excluded.name, attn=excluded.attn,
+			not_found=excluded.not_found, fetched_at=excluded.fetched_at`,
 		si.Callsign, si.QSLMgr, si.EQSL, si.MQSL, si.LoTW, si.Email, si.Addr1, si.Addr2,
 		si.State, si.Zip, si.Country, si.DXCC, si.BioText, si.QSLMethod, si.QSLRoute, r,
-		si.QSLConfidence, si.QSLReason, si.FetchedAt)
+		si.QSLConfidence, si.QSLReason, si.Name, si.Attn, nf, si.FetchedAt)
 	return err
 }

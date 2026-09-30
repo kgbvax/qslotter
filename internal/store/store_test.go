@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -242,15 +243,7 @@ func TestSetQSLSentLocalRecordsMethod(t *testing.T) {
 	}
 }
 
-// TestMigrateFromV1Schema opens a database that still has the v1 tables
-// (without the newer columns) and verifies ensureSchema adds them.
-func TestMigrateFromV1Schema(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "v1.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v1 := `
+const v1SchemaDDL = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE qsos (
   qsl_key TEXT PRIMARY KEY, call TEXT NOT NULL, qso_date TEXT NOT NULL,
@@ -277,6 +270,16 @@ CREATE TABLE qsl_events (
   method TEXT, via TEXT, date TEXT NOT NULL, source TEXT NOT NULL, note TEXT
 );
 INSERT INTO meta(key, value) VALUES('schema_version', '1');`
+
+// TestMigrateFromV1Schema opens a database that still has the v1 tables
+// (without the newer columns) and verifies ensureSchema adds them.
+func TestMigrateFromV1Schema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1 := v1SchemaDDL
 	if _, err := db.Exec(v1); err != nil {
 		t.Fatal(err)
 	}
@@ -309,5 +312,403 @@ INSERT INTO meta(key, value) VALUES('schema_version', '1');`
 	got, _ := st.GetStation("DL1ABC")
 	if got == nil || got.QSLConfidence != "high" || got.QSLReason != "qslmgr field" {
 		t.Fatalf("GetStation after migration = %+v", got)
+	}
+}
+
+// TestMigrationBackfillsNulls: rows that predate the name/qth/qsl_confidence/
+// qsl_reason columns must stay readable after migration (a NULL would make the
+// string scan fail and the QSO silently vanish from every list).
+func TestMigrationBackfillsNulls(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1rows.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := v1SchemaDDL + `
+INSERT INTO qsos(qsl_key, call, qso_date, time_on, band, mode, freq, rst_sent, rst_rcvd,
+    qsl_sent, qsl_rcvd, qslsdate, qslrdate, lotw_qsl_rcvd, dxcc, prop_mode, gridsquare,
+    operator, notes, hash, first_seen_at, updated_at)
+  VALUES('DL1ABC|20240101|120000|20m','DL1ABC','20240101','120000','20m','SSB','','59','59',
+    '','','','','','','','','','','h','t','t');
+INSERT INTO station_info(callsign, qslmgr, eqsl, mqsl, lotw, email, addr1, addr2, state, zip,
+    country, dxcc, bio_text, qsl_method, qsl_route, fetched_at)
+  VALUES('DL1ABC','','','','','','','','','','','','','','','2024-01-01T00:00:00Z');`
+	if _, err := db.Exec(seed); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+
+	if q, err := st.GetQSO("DL1ABC|20240101|120000|20m"); err != nil || q == nil {
+		t.Fatalf("GetQSO on migrated row = %v, %v", q, err)
+	}
+	if all, err := st.AllQSOs(); err != nil || len(all) != 1 {
+		t.Fatalf("AllQSOs on migrated row = %d, %v", len(all), err)
+	}
+	if recent, err := st.RecentQSOsByCall("DL1ABC", 5); err != nil || len(recent) != 1 {
+		t.Fatalf("RecentQSOsByCall on migrated row = %d, %v", len(recent), err)
+	}
+	if si, err := st.GetStation("DL1ABC"); err != nil || si == nil {
+		t.Fatalf("GetStation on migrated row = %v, %v", si, err)
+	}
+}
+
+// --- guarded queue transitions ---
+
+func seedQueued(t *testing.T, st Store, call, date string) string {
+	t.Helper()
+	q := &QSO{QSLKey: call + "|" + date + "|120000|20m", Call: call, QSODate: date,
+		TimeOn: "120000", Band: "20m", Mode: "SSB", Hash: "h-" + call + date}
+	if _, _, err := st.UpsertQSO(q); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Enqueue(&QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	return q.QSLKey
+}
+
+func openTemp(t *testing.T) Store {
+	t.Helper()
+	st, err := Open(filepath.Join(t.TempDir(), "q.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
+
+func statusOf(t *testing.T, st Store, key string) *QueueItem {
+	t.Helper()
+	it, err := st.QueueGet(key)
+	if err != nil || it == nil {
+		t.Fatalf("QueueGet(%s) = %v, %v", key, it, err)
+	}
+	return it
+}
+
+func TestQueueDecideMovesToWorkQueue(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+
+	if err := st.QueueDecide(key, "d", ""); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, key); it.Status != "decided" || it.DesiredMethod != "D" {
+		t.Fatalf("after decide: %+v", it)
+	}
+	if q, _ := st.QueueList("queued"); len(q) != 0 {
+		t.Fatalf("decided item still listed as queued: %v", q)
+	}
+	if d, _ := st.QueueList("decided"); len(d) != 1 {
+		t.Fatalf("decided item missing from decided list: %v", d)
+	}
+	// A stale second decision is a conflict, not a silent overwrite.
+	if err := st.QueueDecide(key, "B", ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second decide = %v, want ErrConflict", err)
+	}
+	if it := statusOf(t, st, key); it.DesiredMethod != "D" {
+		t.Fatalf("conflicting decide changed the method: %+v", it)
+	}
+	// Manager only sticks to via-manager decisions.
+	k2 := seedQueued(t, st, "DL2ZZZ", "20240102")
+	if err := st.QueueDecide(k2, "M", "k2abc"); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, k2); it.Manager != "K2ABC" {
+		t.Fatalf("manager = %q", it.Manager)
+	}
+	if err := st.QueueDecide(seedQueued(t, st, "DL3YYY", "20240103"), "X", ""); err == nil {
+		t.Fatal("bogus method accepted")
+	}
+}
+
+func TestQueueWrittenWithoutRoute(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueWritten(key); err != nil {
+		t.Fatal(err)
+	}
+	it := statusOf(t, st, key)
+	if it.Status != "sent" || it.DesiredMethod != "W" || !it.SentAt.Valid {
+		t.Fatalf("after written: %+v", it)
+	}
+	q, _ := st.GetQSO(key)
+	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "" || q.QSLSDateLocal.String == "" {
+		t.Fatalf("local sent state: %+v", q)
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
+		t.Fatalf("pending push = %d, want 1", len(pend))
+	}
+	if err := st.QueueWritten(key); !errors.Is(err, ErrConflict) {
+		t.Fatalf("written twice = %v, want ErrConflict", err)
+	}
+}
+
+func TestQueueWrittenAndPrintedKeepDecidedRoute(t *testing.T) {
+	st := openTemp(t)
+	kw := seedQueued(t, st, "DL1ABC", "20240101")
+	kp := seedQueued(t, st, "DL2ZZZ", "20240102")
+	for _, k := range []string{kw, kp} {
+		if err := st.QueueDecide(k, "D", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Printing needs a decided card.
+	if err := st.QueuePrinted(seedQueued(t, st, "DL3YYY", "20240103")); !errors.Is(err, ErrConflict) {
+		t.Fatalf("print of undecided card = %v, want ErrConflict", err)
+	}
+	if err := st.QueueWritten(kw); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueuePrinted(kp); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{kw, kp} {
+		it := statusOf(t, st, k)
+		if it.Status != "sent" || it.DesiredMethod != "D" {
+			t.Fatalf("%s: %+v", k, it)
+		}
+		q, _ := st.GetQSO(k)
+		if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
+			t.Fatalf("%s local sent state: %+v", k, q)
+		}
+	}
+	if !statusOf(t, st, kp).PrintedAt.Valid || statusOf(t, st, kw).PrintedAt.Valid {
+		t.Fatal("printed_at must be set for print only")
+	}
+}
+
+func TestQueueDeclineBackAndReopen(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+
+	if err := st.QueueBack(key); !errors.Is(err, ErrConflict) {
+		t.Fatalf("back from queued = %v, want ErrConflict", err)
+	}
+	if err := st.QueueDecide(key, "B", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueBack(key); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
+		t.Fatalf("after back: %+v", it)
+	}
+	if err := st.QueueDecline(key); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, key); it.Status != "skipped" || it.DesiredMethod != "N" {
+		t.Fatalf("after decline: %+v", it)
+	}
+	if pushed, err := st.QueueReopen(key); err != nil || pushed {
+		t.Fatalf("reopen declined = %v, %v", pushed, err)
+	}
+	if it := statusOf(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
+		t.Fatalf("after reopen: %+v", it)
+	}
+
+	// Reopening a sent card clears the unpushed local sent state.
+	if err := st.QueueWritten(key); err != nil {
+		t.Fatal(err)
+	}
+	if pushed, err := st.QueueReopen(key); err != nil || pushed {
+		t.Fatalf("reopen sent = %v, %v", pushed, err)
+	}
+	q, _ := st.GetQSO(key)
+	if q.QSLSentLocal.Valid || q.QSLSentMethodLocal.Valid || q.QSLSDateLocal.Valid {
+		t.Fatalf("local sent state not cleared: %+v", q)
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("reopened card still pending push: %d", len(pend))
+	}
+	if _, err := st.QueueReopen(key); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reopen of queued = %v, want ErrConflict", err)
+	}
+}
+
+func TestQueueReopenReportsAlreadyPushed(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueDecide(key, "B", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueuePrinted(key); err != nil {
+		t.Fatal(err)
+	}
+	pend, _ := st.PendingPushBack()
+	if err := st.MarkPushed(pend[0]); err != nil {
+		t.Fatal(err)
+	}
+	if pushed, err := st.QueueReopen(key); err != nil || !pushed {
+		t.Fatalf("reopen after push = %v, %v; want pushed=true", pushed, err)
+	}
+}
+
+func TestQueueListNewestFirstAndCounts(t *testing.T) {
+	st := openTemp(t)
+	old := seedQueued(t, st, "DL1ABC", "20240101")
+	mid := seedQueued(t, st, "DL2ZZZ", "20240201")
+	newest := seedQueued(t, st, "DL3YYY", "20240301")
+	if err := st.QueueDecide(mid, "D", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.QueueList("queued", "decided")
+	if err != nil || len(got) != 3 || got[0].QSLKey != newest || got[1].QSLKey != mid || got[2].QSLKey != old {
+		t.Fatalf("order = %v, %v", got, err)
+	}
+	if q, d, p, err := st.QueueCounts(); err != nil || q != 2 || d != 1 || p != 0 {
+		t.Fatalf("counts = %d/%d/%d, %v", q, d, p, err)
+	}
+	if err := st.QueueWritten(old); err != nil {
+		t.Fatal(err)
+	}
+	if q, d, p, _ := st.QueueCounts(); q != 1 || d != 1 || p != 1 {
+		t.Fatalf("counts after written = %d/%d/%d", q, d, p)
+	}
+}
+
+func TestEnqueueDoesNotClobberDecision(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueDecide(key, "D", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Enqueue(&QueueItem{QSLKey: key, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, key); it.Status != "decided" || it.DesiredMethod != "D" {
+		t.Fatalf("re-enqueue reset the decision: %+v", it)
+	}
+}
+
+func TestLegacyPrintedRepaired(t *testing.T) {
+	st := openTemp(t)
+	withRoute := seedQueued(t, st, "DL1ABC", "20240101")
+	noRoute := seedQueued(t, st, "DL2ZZZ", "20240102")
+	db := st.(*SQLiteStore).db
+	if _, err := db.Exec(`UPDATE qsl_work_queue SET status='printed', desired_method='D',
+		printed_at='2024-05-06T10:00:00Z' WHERE qsl_key=?`, withRoute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE qsl_work_queue SET status='printed', printed_at='2024-05-06T10:00:00Z' WHERE qsl_key=?`, noRoute); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.(*SQLiteStore).ensureSchema(); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, withRoute); it.Status != "sent" || it.DesiredMethod != "D" {
+		t.Fatalf("printed with route: %+v", it)
+	}
+	q, _ := st.GetQSO(withRoute)
+	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" || q.QSLSDateLocal.String != "20240506" {
+		t.Fatalf("legacy printed card not marked sent locally: %+v", q)
+	}
+	if it := statusOf(t, st, noRoute); it.Status != "queued" {
+		t.Fatalf("printed without route should go back to the decision queue: %+v", it)
+	}
+}
+
+func TestBaseCall(t *testing.T) {
+	for in, want := range map[string]string{
+		"DL1ABC": "DL1ABC", "dl1abc": "DL1ABC", "DL1ABC/P": "DL1ABC", "EA8/DL1ABC": "DL1ABC",
+		"EA8/DL1ABC/P": "DL1ABC", "W1AW/1": "W1AW", "VK9/DL1ABC/MM": "DL1ABC", "K1ABC/QRP": "K1ABC",
+	} {
+		if got := BaseCall(in); got != want {
+			t.Errorf("BaseCall(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCallHistoryBaseCallAndQueueState(t *testing.T) {
+	st := openTemp(t)
+	add := func(call, date string) string {
+		q := &QSO{QSLKey: call + "|" + date + "|120000|20m", Call: call, QSODate: date,
+			TimeOn: "120000", Band: "20m", Mode: "SSB", Hash: "h" + call + date}
+		if _, _, err := st.UpsertQSO(q); err != nil {
+			t.Fatal(err)
+		}
+		return q.QSLKey
+	}
+	k1 := add("DL1ABC", "20240101")
+	k2 := add("DL1ABC/P", "20240201")
+	k3 := add("EA8/DL1ABC", "20240301")
+	add("DL1ABCD", "20240401") // a different station that merely starts the same
+	add("XDL1ABC", "20240501") // ... or ends the same
+	if err := st.Enqueue(&QueueItem{QSLKey: k1, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueDecide(k1, "M", "k2abc"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The lookup works from any spelling of the station.
+	for _, from := range []string{"DL1ABC", "EA8/DL1ABC", "dl1abc/p"} {
+		hist, err := st.CallHistory(from, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hist) != 3 || hist[0].QSO.QSLKey != k3 || hist[1].QSO.QSLKey != k2 || hist[2].QSO.QSLKey != k1 {
+			var keys []string
+			for _, h := range hist {
+				keys = append(keys, h.QSO.QSLKey)
+			}
+			t.Fatalf("CallHistory(%q) = %v", from, keys)
+		}
+	}
+	hist, _ := st.CallHistory("DL1ABC", 10)
+	if h := hist[2]; h.QueueStatus != "decided" || h.DesiredMethod != "M" || h.Manager != "K2ABC" {
+		t.Fatalf("queue state missing from history row: %+v", h)
+	}
+	if h := hist[0]; h.QueueStatus != "" {
+		t.Fatalf("never-queued QSO must have no queue state: %+v", h)
+	}
+	if hist, _ := st.CallHistory("DL1ABC", 2); len(hist) != 2 {
+		t.Fatalf("limit ignored: %d", len(hist))
+	}
+}
+
+func TestEffectiveSentAndRcvd(t *testing.T) {
+	ns := func(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+	// Local (unpushed) state wins over Clublog's view.
+	q := &QSO{QSLSent: "N", QSLSentLocal: ns("Y"), QSLSentMethodLocal: ns("D"), QSLSDateLocal: ns("20240506")}
+	if sent, m, d := q.EffectiveSent(); !sent || m != "D" || d != "20240506" {
+		t.Fatalf("local sent = %v %q %q", sent, m, d)
+	}
+	// After push: local cleared, Clublog holds Y and the pushed method.
+	q = &QSO{QSLSent: "Y", QSLSDate: "20240506", QSLSentAs: ns("B")}
+	if sent, m, d := q.EffectiveSent(); !sent || m != "B" || d != "20240506" {
+		t.Fatalf("clublog sent = %v %q %q", sent, m, d)
+	}
+	if sent, _, _ := (&QSO{QSLSent: "N"}).EffectiveSent(); sent {
+		t.Fatal("N is not sent")
+	}
+	if r, d := (&QSO{QSLRcvd: "Y", QSLRDate: "20240102"}).EffectiveRcvd(); !r || d != "20240102" {
+		t.Fatalf("clublog rcvd = %v %q", r, d)
+	}
+	if r, d := (&QSO{QSLRcvdLocal: ns("Y"), QSLRDateLocal: ns("20240103")}).EffectiveRcvd(); !r || d != "20240103" {
+		t.Fatalf("local rcvd = %v %q", r, d)
+	}
+}
+
+func TestStationInfoNameAttnNotFound(t *testing.T) {
+	st := openTemp(t)
+	if err := st.PutStation(&StationInfo{Callsign: "dl1abc", Name: "Hans Meier", Attn: "c/o Club", QSLMgr: "K2ABC"}); err != nil {
+		t.Fatal(err)
+	}
+	si, _ := st.GetStation("DL1ABC")
+	if si == nil || si.Name != "Hans Meier" || si.Attn != "c/o Club" || si.NotFound {
+		t.Fatalf("GetStation = %+v", si)
+	}
+	if err := st.PutStation(&StationInfo{Callsign: "XX1XX", NotFound: true}); err != nil {
+		t.Fatal(err)
+	}
+	if si, _ := st.GetStation("XX1XX"); si == nil || !si.NotFound {
+		t.Fatalf("negative cache entry = %+v", si)
 	}
 }
