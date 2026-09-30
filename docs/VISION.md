@@ -16,6 +16,48 @@ It stays a discovery tool first: the goal is to learn what QSL process actually
 fits, then harden it. Automation of decisions that belong to the operator is
 deferred, not accumulated.
 
+## 1a. Founding requirements (original concept, with status)
+
+The first written concept of qslotter (the original upstream README) set the
+requirements below. Kept here as the product's founding intent; each with
+where it stands today.
+
+- **The logbook is the QSL source, and QSL state should mirror back into it.**
+  Done: Clublog is the reconciliation source, Log4OM the real-time feed;
+  `QSL_SENT`/`QSL_SENT_AS`/`QSL_RCVD` push back via `putlogs.php`.
+- **"It should not rely on UDP QSO propagation, this is unreliable."**
+  Resolved by architecture: UDP is the *primary* feed (sub-second, works
+  mid-pileup) and the Clublog pull is the reconciliation backstop for
+  anything UDP missed. The system never depends on UDP alone.
+- **Automatic qualification with simple, configurable rules** (skip FT\*
+  modes, first-contact-only). Done: `qualify.exclude_modes`,
+  `first_contact_only`.
+- **Override for memorable QSOs, controlled via notes.** Done: the `QSL!`
+  marker (`qualify.override_marker`) force-includes a QSO.
+- **Smart method determination from QRZ and other sources — none, "no paper
+  please", direct, bureau, manager — accurate enough for semi-automatic
+  processing.** Done in the intended shape: `qsldetermine` suggests with
+  confidence and reason, the operator confirms with one click. "Other
+  sources" beyond QRZ (LLM bio interpretation) sits behind the `qsl-eval`
+  gate (roadmap v2).
+- **Synchronous and asynchronous mode** — prepare cards at the desk after
+  each QSO, or in a batch later. Done: the Decide view is the synchronous
+  path (one card, advance on decision); the Queue list with batch actions is
+  the asynchronous one.
+- **Print QSO data onto the card via a configurable template.** Done: YAML
+  templates with millimetre coordinates; DX name and QTH included.
+- **Hand-written QSL cards supported**, usually synchronously. Done: the
+  Written action marks the card sent with the chosen method and shows the
+  data to copy.
+- **Electronic QSL is out of scope** — left to the logbook. Enforced since
+  2026-09-30: E is no longer a decision; eQSL-only stations resolve to
+  "no card".
+- **Receiving: quick keyboard entry of received cards.** Partially done: the
+  Receive page does callsign → pick QSOs → mark received. The automatic
+  response card for "PSE QSL" is not built (roadmap v1.y/v2).
+- **Optional photo capture of received cards with data extraction.** Not
+  built (roadmap v2).
+
 ## 2. The core loop
 
 The daily workflow while operating:
