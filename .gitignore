@@ -9,9 +9,9 @@ boot.log
 *.pdf
 
 # Build output
-qslotter
-qslotter.exe
-qsl-eval
+/qslotter
+/qslotter.exe
+/qsl-eval
 rsrc_windows_*.syso
 
 # Scratch from the QSL-method calibration effort (see docs/VISION.md)

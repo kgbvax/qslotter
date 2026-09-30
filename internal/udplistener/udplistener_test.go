@@ -4,10 +4,12 @@ import (
 	"context"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/events"
+	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -116,5 +118,73 @@ func TestListenerIgnoresN1MMXML(t *testing.T) {
 	qsos, _ := st.AllQSOs()
 	if len(qsos) != 0 {
 		t.Fatalf("expected 0 QSOs after N1MM XML datagram, got %d", len(qsos))
+	}
+}
+// TestUDPQueuesRepeatContactsAndAnnounces: with the default rules a repeat
+// contact enters the decision queue (the operator decides with the history in
+// front of them), a forced-in QSO records why, digital QSOs stay out, and every
+// queued QSO is announced to open windows.
+func TestUDPQueuesRepeatContactsAndAnnounces(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	tmp, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	tmpConn, _ := net.ListenUDP("udp", tmp)
+	addr := tmpConn.LocalAddr().String()
+	tmpConn.Close()
+
+	broker := events.New()
+	ch, unsub := broker.Subscribe()
+	defer unsub()
+	rules := &qualify.Rules{ExcludeModes: []string{"FT8"}, OverrideMarker: "QSL!"}
+	l := New(addr, st, broker, rules, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := l.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer l.Stop()
+
+	conn, _ := net.Dial("udp", addr)
+	defer conn.Close()
+	for _, d := range []string{
+		"<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<EOR>",
+		"<QSO_DATE:8>20240102<TIME_ON:6>130000<CALL:5>DL1AB<BAND:3>40m<MODE:3>SSB<EOR>", // repeat contact
+		"<QSO_DATE:8>20240103<TIME_ON:6>140000<CALL:5>JA1XY<BAND:3>20m<MODE:3>FT8<EOR>", // digital
+		"<QSO_DATE:8>20240104<TIME_ON:6>150000<CALL:5>OK1XY<BAND:3>20m<MODE:3>FT8<NOTES:6>QSL! !<EOR>",
+	} {
+		if _, err := conn.Write([]byte(d)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(50 * time.Millisecond) // keep datagram order deterministic
+	}
+
+	var changed []string
+	deadline := time.After(2 * time.Second)
+	for len(changed) < 3 {
+		select {
+		case ev := <-ch:
+			if ev.Type == "queue_changed" {
+				changed = append(changed, ev.Data)
+			}
+		case <-deadline:
+			t.Fatalf("queue_changed events = %v, want 3", changed)
+		}
+	}
+	queued, _ := st.QueueList("queued")
+	if len(queued) != 3 {
+		t.Fatalf("queued = %d, want 3 (2x DL1AB + the forced-in FT8)", len(queued))
+	}
+	for _, it := range queued {
+		switch {
+		case strings.HasPrefix(it.QSLKey, "JA1XY"):
+			t.Fatalf("digital QSO was queued: %+v", it)
+		case strings.HasPrefix(it.QSLKey, "OK1XY"):
+			if it.OverrideReason != "override: QSL! in notes" {
+				t.Fatalf("forced-in QSO must record why: %+v", it)
+			}
+		}
 	}
 }

@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -183,3 +185,98 @@ func TestEnqueueAllOverride(t *testing.T) {
 
 // Ensure sql.NullString is referenced (kept in store.QSO; used by Eligible).
 var _ = sql.NullString{}
+// --- decision-queue intake ---
+
+func TestAlreadySentBeatsOverride(t *testing.T) {
+	r := &Rules{OverrideMarker: "QSL!"}
+	q := qso("DL1AB", "20240101", "120000", "20m", "SSB")
+	q.Notes = "QSL! memorable"
+	q.QSLSent = "Y"
+	if ok, reason := r.Eligible(q, []*store.QSO{q}); ok {
+		t.Fatalf("a card that already went out must not be queued again, even with the marker (%s)", reason)
+	}
+	q.QSLSent = ""
+	q.QSLSentLocal = sql.NullString{String: "Y", Valid: true}
+	if ok, _ := r.EligibleForNewQSO(q, nil); ok {
+		t.Fatal("locally sent card must not be queued again either")
+	}
+}
+
+func TestSinceCutoff(t *testing.T) {
+	r := &Rules{Since: "20240601", OverrideMarker: "QSL!"}
+	old := qso("DL1AB", "20240101", "120000", "20m", "SSB")
+	fresh := qso("DL2CD", "20240601", "120000", "20m", "SSB")
+	if ok, reason := r.Eligible(old, []*store.QSO{old}); ok || reason == "" {
+		t.Fatalf("QSO before the cutoff must not be queued (%q)", reason)
+	}
+	if ok, _ := r.Eligible(fresh, []*store.QSO{fresh}); !ok {
+		t.Fatal("QSO on the cutoff date must be queued")
+	}
+	// The marker still forces an old QSO in.
+	old.Notes = "QSL!"
+	if ok, _ := r.Eligible(old, []*store.QSO{old}); !ok {
+		t.Fatal("override marker must bypass the cutoff")
+	}
+	if ok, _ := (&Rules{}).Eligible(qso("DL1AB", "19990101", "120000", "20m", "SSB"), nil); !ok {
+		t.Fatal("no cutoff configured: everything is eligible")
+	}
+}
+
+func TestNewRulesSince(t *testing.T) {
+	st := newStore(t)
+	today := time.Now().UTC().Format("20060102")
+
+	// Default: the day qslotter first ran, remembered across restarts.
+	r := NewRules(config.QualifyCfg{}, st)
+	if r.Since != today {
+		t.Fatalf("default Since = %q, want today %q", r.Since, today)
+	}
+	if v, _ := st.MetaGet("first_run_date"); v != today {
+		t.Fatalf("first_run_date not remembered: %q", v)
+	}
+	_ = st.MetaSet("first_run_date", "20240315")
+	if r := NewRules(config.QualifyCfg{}, st); r.Since != "20240315" {
+		t.Fatalf("Since must follow the remembered first run, got %q", r.Since)
+	}
+	for in, want := range map[string]string{"all": "", "ALL": "", "none": "", "2023-05-06": "20230506", "20230506": "20230506"} {
+		if r := NewRules(config.QualifyCfg{Since: in}, st); r.Since != want {
+			t.Errorf("since %q -> %q, want %q", in, r.Since, want)
+		}
+	}
+	if r := NewRules(config.QualifyCfg{Since: "yesterday"}, st); r.Since != "20240315" {
+		t.Errorf("invalid since must fall back to the default, got %q", r.Since)
+	}
+}
+
+func TestRepeatContactsQueueUnlessFirstContactOnly(t *testing.T) {
+	q1 := qso("DL1AB", "20240101", "120000", "20m", "SSB")
+	q2 := qso("DL1AB", "20240102", "130000", "40m", "SSB")
+	all := []*store.QSO{q2, q1}
+	if ok, _ := (&Rules{}).Eligible(q2, all); !ok {
+		t.Fatal("by default a repeat contact is queued (the operator decides, with the history in front of them)")
+	}
+	if ok, _ := (&Rules{FirstContactOnly: true}).Eligible(q2, all); ok {
+		t.Fatal("first_contact_only still filters repeat contacts")
+	}
+}
+
+func TestEnqueueAllKeysAndOverrideReason(t *testing.T) {
+	st := newStore(t)
+	q1 := qso("DL1AB", "20240101", "120000", "20m", "SSB")
+	q2 := qso("DL1AB", "20240102", "130000", "20m", "FT8")
+	q2.Notes = "QSL! wanted"
+	_, _, _ = st.UpsertQSO(q1)
+	_, _, _ = st.UpsertQSO(q2)
+	r := &Rules{OverrideMarker: "QSL!"}
+	keys, err := r.EnqueueAllKeys(st)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("EnqueueAllKeys = %v, %v", keys, err)
+	}
+	it, _ := st.QueueGet(q2.QSLKey)
+	if it == nil || it.OverrideReason != "override: QSL! in notes" {
+		t.Fatalf("override reason not recorded: %+v", it)
+	}
+	if keys2, _ := r.EnqueueAllKeys(st); len(keys2) != 0 {
+		t.Fatalf("second scan enqueued %v", keys2)
+	}
+}

@@ -124,20 +124,30 @@ func (l *Listener) handleDatagram(data []byte) {
 		// Uses the fast path (mode + override + first-contact via the call's
 		// recent QSOs) rather than re-scanning the whole log on every datagram.
 		if l.rules != nil {
-			priorQSOs, _ := l.store.RecentQSOsByCall(q.Call, 50)
-			ok, _ := l.rules.EligibleForNewQSO(q, priorQSOs)
+			priorQSOs, err := l.store.RecentQSOsByCall(q.Call, 50)
+			if err != nil {
+				// Fail open: better to show a card the operator can decide on
+				// than to lose the QSO to a transient store error.
+				log.Printf("udplistener: prior QSOs for %s: %v", q.Call, err)
+			}
+			ok, reason := l.rules.EligibleForNewQSO(q, priorQSOs)
 			if ok {
-				_ = l.store.Enqueue(&store.QueueItem{
-					QSLKey: q.QSLKey,
-					Status: "queued",
-				})
+				item := &store.QueueItem{QSLKey: q.QSLKey, Status: "queued"}
+				if strings.HasPrefix(reason, "override:") {
+					item.OverrideReason = reason // why a normally-filtered QSO is here
+				}
+				if err := l.store.Enqueue(item); err != nil {
+					log.Printf("udplistener: enqueue %s: %v", q.QSLKey, err)
+				} else if l.broker != nil {
+					l.broker.Publish(events.QueueChanged(q.QSLKey, "queued"))
+				}
 			}
 		}
 		// Trigger an async QRZ station-info refresh so the Method/Manager
 		// columns populate shortly after the QSO appears in the queue. The
 		// station_updated SSE event then refreshes the affected rows in place.
 		if l.refresher != nil {
-			go l.refresher.Refresh(context.Background(), q.Call)
+			go l.refresher.Get(context.Background(), q.Call)
 		}
 		if l.broker != nil {
 			l.broker.Publish(events.Event{Type: "new_qso", Data: q.QSLKey})

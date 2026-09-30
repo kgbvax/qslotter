@@ -69,9 +69,17 @@ type CardCfg struct {
 }
 
 type QualifyCfg struct {
-	ExcludeModes     []string `yaml:"exclude_modes"`
-	FirstContactOnly bool     `yaml:"first_contact_only"`
-	OverrideMarker   string   `yaml:"override_marker"`
+	ExcludeModes []string `yaml:"exclude_modes"`
+	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
+	// default: repeat contacts are shown with their history instead, and the
+	// operator decides.
+	FirstContactOnly bool   `yaml:"first_contact_only"`
+	OverrideMarker   string `yaml:"override_marker"`
+	// Since limits the decision queue to QSOs on or after this date
+	// (YYYY-MM-DD) so the first Clublog pull does not flood it with years of
+	// history. Empty = the day qslotter first ran; "all" = no cutoff (import
+	// the whole backlog).
+	Since string `yaml:"since"`
 }
 
 type StoreCfg struct {

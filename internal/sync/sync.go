@@ -13,6 +13,7 @@ import (
 
 	"github.com/dl9et/qslotter/internal/adif"
 	"github.com/dl9et/qslotter/internal/clublog"
+	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/store"
 )
@@ -21,6 +22,13 @@ type Orchestrator struct {
 	Store   store.Store
 	Clublog *clublog.Client
 	Rules   *qualify.Rules // optional; if set, PullAndUpsert also enqueues eligible QSOs
+	Broker  *events.Broker // optional; announces queue changes to open windows
+}
+
+func (o *Orchestrator) announce(key, to string) {
+	if o.Broker != nil {
+		o.Broker.Publish(events.QueueChanged(key, to))
+	}
 }
 
 // PullAndUpsert fetches the full log from Clublog, parses it, and upserts each
@@ -50,13 +58,24 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 		} else if changed {
 			updated++
 		}
+		// The card already went out through another tool: an open queue item
+		// for it is done (a duplicate card costs more than a wrong auto-close).
+		if (isNew || changed) && q.QSLSent == "Y" {
+			if err := o.Store.QueueCloseSentElsewhere(q.QSLKey); err == nil {
+				o.announce(q.QSLKey, "sent")
+			}
+		}
 	}
 	_ = o.Store.MetaSet("clublog_last_pull_at", time.Now().UTC().Format(time.RFC3339))
 	// If rules are configured, run the qualifier to enqueue any newly-eligible
 	// QSOs. This catches UDP-missed QSOs and QSL-state edits that flip a QSO
 	// from "sent" back to "not sent" (rare but possible).
 	if o.Rules != nil {
-		if _, err := o.Rules.EnqueueAll(o.Store); err != nil {
+		keys, err := o.Rules.EnqueueAllKeys(o.Store)
+		for _, k := range keys {
+			o.announce(k, "queued")
+		}
+		if err != nil {
 			return inserted, updated, fmt.Errorf("enqueue: %w", err)
 		}
 	}
@@ -77,12 +96,20 @@ func (o *Orchestrator) PushBack() (pushed int, err error) {
 	w := adif.NewWriter(&buf)
 	for _, q := range pending {
 		rec := fromQSO(q)
-		// Override QSL_SENT/QSL_RCVD with the local value, set date. The chosen
-		// send method rides along as QSL_SENT_AS (ADIF enum B/D/E/M).
+		// Override QSL_SENT/QSL_RCVD with the local value, set date. The send
+		// route uses the ADIF fields: QSL_SENT_VIA for bureau/direct (ADIF
+		// marks the M value import-only, so a manager card is expressed as
+		// QSL_VIA = the manager's callsign instead). A card written on the
+		// spot has no route: QSL_SENT=Y alone.
 		if q.QSLSentLocal.Valid && q.QSLSentLocal.String != "" {
 			rec.Set("QSL_SENT", q.QSLSentLocal.String)
-			if q.QSLSentMethodLocal.Valid && q.QSLSentMethodLocal.String != "" {
-				rec.Set("QSL_SENT_AS", strings.ToUpper(q.QSLSentMethodLocal.String))
+			switch method := strings.ToUpper(q.QSLSentMethodLocal.String); method {
+			case "B", "D", "E":
+				rec.Set("QSL_SENT_VIA", method)
+			case "M":
+				if item, _ := o.Store.QueueGet(q.QSLKey); item != nil && item.Manager != "" {
+					rec.Set("QSL_VIA", item.Manager)
+				}
 			}
 			if q.QSLSDateLocal.Valid && q.QSLSDateLocal.String != "" {
 				rec.Set("QSLSDATE", q.QSLSDateLocal.String)

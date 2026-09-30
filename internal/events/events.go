@@ -6,7 +6,10 @@
 // that fall behind (buffer full) drop events rather than block producers.
 package events
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+)
 
 // Event is a single notification. Type is a short string ("new_qso",
 // "qsl_rcvd", ...); Data is type-specific (e.g. a QSL key).
@@ -17,8 +20,8 @@ type Event struct {
 
 // Broker fans out Events to all subscribers.
 type Broker struct {
-	mu     sync.RWMutex
-	subs   map[chan Event]struct{}
+	mu   sync.RWMutex
+	subs map[chan Event]struct{}
 }
 
 func New() *Broker {
@@ -52,4 +55,15 @@ func (b *Broker) Publish(ev Event) {
 			// drop - subscriber is too slow
 		}
 	}
+}
+
+// QueueChanged is the "queue_changed" event: a card entered or moved within
+// the work queues. Data is JSON {"key": <qsl key>, "to": <new status>}; open
+// windows add, remove or refresh their rows and cards accordingly.
+func QueueChanged(key, to string) Event {
+	b, _ := json.Marshal(struct {
+		Key string `json:"key"`
+		To  string `json:"to"`
+	}{key, to})
+	return Event{Type: "queue_changed", Data: string(b)}
 }

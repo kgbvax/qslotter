@@ -2,8 +2,12 @@
 package qualify
 
 import (
+	"log"
 	"strings"
+	gosync "sync"
+	"time"
 
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -11,114 +15,126 @@ type Rules struct {
 	ExcludeModes     []string
 	FirstContactOnly bool
 	OverrideMarker   string // e.g. "QSL!" - if present in notes, the QSO is force-included
+	Since            string // YYYYMMDD: QSOs before this date are not queued ("" = no cutoff)
 }
 
 func New(rules *Rules) *Rules { return rules }
 
-// Eligible returns true if the QSO should be queued for a QSL card.
-// allQSOs is the full log (newest-first) used to detect prior contacts; it
-// may be nil, in which case the first-contact check uses the QSO's
-// priorContact flag (see EligibleForNewQSO for the UDP fast path).
-func (r *Rules) Eligible(q *store.QSO, allQSOs []*store.QSO) (bool, string) {
-	// Override: if the notes contain the override marker, force-include.
-	if r.OverrideMarker != "" && q.Notes != "" &&
-		strings.Contains(strings.ToUpper(q.Notes), strings.ToUpper(r.OverrideMarker)) {
-		return true, "override: " + r.OverrideMarker + " in notes"
+// NewRules builds the rules from the configuration. The default cutoff is the
+// day qslotter first ran (remembered in the store), so only QSOs from then on
+// enter the decision queue; qualify.since: all lifts it.
+func NewRules(c config.QualifyCfg, st store.Store) *Rules {
+	r := &Rules{
+		ExcludeModes:     c.ExcludeModes,
+		FirstContactOnly: c.FirstContactOnly,
+		OverrideMarker:   c.OverrideMarker,
 	}
+	switch v := strings.ToLower(strings.TrimSpace(c.Since)); v {
+	case "all", "none":
+	case "":
+		r.Since = firstRunDate(st)
+	default:
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			r.Since = t.Format("20060102")
+		} else if t, err := time.Parse("20060102", v); err == nil {
+			r.Since = t.Format("20060102")
+		} else {
+			log.Printf("qualify: ignoring invalid qualify.since %q (want YYYY-MM-DD, empty or \"all\")", c.Since)
+			r.Since = firstRunDate(st)
+		}
+	}
+	return r
+}
 
-	// Already sent? Skip.
+// firstRunDate returns (and on first call records) the day qslotter first ran.
+func firstRunDate(st store.Store) string {
+	today := time.Now().UTC().Format("20060102")
+	if st == nil {
+		return today
+	}
+	if v, err := st.MetaGet("first_run_date"); err == nil && v != "" {
+		return v
+	}
+	_ = st.MetaSet("first_run_date", today)
+	return today
+}
+
+// hasOverride reports whether the operator forced this QSO in via the marker.
+func (r *Rules) hasOverride(q *store.QSO) bool {
+	return r.OverrideMarker != "" && q.Notes != "" &&
+		strings.Contains(strings.ToUpper(q.Notes), strings.ToUpper(r.OverrideMarker))
+}
+
+// isDigital reports the digital families that never get a paper card.
+func isDigital(mode string) bool {
+	mode = strings.ToUpper(mode)
+	for _, p := range []string{"FT", "JS8", "WSPR", "MSK", "FST"} {
+		if strings.HasPrefix(mode, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// check is the single eligibility decision. priors are the other QSOs with
+// the same call (newest-first, may include q itself); havePriors=false means
+// the caller could not supply them, which fails the first-contact check open.
+func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool, string) {
+	// A card that already went out is never queued again - not even by the
+	// override marker on an old, already-handled QSO.
 	if q.QSLSent == "Y" {
 		return false, "QSL already sent (per Clublog)"
 	}
 	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
 		return false, "QSL already sent (local)"
 	}
-
-	// Mode filter.
+	// The override marker force-includes the QSO despite mode, cutoff and
+	// first-contact rules.
+	if r.hasOverride(q) {
+		return true, "override: " + r.OverrideMarker + " in notes"
+	}
+	if r.Since != "" && q.QSODate < r.Since {
+		return false, "before qualify.since (" + r.Since + ")"
+	}
 	mode := strings.ToUpper(q.Mode)
 	for _, ex := range r.ExcludeModes {
 		if mode == strings.ToUpper(ex) {
 			return false, "mode " + q.Mode + " excluded"
 		}
 	}
-	// Catch FT* family generically if the rule list missed one.
-	if strings.HasPrefix(mode, "FT") || strings.HasPrefix(mode, "JS8") ||
-		strings.HasPrefix(mode, "WSPR") || strings.HasPrefix(mode, "MSK") ||
-		strings.HasPrefix(mode, "FST") {
+	if isDigital(mode) {
 		return false, "mode " + q.Mode + " excluded (digital prefix)"
 	}
-
-	// First-contact-only: is there an *older* QSO with the same call?
-	// (Semantics: send a card only for the first-ever QSO with a station.
-	// A later QSO with the same call is not eligible; the first one is.)
+	// First-contact-only: only the first-ever QSO with a station is eligible;
+	// a later QSO with the same call is not.
 	if r.FirstContactOnly {
-		if allQSOs == nil {
-			// Caller asked for first-contact but provided no log slice; can't
-			// decide. Fail open (don't enqueue) by reporting ineligible.
+		if !havePriors {
 			return false, "first-contact check skipped (no log slice)"
 		}
-		for _, p := range allQSOs {
-			if p == q {
+		for _, p := range priors {
+			if p == q || p.QSLKey == q.QSLKey || p.Call != q.Call {
 				continue
 			}
-			if p.Call != q.Call {
-				continue
-			}
-			// p is another QSO with the same call. Is it older than q?
-			// allQSOs is ordered newest-first by (qso_date DESC, time_on DESC),
-			// so "older" means it appears *after* q in the slice. But we can't
-			// rely on slice position alone because the same-date edge case is
-			// ambiguous; compare dates directly.
 			if isOlder(p, q) {
 				return false, "prior QSO with " + q.Call + " exists"
 			}
 		}
 	}
-
 	return true, "eligible"
 }
 
-// EligibleForNewQSO is the UDP fast path: it checks mode + already-sent +
-// override (the cheap rules), and uses priorQSOs (the QSOs already in the
-// store for this call, newest-first) for the first-contact check. Pass an
-// empty slice to allow the QSO through the first-contact check (no priors).
+// Eligible returns true if the QSO should be queued for a QSL card.
+// allQSOs is the full log (newest-first) used to detect prior contacts; it
+// may be nil, in which case the first-contact check (if enabled) fails closed.
+func (r *Rules) Eligible(q *store.QSO, allQSOs []*store.QSO) (bool, string) {
+	return r.check(q, allQSOs, allQSOs != nil)
+}
+
+// EligibleForNewQSO is the UDP fast path: the same rules, with priorQSOs (the
+// QSOs already in the store for this call, newest-first, including q itself)
+// for the first-contact check instead of the whole log.
 func (r *Rules) EligibleForNewQSO(q *store.QSO, priorQSOs []*store.QSO) (bool, string) {
-	// Override: if the notes contain the override marker, force-include.
-	if r.OverrideMarker != "" && q.Notes != "" &&
-		strings.Contains(strings.ToUpper(q.Notes), strings.ToUpper(r.OverrideMarker)) {
-		return true, "override: " + r.OverrideMarker + " in notes"
-	}
-	if q.QSLSent == "Y" {
-		return false, "QSL already sent (per Clublog)"
-	}
-	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
-		return false, "QSL already sent (local)"
-	}
-	mode := strings.ToUpper(q.Mode)
-	for _, ex := range r.ExcludeModes {
-		if mode == strings.ToUpper(ex) {
-			return false, "mode " + q.Mode + " excluded"
-		}
-	}
-	if strings.HasPrefix(mode, "FT") || strings.HasPrefix(mode, "JS8") ||
-		strings.HasPrefix(mode, "WSPR") || strings.HasPrefix(mode, "MSK") ||
-		strings.HasPrefix(mode, "FST") {
-		return false, "mode " + q.Mode + " excluded (digital prefix)"
-	}
-	// First-contact: is there an older QSO with the same call?
-	// priorQSOs is newest-first and includes q itself (since UpsertQSO ran
-	// before this check). Any QSO that is not q and is older => prior.
-	if r.FirstContactOnly {
-		for _, p := range priorQSOs {
-			if p == q {
-				continue
-			}
-			if p.Call == q.Call && isOlder(p, q) {
-				return false, "prior QSO with " + q.Call + " exists"
-			}
-		}
-	}
-	return true, "eligible"
+	return r.check(q, priorQSOs, true)
 }
 
 // isOlder returns true if p is strictly older than q (by QSO date, then time).
@@ -129,42 +145,41 @@ func isOlder(p, q *store.QSO) bool {
 	return p.TimeOn < q.TimeOn
 }
 
+// enqueueMu serializes full scans (Recompute button, Clublog pulls, the
+// background loop) so two of them never decide on the same QSOs at once.
+var enqueueMu gosync.Mutex
+
 // EnqueueAll scans the full log, applies the rules to each QSO, and enqueues
-// newly-eligible ones into the work queue. Already-queued QSOs are left alone
-// (the queue's ON CONFLICT clause preserves their existing status / method).
-// Returns the number of newly-enqueued QSOs.
-//
-// This is the bridge between the log (Clublog pull or UDP feed) and the
-// actionable "Send Queue" view. It is idempotent: re-running after a sync that
-// changes nothing enqueues nothing new.
+// newly-eligible ones into the decision queue. Items already present in any
+// status keep their state (Enqueue never overwrites), so a recompute cannot
+// resurrect or reset work the operator did. Returns the number enqueued.
 func (r *Rules) EnqueueAll(st store.Store) (int, error) {
+	keys, err := r.EnqueueAllKeys(st)
+	return len(keys), err
+}
+
+// EnqueueAllKeys is EnqueueAll returning the keys it enqueued, so callers can
+// announce them to open windows.
+func (r *Rules) EnqueueAllKeys(st store.Store) ([]string, error) {
+	enqueueMu.Lock()
+	defer enqueueMu.Unlock()
 	qsos, err := st.AllQSOs()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	// Load the existing queue keys so we don't re-enqueue (and thus overwrite)
-	// items the user has already acted on (printed/sent/skipped).
-	existing, err := st.QueueByStatus("queued")
-	if err != nil {
-		return 0, err
-	}
-	existingKeys := make(map[string]struct{}, len(existing))
-	for _, it := range existing {
-		existingKeys[it.QSLKey] = struct{}{}
-	}
-	// Also skip items already in a terminal status, so a re-compute doesn't
-	// resurrect a skipped/sent QSO back to "queued".
-	for _, status := range []string{"decided", "printed", "sent", "skipped"} {
+	// Every QSO that already has a queue item (any status) is left alone.
+	existingKeys := make(map[string]struct{})
+	for _, status := range []string{"queued", "decided", "printed", "sent", "skipped"} {
 		items, err := st.QueueByStatus(status)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		for _, it := range items {
 			existingKeys[it.QSLKey] = struct{}{}
 		}
 	}
 
-	enqueued := 0
+	var enqueued []string
 	for _, q := range qsos {
 		if _, ok := existingKeys[q.QSLKey]; ok {
 			continue
@@ -174,15 +189,14 @@ func (r *Rules) EnqueueAll(st store.Store) (int, error) {
 			continue
 		}
 		err := st.Enqueue(&store.QueueItem{
-			QSLKey:        q.QSLKey,
-			DesiredMethod: "", // will be filled later by the QSL-determination pass
-			Status:        "queued",
+			QSLKey:         q.QSLKey,
+			Status:         "queued",
 			OverrideReason: reasonFor(q, reason),
 		})
 		if err != nil {
 			return enqueued, err
 		}
-		enqueued++
+		enqueued = append(enqueued, q.QSLKey)
 	}
 	return enqueued, nil
 }

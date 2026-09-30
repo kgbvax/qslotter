@@ -6,9 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dl9et/qslotter/internal/adif"
 	"github.com/dl9et/qslotter/internal/clublog"
+	"github.com/dl9et/qslotter/internal/events"
+	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -141,9 +144,8 @@ func TestPushBackADIFContainsQSL(t *testing.T) {
 	}
 }
 
-// TestPushBackUploadsSentAs verifies the chosen method rides along as
-// QSL_SENT_AS (with QSL_SENT=Y), not as an invalid QSL_SENT=B.
-func TestPushBackUploadsSentAs(t *testing.T) {
+// pushCapture returns a fake Clublog client that records the last upload.
+func pushCapture(t *testing.T) (*clublog.Client, *string) {
 	var captured string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/getadif.php", func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +162,14 @@ func TestPushBackUploadsSentAs(t *testing.T) {
 	cl := clublog.New("u", "p", "DL9ET", "k")
 	cl.BaseURL = srv.URL
 	cl.HTTP = srv.Client()
+	return cl, &captured
+}
 
+// TestPushBackUploadsSentVia verifies the send route rides along as the ADIF
+// field QSL_SENT_VIA (with QSL_SENT=Y), not as an invalid QSL_SENT=D and not
+// as a made-up field.
+func TestPushBackUploadsSentVia(t *testing.T) {
+	cl, captured := pushCapture(t)
 	st, _ := store.Open(":memory:")
 	defer st.Close()
 	o := &Orchestrator{Store: st, Clublog: cl}
@@ -173,14 +182,59 @@ func TestPushBackUploadsSentAs(t *testing.T) {
 	if err != nil || pushed != 1 {
 		t.Fatalf("push back: pushed=%d err=%v", pushed, err)
 	}
-	if strings.Contains(captured, "<QSL_SENT:1>D") {
-		t.Fatalf("method leaked into QSL_SENT (must be Y + QSL_SENT_AS): %q", captured)
+	if strings.Contains(*captured, "<QSL_SENT:1>D") {
+		t.Fatalf("method leaked into QSL_SENT (must be Y + QSL_SENT_VIA): %q", *captured)
 	}
-	if !strings.Contains(captured, "QSL_SENT_AS") || !strings.Contains(captured, ">D<") {
-		t.Fatalf("push-back ADIF missing QSL_SENT_AS=D: %q", captured)
+	if !strings.Contains(*captured, "<QSL_SENT_VIA:1>D") || strings.Contains(*captured, "QSL_SENT_AS") {
+		t.Fatalf("push-back ADIF must carry QSL_SENT_VIA=D (and no QSL_SENT_AS): %q", *captured)
 	}
-	if !strings.Contains(captured, "<QSL_SENT:1>Y") {
-		t.Fatalf("push-back ADIF missing QSL_SENT=Y: %q", captured)
+	if !strings.Contains(*captured, "<QSL_SENT:1>Y") {
+		t.Fatalf("push-back ADIF missing QSL_SENT=Y: %q", *captured)
+	}
+}
+
+// TestPushBackManagerAndWritten: a card via a manager is expressed as QSL_VIA
+// (ADIF's QSL_SENT_VIA=M is import-only); a card written on the spot has no
+// route at all.
+func TestPushBackManagerAndWritten(t *testing.T) {
+	cl, captured := pushCapture(t)
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	o := &Orchestrator{Store: st, Clublog: cl}
+	_, _, _ = o.PullAndUpsert()
+	qsos, _ := st.RecentQSOsByCall("DL1AB", 10)
+	key := qsos[0].QSLKey
+	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueDecide(key, "M", "K2ABC"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueuePrinted(key); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := o.PushBack(); err != nil || n != 1 {
+		t.Fatalf("push back: %d %v", n, err)
+	}
+	if !strings.Contains(*captured, "<QSL_VIA:5>K2ABC") || strings.Contains(*captured, "QSL_SENT_VIA") ||
+		!strings.Contains(*captured, "<QSL_SENT:1>Y") {
+		t.Fatalf("manager card must push QSL_SENT=Y + QSL_VIA=K2ABC and no QSL_SENT_VIA: %q", *captured)
+	}
+
+	// Written on the spot: QSL_SENT=Y and nothing about the route.
+	other := qsos[1].QSLKey
+	if err := st.Enqueue(&store.QueueItem{QSLKey: other, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueWritten(other); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := o.PushBack(); err != nil || n != 1 {
+		t.Fatalf("push back: %d %v", n, err)
+	}
+	if strings.Contains(*captured, "QSL_SENT_VIA") || strings.Contains(*captured, "QSL_VIA") ||
+		!strings.Contains(*captured, "<QSL_SENT:1>Y") {
+		t.Fatalf("written card must push QSL_SENT=Y only: %q", *captured)
 	}
 }
 
@@ -208,5 +262,95 @@ func TestNameQTHRoundTrip(t *testing.T) {
 	back := fromQSO(q)
 	if back.Get("NAME") != "Alice" || back.Get("QTH") != "Bavaria" {
 		t.Fatalf("fromQSO NAME=%q QTH=%q", back.Get("NAME"), back.Get("QTH"))
+	}
+}
+// TestPullClosesItemSentElsewhere: an open queue item whose QSO Clublog now
+// reports as sent (the card went out through another tool) is closed instead
+// of producing a duplicate card, and open windows are told.
+func TestPullClosesItemSentElsewhere(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	var body string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/getadif.php", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cl := clublog.New("u", "p", "DL9ET", "k")
+	cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+	broker := events.New()
+	o := &Orchestrator{Store: st, Clublog: cl, Broker: broker}
+
+	// First pull: the QSO is not sent; it is queued and decided.
+	body = "<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<QSL_SENT:1>N<EOR>\n"
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL1AB", 5)
+	key := qsos[0].QSLKey
+	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueDecide(key, "D", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second pull: Clublog now says QSL_SENT=Y.
+	ch, unsub := broker.Subscribe()
+	defer unsub()
+	body = "<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<QSL_SENT:1>Y<QSLSDATE:8>20240110<EOR>\n"
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	it, _ := st.QueueGet(key)
+	if it.Status != "sent" {
+		t.Fatalf("item sent elsewhere was not closed: %+v", it)
+	}
+	if q, _ := st.GetQSO(key); q.QSLSentLocal.Valid {
+		t.Fatalf("closing must not create local sent state to push: %+v", q.QSLSentLocal)
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("nothing to push after closing: %d", len(pend))
+	}
+	select {
+	case ev := <-ch:
+		if ev.Type != "queue_changed" || !strings.Contains(ev.Data, `"to":"sent"`) {
+			t.Fatalf("event = %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no queue_changed event for the closed item")
+	}
+}
+
+// TestPullEnqueuesAndAnnounces: pulled QSOs that qualify enter the decision
+// queue (respecting the since cutoff) and open windows are told.
+func TestPullEnqueuesAndAnnounces(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	body := "<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<EOR>\n" +
+		"<QSO_DATE:8>20240701<TIME_ON:6>120000<CALL:5>DL2CD<BAND:3>40m<MODE:2>CW<EOR>\n"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/getadif.php", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cl := clublog.New("u", "p", "DL9ET", "k")
+	cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+	broker := events.New()
+	ch, unsub := broker.Subscribe()
+	defer unsub()
+	o := &Orchestrator{Store: st, Clublog: cl, Broker: broker, Rules: &qualify.Rules{Since: "20240601"}}
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	queued, _ := st.QueueList("queued")
+	if len(queued) != 1 || !strings.HasPrefix(queued[0].QSLKey, "DL2CD|") {
+		t.Fatalf("queued = %v, want only the QSO after the cutoff", queued)
+	}
+	select {
+	case ev := <-ch:
+		if ev.Type != "queue_changed" || !strings.Contains(ev.Data, `"to":"queued"`) || !strings.Contains(ev.Data, "DL2CD") {
+			t.Fatalf("event = %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no queue_changed event for the enqueued QSO")
 	}
 }
