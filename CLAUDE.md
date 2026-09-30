@@ -58,9 +58,9 @@ On Windows, install or bundle SumatraPDF under `third_party/sumatrapdf/` for pri
 Two feeds populate the store:
 
 - **Primary feed:** Log4OM UDP ADIF datagrams on `udp.listen` (`127.0.0.1:1273` by default). `internal/udplistener` parses each datagram and upserts it into the store in a sub-second path. New QSOs are auto-enqueued by `internal/qualify` and published as `new_qso` events on the in-process event broker.
-- **Reconciliation feed:** Clublog pull via `internal/clublog` and `internal/sync`, run in a config-gated background loop (`clublog.pull_interval` > 0; `sync.Loop`) plus manual "Pull from Clublog" / "Push back to Clublog" buttons. The orchestrator fetches the full ADIF log, diffs/upserts using a SHA-256 hash of the canonical ADIF record, then runs the qualifier to enqueue newly eligible QSOs. Push-back runs on `clublog.push_interval` (default off) or the button, and uploads `QSL_SENT=Y` + `QSL_SENT_AS=<method>` from the local columns.
+- **Reconciliation feed:** Clublog pull via `internal/clublog` and `internal/sync`, run in a config-gated background loop (`clublog.pull_interval` > 0; `sync.Loop`) plus manual "Pull from Clublog" / "Push back to Clublog" buttons. The orchestrator fetches the full ADIF log, diffs/upserts using a SHA-256 hash of the canonical ADIF record, then runs the qualifier to enqueue newly eligible QSOs. Push-back runs on `clublog.push_interval` (default off) or the button, and uploads `QSL_SENT=Y` plus `QSL_SENT_VIA=<B|D>` (or `QSL_VIA=<manager>` for a manager card; ADIF marks `QSL_SENT_VIA=M` import-only) from the local columns. A pull also closes open queue items whose QSO Clublog now reports as sent.
 
-The web UI (`internal/web`) consumes from the store and the event broker. The queue page subscribes to `/events` (SSE) so new QSOs appear without refresh.
+The web UI (`internal/web`) consumes from the store and the event broker. Every card move publishes `queue_changed` ({key,to}) on the broker; `/events` (SSE) carries it (plus `station_updated`) to `static/live.js`, which keeps the queue lists, card views and nav badges current without refresh.
 
 ### Store and local state
 
@@ -68,22 +68,30 @@ The web UI (`internal/web`) consumes from the store and the event broker. The qu
 
 QSOs are keyed by `QSLKey`, formatted as `CALL|YYYYMMDD|HHMMSS|BAND`.
 
+The card lifecycle lives in `qsl_work_queue.status`, moved only by guarded store transitions (`QueueDecide/Written/Printed/Decline/Back/Reopen/CloseSentElsewhere`: one transaction each for queue row + `qsos` columns + `qsl_events` row, `ErrConflict` -> HTTP 409 for stale pages):
+
+    queued --decide B/D/M--> decided --print/written--> sent      (queued --written--> sent, method W)
+    queued/decided --none--> skipped      decided --back--> queued      sent/skipped --reopen--> queued
+
+`queued` = the decision queue (`/queue`, `/decide`); `decided` = the work queue (`/work`, `/work/card`); `sent`/`skipped` = `/done`.
+
 Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`, and `qslrdate_local` columns. These track changes made inside qslotter that have not yet been pushed to Clublog. `PendingPushBack()` returns the divergent rows; `PushBack()` in `internal/sync` uploads them and `MarkPushed()` clears the divergence.
 
 ### Qualifier rules
 
-`internal/qualify.Rules` decides whether a QSO should enter the work queue. Rules are configured in `config.yaml` under `qualify`:
+`internal/qualify.Rules` decides whether a QSO enters the decision queue. Rules are configured in `config.yaml` under `qualify` (build them with `qualify.NewRules(cfg.Qualify, store)`):
 
-- `exclude_modes`: exact modes to skip.
-- Any mode starting with `FT`, `JS8`, `WSPR`, `MSK`, or `FST` is also skipped.
-- `first_contact_only`: only the first-ever QSO with a callsign is eligible.
-- `override_marker`: a substring (e.g. `QSL!`) in the QSO notes force-includes the QSO.
+- A QSO whose card already went out (Clublog `QSL_SENT=Y` or local) is never queued - checked first, before the override.
+- `override_marker`: a substring (e.g. `QSL!`) in the QSO notes force-includes the QSO despite mode, cutoff and first-contact rules; the reason is stored in `override_reason` and shown on the card.
+- `since`: only QSOs on/after this date are queued. Empty = the day qslotter first ran (`meta.first_run_date`), `all` = no cutoff.
+- `exclude_modes`: exact modes to skip; any mode starting with `FT`, `JS8`, `WSPR`, `MSK`, or `FST` is also skipped.
+- `first_contact_only` (default off): only the first-ever QSO with a callsign is eligible. Off by default: repeat contacts are queued and shown with their history.
 
-`EnqueueAll()` scans the full log and enqueues newly eligible QSOs, while preserving queue items the user has already acted on (`printed`, `sent`, `skipped`). The UDP path uses `EligibleForNewQSO()` with only the recent QSOs for the same call to avoid a full scan per datagram.
+`EnqueueAllKeys()` scans the full log and enqueues newly eligible QSOs. `Enqueue` never overwrites an existing item (`ON CONFLICT DO NOTHING`), so a recompute cannot reset a decision. The UDP path uses `EligibleForNewQSO()` with only the recent QSOs for the same call to avoid a full scan per datagram.
 
 ### QRZ station info
 
-`internal/qrz` calls the QRZ XML API. `internal/station.Refresher` caches results in the `station_info` table and publishes `station_updated` events so the queue page can refresh method/manager columns asynchronously.
+`internal/qrz` calls the QRZ XML API (bio HTML is stripped of style/script; "Not found" is an answer, not an error). `internal/station.Refresher` (always constructed; nil client until credentials exist, swapped live from `/settings`) caches results in the `station_info` table - including a 24 h negative entry for stations QRZ does not know - and publishes `station_updated` so open pages refresh asynchronously. Automatic lookups use `Get` (TTL, in-flight dedup, 2 min cooldown after a failure); only the Refresh button forces one. `internal/qsldetermine` turns the result into a *suggestion* (a callsign in `qslmgr` = manager; free text there is read for bureau/direct/eQSL keywords; QRZ flags are 1/0). Suggestions are shown tentatively and never acted on.
 
 ### PDF cards and printing
 
@@ -114,7 +122,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 
 - No Cursor rules (`.cursor/`, `.cursorrules`) or Copilot instructions (`.github/copilot-instructions.md`) were present.
 - The `card.template` config value is a path to a YAML template file; if empty or missing, the built-in default template is used.
-- Known deltas, by design until the v1.x roadmap in `docs/VISION.md` lands: none — the v1.x decision-first UI shipped 2026-09-29 (method chooser with suggestion preselect, Handwritten/None actions, `desired_method` wired end-to-end, compact + expanded modes, htmx vendored). Remaining roadmap: v1.y batch actions, v2 CouchDB/OCR/LLM gate.
-- Queue statuses are `queued/decided/printed/sent/skipped` (`overridden` appears in schema comments only). `decided` = method stamped in the Decide view, card still awaiting print/send; `EnqueueAll` skips QSOs already present in any queue status, so user decisions survive recompute.
-- ADIF push-back: `qsl_sent_local` always holds `Y` (the ADIF enum); the chosen send method is stored in `qsl_sent_method_local` and uploaded as `QSL_SENT_AS`. "None" is a decision (`desired_method=N`, queue status `skipped`), never a sent flag.
+- Roadmap status: see `docs/VISION.md` §7-8. The two-queue workflow (decision queue -> work queue -> done) was rebuilt 2026-09-30; remaining: v2 CouchDB/OCR/LLM gate, envelope/label printing, a bureau-parcel step. Unverified against the real services: whether Clublog `putlogs.php` accepts `QSL_SENT_VIA`/`QSL_VIA`, and whether a Clublog pull overwrites NAME/QTH/NOTES that arrived via UDP (both worth one manual check).
+- Queue statuses are `queued/decided/sent/skipped` (`printed` is legacy: migrated once at startup to `sent`, or back to `queued` when no route was recorded). `desired_method` holds the decision: `B/D/M`, `N` (no card), or `W` (written on the spot, no route). `EnqueueAll` skips QSOs already present in any status, so user decisions survive recompute.
+- ADIF push-back: `qsl_sent_local` always holds `Y`; the send route is `qsl_sent_method_local` (uploaded as `QSL_SENT_VIA` for B/D, `QSL_VIA` = manager for M, nothing for a written-on-the-spot card). "None" is a decision (`desired_method=N`, status `skipped`), never a sent flag.
 - `/settings` edits the config file on disk (YAML-node edit, comments preserved; empty password fields keep the stored secret), swaps the live config + QRZ client immediately (web + UDP listener share one `station.Refresher`), and runs credential checks inline. Startup also validates credentials and logs the outcome (`[startup] QRZ credentials: ...`) without exiting — a transient outage must not kill the feed.

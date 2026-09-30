@@ -60,20 +60,30 @@ where it stands today.
 
 ## 2. The core loop
 
-The daily workflow while operating:
+Two queues, one card moving through them (decided 2026-09-30):
 
-1. QSO logged in Log4OM → UDP datagram reaches qslotter within ~1 s → the QSO
-   appears in the decision queue (SSE, no refresh).
-2. The operator glances at the row: suggested QSL method with confidence and
-   reason, plus the QSO data needed to write a card by hand.
-3. The operator takes the decision: confirm the suggestion or override it
-   (direct / bureau / via manager / none). One or two clicks.
-4. Act now or later: **Print** (PDF to card stock), **Handwritten → Sent**, or
-   leave queued for a batch session.
-5. On the operator's schedule: **Push to Clublog** uploads QSL_SENT with the
-   chosen method.
+1. **QSO logged** in Log4OM -> UDP datagram reaches qslotter within ~1 s -> it
+   enters the **decision queue** (`/queue`, `/decide`; live via SSE). Digital
+   modes and already-carded QSOs stay out; repeat contacts come in, with their
+   history.
+2. **Decide.** The card view puts the research next to the decision: what QRZ
+   says about the station's QSL habits (qslmgr text, bio lines, flags), the
+   earlier QSOs with the station and what happened to their cards (sent,
+   received, LoTW), other cards still pending for the station. The operator
+   chooses **Bureau, Direct, Via manager, No card, or Written** (card filled in
+   on the spot: done, no route). One or two clicks or keys.
+3. **The decided card leaves the decision queue at once.** Bureau / Direct /
+   Via manager go to the **work queue** (`/work`, `/work/card`), one card at a
+   time: **Print** (PDF to card stock) or **Written**, whereupon the card is
+   *sent* and the next one appears. A printer error leaves it in the queue.
+4. **Done** (`/done`) lists finished cards; **Reopen** takes one back to the
+   decision queue (a misclick). **Back** takes a decided card back before it
+   is produced.
+5. On the operator's schedule: **Push to Clublog** uploads `QSL_SENT=Y` with
+   `QSL_SENT_VIA` (B/D) or `QSL_VIA` (manager); a Written-on-the-spot card
+   pushes `QSL_SENT=Y` alone.
 
-Steps 1–3 must work mid-pileup: sub-second, one small window, no full-log
+Steps 1-2 must work mid-pileup: sub-second, one small window, no full-log
 scans on the hot path.
 
 ## 3. Decision model: suggestion ≠ decision
@@ -101,9 +111,10 @@ Two parallel paths, equal citizens:
   right data in front of them — their name and address, date, call, band,
   mode, RST, my call, manager if via-manager — and record the outcome.
 
-Both end at queue status `sent` with the chosen method, and both push back the
-correct method to Clublog. Today "Mark Sent" always uploads bureau ("B"),
-independent of the card's actual route — a defect this vision retires.
+Both end at queue status `sent`, and both push back the correct route to
+Clublog (retired: the old "Mark Sent" that always uploaded bureau). "Written"
+from the decision queue is its own outcome - the card is done on the spot and
+no route is recorded.
 
 ## 5. UI strategy: one web UI, two modes
 
@@ -116,12 +127,14 @@ stays the only source of truth.
 
 - Small window (~480×640), dense rows, no nav chrome. Served as
   `/queue?compact=1`.
-- Live via SSE: `new_qso` inserts rows, `station_updated` refreshes method
-  columns in place (existing wiring, reused).
-- Row content: date, call, band, mode, RST, name, suggested method + route,
-  status.
-- Row actions: method chooser (suggestion preselected), Print, Handwritten →
-  Sent, Skip/None.
+- Live via SSE: `queue_changed` inserts and removes rows (a decided card
+  vanishes at once, in every open window), `station_updated` refreshes the
+  suggestion in place; nav badges follow.
+- Row content: date, call, band/mode, name, QRZ suggestion (dashed hint, never
+  a decision).
+- Row actions: **B / D / M (+ manager call) / none / Written** - deciding is
+  the only thing the decision queue offers; producing the card (Print) belongs
+  to the work queue.
 - Built for glance-ability during operation.
 
 ### Expanded mode — the deliberation surface
@@ -181,25 +194,38 @@ window is therefore *launched* at size, not resized afterwards:
 
 ## 7. Where we are today: gaps vs. this vision
 
-Status after the v1.x + shell + v1.y-loop implementation (2026-09-29):
+Status after the two-queue rebuild (2026-09-30). The previous version of this
+table (2026-09-29) marked the workflow "done" while `/decide` served a bare
+fragment (no htmx, so no button worked), list decisions never removed a card,
+no work queue existed and Print ended in a dead-end status. Those are fixed and
+covered by tests; the browser flow was walked end to end.
 
 | Operator requirement | Status | Evidence |
 |---|---|---|
-| Live queue from Log4OM UDP | **done** | `internal/udplistener` → auto-enqueue → SSE (`queue.html`) |
-| One-click "sent" for handwritten cards | **done** | `htmxQueueHandwrite` uses the recorded decision |
-| Per-card method decision (direct/bureau/none) | **done** | method chooser preselects the suggestion; `QueueSetMethod` persists; survives recompute |
-| Handwritten as option parallel to Print | **done** | `/queue/{key}/handwrite`, same `sent` semantics |
-| Compact decision window | **done** | `/queue?compact=1` + Edge `--app` launcher (`internal/tray`); htmx vendored |
-| Expanded QRZ-preference view | **done** | station page: confidence + reason + decision controls |
-| Queue rows carry handwriting-relevant QSO data | **done** | rows show name + RST (`qsos.name/qth` columns, ADIF-mapped); card gets name/QTH/my_name |
-| Tray-resident launcher | **done** | `internal/tray` (fyne.io/systray, `//go:build windows`), single-instance mutex, `server.tray`/`open_compact` config |
-| Background pull/push loop | **done** | `sync.Loop`, gated by `pull_interval`/`push_interval`; buttons retained |
+| Live decision queue from Log4OM UDP | **done** | `internal/udplistener` -> `qualify` -> `queue_changed` -> `static/live.js` |
+| Research next to the decision (QRZ preferences, bio lines, history, cards sent/received) | **done** | `researchFor` + `research.html`; `Store.CallHistory` (base-call aware) |
+| Decide Bureau / Direct / Via manager / No card / Written; decided card leaves the queue | **done** | `QueueDecide/Written/Decline` transitions; `TestListDecideLeavesQueue` |
+| Work queue: decided cards, one at a time, Print or Written, next appears | **done** | `/work`, `/work/card`; `QueuePrinted` only after a successful print |
+| Done view + undo (Back, Reopen) | **done** | `/done`, `QueueBack`, `QueueReopen` (warns if Clublog already has it) |
+| Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done** | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
+| Suggestions that mislead less | **done** | `qsldetermine`: callsign-only manager, free-text keywords, QRZ 1/0 flags, negations |
+| Compact decision window, tray launcher, background loop | **done** | unchanged from 2026-09-29 |
 
 Remaining gaps (v2 / later):
 
+- Envelope/label printing for direct cards; a "bureau parcel shipped" step;
+  one card covering several QSOs with a station (the research panel shows the
+  pending siblings).
+- Received card -> automatic reply entry in the decision queue.
+- Unverified against the real services: `putlogs.php` accepting
+  `QSL_SENT_VIA`/`QSL_VIA`; whether a Clublog pull overwrites NAME/QTH/NOTES
+  that arrived via UDP.
+- Windows: tray and SumatraPDF paths were not exercised in the rebuild;
+  macOS `lpstat -d` is parsed with an English-only string (a localized
+  system falls back to `lp -d ''`).
 - Windows exe icon/version embedding: config ready in `winres/winres.json`;
   the one-step `go run github.com/tc-hib/go-winres@latest make` is left to
-  the operator (writes `rsrc_windows_amd64.syso`, then builds link it).
+  the operator.
 - `qsl-eval`, `qsl-eval.jsonl`, and `ww` in the repo root are scratch output
   from the method-determination calibration effort; they are not shipped
   artifacts.
@@ -253,3 +279,20 @@ Remaining gaps (v2 / later):
   bureau push-back is retired.
 - **2026-09-29 — Print and Handwritten are parallel fulfillment paths,** both
   ending at status `sent` with the chosen method.
+- **2026-09-30 — Two queues, one lifecycle.** Decision queue (`queued`) ->
+  work queue (`decided`) -> done (`sent`/`skipped`). A decision removes the
+  card from the decision queue immediately; producing a card (Print/Written)
+  happens in the work queue. Replaces "decide and produce on the same row".
+- **2026-09-30 — "Written" is its own outcome.** A card filled in on the spot
+  is done: status `sent`, `desired_method=W`, `QSL_SENT=Y` without a route.
+- **2026-09-30 — Sent = card done.** Print success or Written marks the card
+  sent (and pending for push-back); no separate "mailed" step.
+- **2026-09-30 — Repeat contacts are shown, not filtered.** `first_contact_only`
+  defaults off; repeat contacts arrive with history badges. A `qualify.since`
+  cutoff (default: first run) keeps the first Clublog pull from flooding the
+  queue.
+- **2026-09-30 — Push-back speaks ADIF.** `QSL_SENT_VIA` for bureau/direct,
+  `QSL_VIA` for a manager (ADIF: `QSL_SENT_VIA=M` is import-only).
+- **2026-09-30 — Every card move is one guarded transition** (transaction +
+  `ErrConflict`), so stale pages and second windows cannot double-act.
+

@@ -39,8 +39,10 @@ card:
 
 qualify:
   exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
-  first_contact_only: true
-  override_marker: "QSL!"
+  first_contact_only: false   # false: repeat contacts enter the queue, shown with their history
+  override_marker: "QSL!"     # in a QSO's notes: force it into the queue (never if a card was already sent)
+  since: ""                   # only QSOs on/after this date enter the queue. "" = the day qslotter first
+                              # ran, YYYY-MM-DD = that day, "all" = import the whole Clublog backlog
 
 store:
   driver: sqlite        # v1 only supports sqlite; v2 will add couchdb

@@ -13,30 +13,36 @@ logbook's job.
 ## How it works
 
 1. **Ingest** — Log4OM broadcasts each new QSO over UDP; qslotter ingests it
-   within a second. An hourly Clublog pull mirrors the full log as a
-   reconciliation backstop.
-2. **Qualify** — configurable rules decide which QSOs are card-worthy: skip
-   FT\*/digital modes, first-contact-only, or force-include a memorable QSO
-   with a marker (`QSL!`) in the notes.
-3. **Decide** — QRZ data (structured fields + bio) drives a suggestion with
-   confidence and reasoning. You confirm with one click or one keystroke,
-   card by card.
-4. **Fulfil** — print the QSO data onto card stock using a configurable
-   template, or write the card by hand; both paths mark it sent with the
-   chosen method.
-5. **Reconcile** — push `QSL_SENT` (+ the method, as `QSL_SENT_AS`) back to
-   Clublog when you choose; received cards are logged the same way.
+   within a second. A Clublog pull mirrors the full log as a reconciliation
+   backstop; a card Clublog already shows as sent is closed, not duplicated.
+2. **Qualify** — QSOs enter the *decision queue* unless they are digital
+   (FT\*, JS8, ...), excluded by mode, older than the `qualify.since` cutoff, or
+   already carded. Repeat contacts enter too, shown with their history. A
+   marker (`QSL!`) in the notes force-includes a QSO.
+3. **Decide** (the decision queue) — each new QSO is presented with what helps
+   you decide: what QRZ says about the station's QSL habits (manager field, bio
+   lines, flags), earlier QSOs with the station, whether a card was already
+   sent or received. You choose **Bureau**, **Direct**, **Via manager**, **No
+   card**, or **Written** (card filled in on the spot: done, nothing to send).
+   A decided QSO leaves the decision queue at once.
+4. **Produce** (the work queue) — Bureau / Direct / Via-manager cards wait
+   here, one card at a time: print it (template on card stock) or write it by
+   hand. Done = sent; the next card appears.
+5. **Reconcile** — sent cards go back to Clublog (`QSL_SENT=Y` plus
+   `QSL_SENT_VIA` or `QSL_VIA`) when you choose; received cards are logged the
+   same way.
 
 ## The UI
 
-- **Decide** — one card at a time: the QSO as a card, the QRZ preference and
-  mailing address alongside, and rubber-stamp buttons for the decision.
-  Every decision advances to the next card. Keyboard: `b`/`d`/`m` stamp,
-  `n` no card, `p` print, `h` handwritten, `s` sent, `k` skip.
-- **Queue** — the full list with the same one-click stamps, batch actions,
-  and live updates: new QSOs appear without a refresh.
-- **Compact** — the same queue in a small always-open window (tray menu on
-  Windows).
+- **Queue** — the decision queue as a list (also the compact window: tray menu
+  on Windows). One-click stamps per row, batch actions, live updates.
+- **Decide** — the decision queue card by card with the full research panel.
+  Keyboard: `b` bureau, `d` direct, `m` via manager (type the call, Enter),
+  `n` no card, `w` written on the spot, arrows to browse.
+- **Work** / **Cards** — the work queue as a list grouped by route, and card by
+  card with the address to write to. Keyboard: `p` print, `w` written,
+  `u` back to the decision queue.
+- **Done** — finished cards, with Reopen for a misclick.
 - **Receive** — type a callsign, pick the QSOs, mark the card received.
 - **Settings** — edit QRZ/Clublog credentials live (with immediate
   validation) and your station identity for the cards.
@@ -66,9 +72,11 @@ hide the console with `-ldflags "-H windowsgui"`.
 
        ./qslotter -config config.yaml
 
-3. Click **Pull from Clublog** (or wait for the background pull), then
-   **Recompute queue** — your card-worthy QSOs appear. From then on, new
-   QSOs arrive on their own.
+3. Click **Pull from Clublog** (or wait for the background pull) to mirror
+   your log. Only QSOs from the day qslotter first ran enter the decision
+   queue; to work through older QSOs too, set `qualify.since` (a date, or
+   `all`) and press **Recompute queue**. From then on, new QSOs arrive on
+   their own.
 4. Wrong QRZ credentials? Fix them under **Settings** — changes apply
    immediately and are validated on the spot.
 
@@ -86,7 +94,7 @@ which is why it is the primary feed and Clublog is the backstop.
 
 ### Printing
 
-`Print` renders the card as a PDF from a YAML template (millimetre
+**Print** (work queue) renders the card as a PDF from a YAML template (millimetre
 coordinates, see `internal/template`) and sends it to the printer — on
 Windows through SumatraPDF's silent print, elsewhere through `lp`. Set
 `printer.name` to pin a printer; otherwise the system default is used.
