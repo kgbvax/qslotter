@@ -1,0 +1,24 @@
+{{define "receive_results.html"}}
+{{if .QSOs}}
+<table id="results-table">
+  <thead><tr><th>Mark</th><th>Date</th><th>Time</th><th>Band</th><th>Mode</th><th>RST Sent</th><th>QSL Sent</th></tr></thead>
+  <tbody>
+  {{range .QSOs}}
+    <tr>
+      <td><button hx-post="/receive/mark" hx-vals='{"key": "{{.QSLKey}}"}'
+                  hx-target="closest td" hx-swap="innerHTML"
+                  hx-trigger="click">Mark Rcvd</button></td>
+      <td>{{fmtDate .QSODate}}</td>
+      <td>{{fmtTime .TimeOn}}</td>
+      <td>{{.Band}}</td>
+      <td>{{.Mode}}</td>
+      <td>{{.RSTSent}}</td>
+      <td>{{.QSLSent}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No QSOs found with <b>{{.Call}}</b>.</p>
+{{end}}
+{{end}}

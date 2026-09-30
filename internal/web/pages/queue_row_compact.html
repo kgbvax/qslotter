@@ -1,0 +1,10 @@
+{{define "row_cells_compact"}}{{if .ShowCheckbox}}<td class="ck"><input type="checkbox" name="keys" value="{{.Item.QSLKey}}" title="Select for batch action"></td>{{end}}<td class="c-date">{{fmtDate .QSO.QSODate}}</td>
+<td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
+<td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
+<td class="c-name">{{.QSO.Name}}</td>
+<td class="c-method" title="{{if .Info}}{{.Info.QSLConfidence}} confidence: {{.Info.QSLReason}}{{end}}{{if .QSO}} | {{.QSO.RSTSent}}{{end}}">{{if .Chosen}}<b>{{.Chosen}}</b>{{else if .Suggested}}<span class="sug">{{.Suggested}}</span>{{else}}<span class="muted">?</span>{{end}}</td>
+{{template "row_actions" .}}{{end}}
+
+{{define "queue_row_compact.html"}}<tr id="row-{{.Item.QSLKey}}">
+  {{template "row_cells_compact" .}}
+</tr>{{end}}

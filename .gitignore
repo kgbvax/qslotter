@@ -1,0 +1,25 @@
+# Real configuration carries credentials - only the example is committed.
+config.yaml
+
+# Local state
+*.db
+*.db-shm
+*.db-wal
+boot.log
+*.pdf
+
+# Build output
+qslotter
+qslotter.exe
+qsl-eval
+rsrc_windows_*.syso
+
+# Scratch from the QSL-method calibration effort (see docs/VISION.md)
+qsl-eval.jsonl
+ww
+
+# Third-party bundled binaries (documented in README; download at deploy time)
+third_party/
+
+# Local Claude Code state
+.claude/

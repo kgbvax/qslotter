@@ -1,0 +1,89 @@
+{{define "queue.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - Send Queue</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+</head><body>
+<header class="site">
+  <h1>qslotter</h1>
+  <nav><a href="/log">Log</a> <a href="/queue">Queue</a> <a href="/decide">Decide</a> <a href="/receive">Receive</a> <a href="/settings">Settings</a></nav>
+</header>
+<main>
+  <h2>QSL Send Queue <small>(<span id="queue-count">{{len .Rows}}</span> items)</small></h2>
+  <div style="margin-bottom:8px">
+    <button hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">Recompute queue</button>
+    <span id="recompute-msg"></span>
+    <span class="muted">Method legend: B bureau · D direct · M manager · none = no card</span>
+  </div>
+  {{if not .Rows}}<p class="muted" id="empty-msg">Queue is empty. Eligible QSOs from the next Clublog pull or UDP feed will appear here.</p>{{end}}
+  <form method="post" action="/queue/batch">
+    <input type="hidden" name="compact" value="0">
+    <div class="batchbar">
+      <select name="action" title="Batch action">
+        <option value="sent">Mark sent (chosen method)</option>
+        <option value="handwrite">Written &rarr; sent</option>
+        <option value="none">None (no card)</option>
+        <option value="skip">Skip</option>
+      </select>
+      <button type="submit">Apply to selected</button>
+    </div>
+    <table id="queue-table">
+      <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Name</th><th>Method</th><th>Manager</th><th>Actions</th><th>Status</th></tr></thead>
+      <tbody id="queue-body">
+      {{range .Rows}}{{template "queue_row_full.html" .}}{{end}}
+      </tbody>
+    </table>
+  </form>
+</main>
+<script>
+// SSE subscription: when a new QSO arrives via UDP, fetch its row and insert
+// it at the top of the queue table. The "new_qso" event's data is the qsl_key.
+(function() {
+  var es = new EventSource('/events');
+  var empty = document.getElementById('empty-msg');
+  var body = document.getElementById('queue-body');
+  var countEl = document.getElementById('queue-count');
+  es.addEventListener('new_qso', function(e) {
+    var key = e.data;
+    if (empty) empty.remove();
+    // Avoid duplicates: if the row is already present, don't add again.
+    if (document.getElementById('row-' + CSS.escape(key))) return;
+    fetch('/queue/row?key=' + encodeURIComponent(key), {headers: {'HX-Request': 'true'}})
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        body.insertAdjacentHTML('afterbegin', html);
+        if (countEl) {
+          var n = body.querySelectorAll('tr').length;
+          countEl.textContent = n;
+        }
+        htmx.process(body); // wire up htmx handlers on the new row's buttons
+      });
+  });
+  // Reconnect on error (EventSource does this automatically, but log it).
+  es.onerror = function() { /* EventSource will auto-reconnect */ };
+
+  // station_updated: when QRZ lookup completes for a call, re-fetch any queue
+  // rows matching that call so the Method/Manager columns update in place.
+  es.addEventListener('station_updated', function(e) {
+    var call = e.data.toUpperCase();
+    body.querySelectorAll('tr').forEach(function(tr) {
+      var link = tr.querySelector('a[href^="/station/"]');
+      if (link && link.textContent.toUpperCase() === call) {
+        var key = tr.id.replace('row-', '');
+        fetch('/queue/row?key=' + encodeURIComponent(key), {headers: {'HX-Request': 'true'}})
+          .then(function(r) { return r.text(); })
+          .then(function(html) {
+            var tmp = document.createElement('tbody');
+            tmp.innerHTML = html;
+            var newRow = tmp.firstElementChild;
+            if (newRow) {
+              tr.replaceWith(newRow);
+              if (window.htmx) htmx.process(newRow);
+            }
+          });
+      }
+    });
+  });
+})();
+</script>
+</body></html>{{end}}

@@ -1,0 +1,21 @@
+{{define "receive.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - Receive</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+</head><body>
+<header class="site">
+  <h1>qslotter</h1>
+  <nav><a href="/log">Log</a> <a href="/queue">Queue</a> <a href="/decide">Decide</a> <a href="/receive">Receive</a> <a href="/settings">Settings</a></nav>
+</header>
+<main>
+  <h2>Receive QSL</h2>
+  <p>Enter DX callsign, pick the matching QSO(s), mark received.</p>
+  <form hx-post="/receive/lookup" hx-target="#results" hx-swap="innerHTML">
+    <input type="text" name="call" placeholder="Callsign" autofocus
+           style="text-transform:uppercase; font-size:18px; width:120px">
+    <button type="submit">Find</button>
+  </form>
+  <div id="results"></div>
+</main>
+</body></html>{{end}}

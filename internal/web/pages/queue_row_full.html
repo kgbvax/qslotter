@@ -1,0 +1,32 @@
+{{define "row_actions"}}<td class="actions">
+  <span class="stamps" role="group" aria-label="Record decision for {{.QSO.Call}}">
+    <button type="button" class="stamp b{{if eq .Chosen "B"}} stamped{{end}}" title="Bureau" aria-label="Bureau"
+            hx-post="/queue/method?method=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">B</button>
+    <button type="button" class="stamp d{{if eq .Chosen "D"}} stamped{{end}}" title="Direct" aria-label="Direct"
+            hx-post="/queue/method?method=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">D</button>
+    <button type="button" class="stamp m{{if eq .Chosen "M"}} stamped{{end}}" title="Via manager" aria-label="Via manager"
+            hx-post="/queue/method?method=M&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">M</button>
+    <button type="button" class="stamp none{{if eq .Chosen "N"}} stamped{{end}}" title="No card" aria-label="No card"
+            hx-post="/queue/none?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">&ndash;</button>
+  </span>
+  <span class="fulfil">
+    <button type="button" class="mini" hx-post="/queue/print?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML" title="Print card">Print</button>
+    <button type="button" class="mini" hx-post="/queue/handwrite?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML" title="Card written by hand - marks it sent">Written</button>
+    <button type="button" class="mini" hx-post="/queue/send?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML" title="Mark sent with the recorded method">Sent</button>
+    <button type="button" class="mini" hx-post="/queue/skip?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML" title="Skip">Skip</button>
+  </span>
+</td>{{end}}
+
+{{define "queue_row_full.html"}}<tr id="row-{{.Item.QSLKey}}">
+  {{if .ShowCheckbox}}<td class="ck"><input type="checkbox" name="keys" value="{{.Item.QSLKey}}" title="Select for batch action"></td>{{end}}
+  <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
+  <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
+  <td class="c-bm">{{.QSO.Band}}</td>
+  <td class="c-bm">{{.QSO.Mode}}</td>
+  <td class="c-bm">{{.QSO.RSTSent}}</td>
+  <td>{{.QSO.Name}}</td>
+  <td class="method" title="{{if .Info}}{{.Info.QSLConfidence}} confidence: {{.Info.QSLReason}}{{end}}">{{if .Chosen}}<b>{{.Chosen}}</b>{{else if .Suggested}}<span class="sug">{{.Suggested}}</span> <span class="badge">QRZ</span>{{else}}<span class="muted">?</span>{{end}}</td>
+  <td>{{if .Info}}{{.Info.QSLRoute}}{{end}}</td>
+  {{template "row_actions" .}}
+  <td class="status">{{.Item.Status}}</td>
+</tr>{{end}}

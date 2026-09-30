@@ -1,0 +1,33 @@
+{{define "work.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - Decide</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+</head><body>
+<header class="site">
+  <h1>qslotter</h1>
+  <nav><a href="/log">Log</a> <a href="/queue">Queue</a> <a href="/decide">Decide</a> <a href="/receive">Receive</a> <a href="/settings">Settings</a></nav>
+</header>
+<main>
+  <h2>Decide, card by card</h2>
+  {{template "decide_content.html" .}}
+</main>
+<script>
+// Keyboard: one key = one decision. b/d/m stamp the method, n declines,
+// p prints, h records a handwritten card, s marks sent, k skips. Every
+// action advances to the next card server-side.
+(function() {
+  var KEYS = { b: 'b', d: 'd', m: 'm', n: 'none',
+               p: 'print', h: 'handwrite', s: 'send', k: 'skip' };
+  document.addEventListener('keydown', function(ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    var t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    var act = KEYS[ev.key.toLowerCase()];
+    if (!act) return;
+    var btn = document.querySelector('#decide button[data-key="' + act + '"]');
+    if (btn) { ev.preventDefault(); btn.click(); }
+  });
+})();
+</script>
+</body></html>{{end}}

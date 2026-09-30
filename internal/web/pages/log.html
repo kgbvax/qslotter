@@ -1,0 +1,35 @@
+{{define "log.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+</head><body>
+<header class="site">
+  <h1>qslotter</h1>
+  <nav><a href="/log">Log</a> <a href="/queue">Queue</a> <a href="/decide">Decide</a> <a href="/receive">Receive</a> <a href="/settings">Settings</a></nav>
+  <div class="sync" id="sync">{{template "sync_status.html" .}}</div>
+</header>
+<main>
+  <h2>QSO Log <small>({{len .QSOs}} shown)</small></h2>
+  <button hx-post="/sync/pull" hx-target="#sync" hx-swap="innerHTML">Pull from Clublog</button>
+  <button hx-post="/sync/push" hx-target="#sync" hx-swap="innerHTML">Push back to Clublog</button>
+  <table>
+    <thead><tr><th>Date</th><th>Time</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>QSL Sent</th><th>QSL Rcvd</th><th>Notes</th></tr></thead>
+    <tbody>
+    {{range .QSOs}}
+      <tr>
+        <td>{{fmtDate .QSODate}}</td>
+        <td>{{fmtTime .TimeOn}}</td>
+        <td><a href="/station/{{.Call}}">{{.Call}}</a></td>
+        <td>{{.Band}}</td>
+        <td>{{.Mode}}</td>
+        <td>{{.RSTSent}}</td>
+        <td>{{.QSLSent}}</td>
+        <td>{{.QSLRcvd}}</td>
+        <td>{{.Notes}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</main>
+</body></html>{{end}}

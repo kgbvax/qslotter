@@ -1,0 +1,47 @@
+# qslotter - QSL card handling, DL9ET style
+#
+# Runtime configuration. Copy to config.yaml and edit.
+# Secrets can be sourced from environment variables via ${VAR}.
+
+server:
+  addr: 127.0.0.1:8473
+  tray: false          # Windows: system-tray icon with compact-queue/log/receive menu
+  open_compact: false  # open the compact queue window on startup
+
+station:
+  name: Ingo           # your name, printed on cards (my_name field)
+  qth: ""              # your QTH / address line (optional)
+
+udp:
+  listen: 127.0.0.1:1273    # Log4OM ADIF broadcast destination (see README)
+
+clublog:
+  email: dl9et@example.com
+  app_password: ${CLUBLOG_APP_PASSWORD}
+  call: DL9ET
+  api_key: ${CLUBLOG_API_KEY}
+  pull_interval: 1h          # background reconciliation pull; 0 or omitted = off
+  push_interval: 0           # background push-back of QSL state; 0 or omitted = off
+
+qrz:
+  username: dl9et
+  password: ${QRZ_PASSWORD}
+  agent: qslotter/1.0
+  cache_ttl: 168h
+
+printer:
+  name: ""              # empty = system default
+  command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
+  paper_size_mm: [100, 74]
+
+card:
+  template: default.yaml
+
+qualify:
+  exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
+  first_contact_only: true
+  override_marker: "QSL!"
+
+store:
+  driver: sqlite        # v1 only supports sqlite; v2 will add couchdb
+  path: qslotter.db

@@ -1,0 +1,51 @@
+{{define "decide_content.html"}}<div class="decide-wrap" id="decide">
+{{if not .Row}}
+  <div class="empty">
+    <p class="big">No cards waiting.</p>
+    <p>New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere.</p>
+    <p><a href="/queue">Back to the queue</a></p>
+  </div>
+{{else}}
+  <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a></p>
+  <article class="qslcard">
+    <div class="airmail"></div>
+    <p class="confirm">Confirming two-way QSO with</p>
+    <p class="call"><a href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a>{{if .Row.QSO.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{.Row.QSO.Name}}</span>{{end}}</p>
+    <div class="loggrid">
+      <div><span class="lbl">Date</span><span class="val">{{fmtDate .Row.QSO.QSODate}}</span></div>
+      <div><span class="lbl">UTC</span><span class="val">{{fmtTime .Row.QSO.TimeOn}}</span></div>
+      <div><span class="lbl">Band</span><span class="val">{{.Row.QSO.Band}}</span></div>
+      <div><span class="lbl">Mode</span><span class="val">{{.Row.QSO.Mode}}</span></div>
+      <div><span class="lbl">RST</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
+    </div>
+    {{if .Row.Info}}
+    <div class="pref">
+      <h4>Station preference</h4>
+      {{if .Row.Suggested}}<p>Suggests <b>{{.Row.Suggested}}</b>{{if .Row.Info.QSLRoute}} via {{.Row.Info.QSLRoute}}{{end}}{{if .Row.Info.QSLConfidence}} <span class="muted">({{.Row.Info.QSLConfidence}} confidence)</span>{{end}}</p>{{end}}
+      {{if .Row.Info.QSLReason}}<p class="why">{{.Row.Info.QSLReason}}</p>{{end}}
+      {{if or .Row.Info.Addr1 .Row.Info.Addr2 .Row.Info.Country}}
+      <address>{{if .Row.Info.Addr1}}{{.Row.Info.Addr1}}<br>{{end}}{{if .Row.Info.Addr2}}{{.Row.Info.Addr2}}<br>{{end}}{{if .Row.Info.State}}{{.Row.Info.State}} {{.Row.Info.Zip}}<br>{{end}}{{.Row.Info.Country}}</address>
+      {{end}}
+      <p class="flags">{{if .Row.Info.Email}}mail: {{.Row.Info.Email}} {{end}}eqsl: {{.Row.Info.EQSL}} lotw: {{.Row.Info.LoTW}} mqsl: {{.Row.Info.MQSL}}</p>
+    </div>
+    {{else}}
+    <div class="pref"><p class="why">No QRZ info yet - refresh from the station page if the row stays empty.</p></div>
+    {{end}}
+  </article>
+  <div class="decide-actions">
+    <span class="stamps" role="group" aria-label="Decision">
+      <button type="button" class="stamp b" data-key="b" title="Bureau  (b)" hx-post="/queue/method?method=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">B&uuml;ro</button>
+      <button type="button" class="stamp d" data-key="d" title="Direct  (d)" hx-post="/queue/method?method=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Direct</button>
+      <button type="button" class="stamp m" data-key="m" title="Via manager  (m)" hx-post="/queue/method?method=M&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Via</button>
+      <button type="button" class="stamp none" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">None</button>
+    </span>
+    <span class="fulfil">
+      <button type="button" class="mini" data-key="p" title="Print  (p)" hx-post="/queue/print?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Print</button>
+      <button type="button" class="mini" data-key="h" title="Written by hand, marks sent  (h)" hx-post="/queue/handwrite?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Written</button>
+      <button type="button" class="mini" data-key="s" title="Mark sent  (s)" hx-post="/queue/send?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Sent</button>
+      <button type="button" class="mini" data-key="k" title="Skip  (k)" hx-post="/queue/skip?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Skip</button>
+    </span>
+  </div>
+  <p class="muted legend">Keys: <kbd>b</kbd> <kbd>d</kbd> <kbd>e</kbd> <kbd>m</kbd> stamp · <kbd>n</kbd> no card · <kbd>p</kbd>rint · <kbd>h</kbd>andwritten · <kbd>s</kbd>ent · s<kbd>k</kbd>ip &mdash; each move goes to the next card.</p>
+{{end}}
+</div>{{end}}

@@ -1,0 +1,51 @@
+{{define "station.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - {{.Call}}</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+</head><body>
+<header class="site">
+  <h1>qslotter</h1>
+  <nav><a href="/log">Log</a> <a href="/queue">Queue</a> <a href="/decide">Decide</a> <a href="/receive">Receive</a> <a href="/settings">Settings</a></nav>
+</header>
+<main>
+  <h2>{{.Call}} <button hx-post="/station/refresh?call={{q .Call}}" hx-target="#station-info" hx-swap="outerHTML">Refresh from QRZ</button></h2>
+  {{template "station_info.html" .}}
+
+  {{if .Rows}}
+  <h3>Card decisions</h3>
+  <p class="muted">Record the QSL method (suggestion preselected), then Print, Written, or None. Choosing a method here applies to the card wherever you act on it.</p>
+  <table class="decision-table">
+    <thead><tr><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Name</th><th>Method</th><th>Manager</th><th>Actions</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .Rows}}{{template "queue_row_full.html" .}}{{end}}
+    </tbody>
+  </table>
+  {{end}}
+
+  {{if .Info}}
+  <h3>QSL preference reasoning</h3>
+  <p><b>Suggestion:</b> {{if .Info.QSLMethod}}{{.Info.QSLMethod}}{{if .Info.QSLRoute}} ({{.Info.QSLRoute}}){{end}}{{else if .Info.RefusePaper}}no paper{{else}}-{{end}}
+     · <b>Confidence:</b> {{if .Info.QSLConfidence}}{{.Info.QSLConfidence}}{{else}}-{{end}}</p>
+  <p class="muted">{{if .Info.QSLReason}}{{.Info.QSLReason}}{{end}}</p>
+  {{end}}
+
+  <h3>Recent QSOs</h3>
+  <table>
+    <thead><tr><th>Date</th><th>Time</th><th>Band</th><th>Mode</th><th>RST</th><th>QSL Sent</th><th>QSL Rcvd</th></tr></thead>
+    <tbody>
+    {{range .QSOs}}
+      <tr>
+        <td>{{fmtDate .QSODate}}</td>
+        <td>{{fmtTime .TimeOn}}</td>
+        <td>{{.Band}}</td>
+        <td>{{.Mode}}</td>
+        <td>{{.RSTSent}}</td>
+        <td>{{.QSLSent}}</td>
+        <td>{{.QSLRcvd}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</main>
+</body></html>{{end}}
