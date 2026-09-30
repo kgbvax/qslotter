@@ -5,18 +5,35 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
 	"github.com/dl9et/qslotter/internal/template"
 	"github.com/go-chi/chi/v5"
 )
+
+// The card lifecycle (queue status):
+//
+//	queued   new QSO, no decision yet          -> decision queue (/queue, /decide)
+//	decided  Bureau/Direct/Manager chosen, card not produced yet
+//	                                           -> work queue (/work, /work/card)
+//	sent     card produced (printed or written) -> /done; pushed to Clublog
+//	skipped  "no card" decision                -> /done
+//
+// Every move goes through one guarded store transition (store.Queue*), which
+// answers ErrConflict (HTTP 409) when the card is no longer where the page
+// thinks it is.
 
 // --- log page ---
 
@@ -35,20 +52,52 @@ func (s *Server) pageLog(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- queue page ---
+// --- queue rows ---
 
-// QueueRow is one row of the send-queue table: the queue item plus the QSO
-// and the cached station info behind the method suggestion.
+// QueueRow is one card: the queue item plus the QSO and the cached station
+// info behind the method suggestion.
 type QueueRow struct {
 	Item         *store.QueueItem
 	QSO          *store.QSO
 	Info         *store.StationInfo
-	Suggested    string // method suggestion from qsldetermine ("N" when paper refused)
-	Chosen       string // preselected in the chooser: user decision > suggestion
-	ShowCheckbox bool   // batch-selection checkbox (queue pages only)
+	Suggested    string // method suggestion from qsldetermine ("N" when paper refused); never a decision
+	Chosen       string // the operator's recorded decision (empty while undecided)
+	MgrPrefill   string // manager callsign offered next to the M button (a valid suggested route)
+	ShowCheckbox bool   // batch-selection checkbox (queue/work list pages only)
+
+	// Research, filled by researchFor for the card views only (lists stay light).
+	Research *Research
 }
 
-// suggestFor maps cached station info to the chooser's suggestion value.
+// Badge is one fact worth a glance next to the decision: a repeat contact, a
+// card already sent or received, LoTW confirmation...
+type Badge struct {
+	Kind string // "info", "sent", "rcvd", "warn"
+	Text string
+}
+
+// HistoryLine is one earlier QSO with the station, with the state of its card.
+type HistoryLine struct {
+	Date, Time, Call, Band, Mode string
+	Sent                         string // "sent 2024-03-02 via Bureau" / ""
+	Rcvd                         string // "received 2024-03-05" / ""
+	Queue                        string // where the card stands: "awaiting decision", "work queue", "no card", ""
+	LoTW                         bool
+}
+
+// Research is what the operator wants next to a decision: the station's own
+// QSL statements, the history with the station and what happened to its cards.
+type Research struct {
+	Badges     []Badge
+	History    []HistoryLine
+	Others     int    // other cards of this station awaiting a decision or production
+	BioExcerpt string // the QSL-relevant lines of the QRZ bio
+	QRZState   string // "off", "pending", "notfound", "ok"
+	QRZAge     string
+	WhyQueued  string // override reason, when a normally filtered QSO was forced in
+}
+
+// suggestFor maps cached station info to the suggestion value.
 func suggestFor(info *store.StationInfo) string {
 	if info == nil {
 		return ""
@@ -59,38 +108,46 @@ func suggestFor(info *store.StationInfo) string {
 	return info.QSLMethod
 }
 
-// chosenFor returns the method preselected in the chooser: the operator's
-// recorded decision wins over the suggestion.
-func chosenFor(item *store.QueueItem, info *store.StationInfo) string {
-	if item != nil && item.DesiredMethod != "" {
-		return item.DesiredMethod
-	}
-	return suggestFor(info)
-}
-
-// queueRowFor assembles the full row data for one queued QSO. Best-effort:
-// missing station info or queue item yields a row with empty suggestion. QSO
-// is nil when the QSO row is gone.
+// queueRowFor assembles the full row data for one QSO. Best-effort: missing
+// station info or queue item yields a row with empty suggestion. QSO is nil
+// when the QSO row is gone.
 func (s *Server) queueRowFor(key string) *QueueRow {
 	item, _ := s.store.QueueGet(key)
 	qso, _ := s.store.GetQSO(key)
 	var info *store.StationInfo
 	if qso != nil {
 		info, _ = s.store.GetStation(qso.Call)
-		// Best-effort refresh: if the station info is missing and a refresher
-		// is configured, trigger an async refresh. The row will be updated
-		// via the station_updated SSE event once the lookup completes.
-		if info == nil && s.refresher != nil {
-			go s.refresher.Refresh(context.Background(), qso.Call)
+		// Best-effort refresh: if the station info is missing or stale, look it
+		// up asynchronously (cache TTL, in-flight dedup and failure cooldown
+		// apply). The row is updated via the station_updated SSE event.
+		if s.refresher != nil && (info == nil || s.refresher.IsStale(info)) {
+			go s.refresher.Get(context.Background(), qso.Call)
 		}
 	}
 	row := &QueueRow{Item: item, QSO: qso, Info: info}
 	row.Suggested = suggestFor(info)
-	row.Chosen = chosenFor(item, info)
+	if item != nil {
+		row.Chosen = item.DesiredMethod
+		row.MgrPrefill = item.Manager
+	}
+	if row.MgrPrefill == "" && row.Suggested == "M" && info != nil && qsldetermine.LooksLikeCallsign(info.QSLRoute) {
+		row.MgrPrefill = strings.ToUpper(info.QSLRoute)
+	}
 	return row
 }
 
-// withCheckbox marks rows as batch-selectable (queue pages; the station page
+// rowsFor builds rows for the listed items, skipping those whose QSO is gone.
+func (s *Server) rowsFor(items []*store.QueueItem) []*QueueRow {
+	var rows []*QueueRow
+	for _, it := range items {
+		if row := s.queueRowFor(it.QSLKey); row.QSO != nil && row.Item != nil {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+// withCheckbox marks rows as batch-selectable (list pages; the station page
 // embeds the same row template without the checkbox).
 func withCheckbox(rows []*QueueRow) []*QueueRow {
 	for _, r := range rows {
@@ -99,64 +156,389 @@ func withCheckbox(rows []*QueueRow) []*QueueRow {
 	return rows
 }
 
-func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
-	queued, err := s.store.QueueByStatus("queued")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	decided, err := s.store.QueueByStatus("decided")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	items := append(queued, decided...)
-	var rows []*QueueRow
-	for _, it := range items {
-		row := s.queueRowFor(it.QSLKey)
-		if row.QSO == nil {
-			continue // QSO row gone; nothing to render
+// isFragmentRequest reports an htmx-driven request (swap target wants the
+// fragment, not the page shell).
+func isFragmentRequest(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
+// bioKeywordRe picks the bio lines that say something about QSL routes.
+var bioKeywordRe = regexp.MustCompile(`(?i)qsl|bureau|buro|b\x{fc}ro|direct|direkt|sae|irc|\$|\x{20ac}|eur|manager|via|lotw|eqsl|e-qsl|card|paper|postage|stamp`)
+
+// bioExcerpt returns up to six short QSL-relevant lines of a cleaned bio.
+func bioExcerpt(bio string) string {
+	var out []string
+	for _, ln := range strings.Split(bio, "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || !bioKeywordRe.MatchString(ln) {
+			continue
 		}
-		rows = append(rows, row)
+		if len(ln) > 220 {
+			ln = ln[:220] + "..."
+		}
+		out = append(out, ln)
+		if len(out) == 6 {
+			break
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// queueStateText spells out where an earlier QSO's card stands.
+func queueStateText(status, method, manager string) string {
+	switch status {
+	case "queued":
+		return "awaiting decision"
+	case "decided":
+		return "work queue: " + strings.ToLower(methodName(method))
+	case "skipped":
+		return "no card"
+	case "sent":
+		return ""
+	}
+	return ""
+}
+
+// researchFor gathers the research panel for one card: what QRZ says about the
+// station's QSL habits (already on the row), and what happened between the
+// operator and this station so far (earlier QSOs, cards sent/received).
+func (s *Server) researchFor(row *QueueRow) {
+	if row == nil || row.QSO == nil {
+		return
+	}
+	res := &Research{}
+	row.Research = res
+	if row.Item != nil {
+		res.WhyQueued = row.Item.OverrideReason
+	}
+
+	// QRZ state.
+	switch {
+	case row.Info != nil && row.Info.NotFound:
+		res.QRZState = "notfound"
+	case row.Info != nil:
+		res.QRZState = "ok"
+		res.QRZAge = since(row.Info.FetchedAt)
+	case s.refresher == nil || !s.refresher.Configured():
+		res.QRZState = "off"
+	default:
+		res.QRZState = "pending"
+	}
+	if row.Info != nil {
+		res.BioExcerpt = bioExcerpt(row.Info.BioText)
+	}
+
+	hist, err := s.store.CallHistory(row.QSO.Call, 12)
+	if err != nil {
+		return
+	}
+	var (
+		prior              int
+		sentBadge, rcvdBad *Badge
+		lotw               bool
+	)
+	for _, h := range hist {
+		q := h.QSO
+		if q.QSLKey == row.QSO.QSLKey {
+			continue
+		}
+		prior++
+		line := HistoryLine{Date: fmtDate(q.QSODate), Time: fmtTime(q.TimeOn), Call: q.Call, Band: q.Band, Mode: q.Mode,
+			LoTW: q.LoTWQSLRcvd == "Y", Queue: queueStateText(h.QueueStatus, h.DesiredMethod, h.Manager)}
+		if sent, method, date := q.EffectiveSent(); sent {
+			line.Sent = "sent"
+			if date != "" {
+				line.Sent += " " + fmtDate(date)
+			}
+			if method != "" {
+				line.Sent += " via " + methodName(method)
+			}
+			if sentBadge == nil {
+				sentBadge = &Badge{Kind: "sent", Text: "card already " + line.Sent}
+			}
+		}
+		if rcvd, date := q.EffectiveRcvd(); rcvd {
+			line.Rcvd = "received"
+			if date != "" {
+				line.Rcvd += " " + fmtDate(date)
+			}
+			if rcvdBad == nil {
+				rcvdBad = &Badge{Kind: "rcvd", Text: "their card " + line.Rcvd + " - a reply is due unless you already sent one"}
+			}
+		}
+		lotw = lotw || line.LoTW
+		if len(res.History) < 8 {
+			res.History = append(res.History, line)
+		}
+		if (h.QueueStatus == "queued" || h.QueueStatus == "decided") && h.QSO.QSLKey != row.QSO.QSLKey {
+			res.Others++
+		}
+	}
+	if prior == 0 {
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: "first QSO with this station"})
+	} else {
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: fmt.Sprintf("%d earlier QSO(s) with this station", prior)})
+	}
+	if sentBadge != nil {
+		res.Badges = append(res.Badges, *sentBadge)
+	}
+	if rcvdBad != nil {
+		res.Badges = append(res.Badges, *rcvdBad)
+	}
+	if lotw {
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: "LoTW confirmed"})
+	}
+	if res.Others > 0 {
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d other card(s) for this station still pending - one card could cover them", res.Others)})
+	}
+}
+
+// --- (a) decision queue: list ---
+
+func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.QueueList("queued")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	name := "queue.html"
 	if r.URL.Query().Get("compact") == "1" {
 		name = "queue_compact.html"
 	}
-	s.render(w, name, map[string]any{"Rows": withCheckbox(rows)})
+	s.render(w, name, map[string]any{
+		"Rows":   withCheckbox(s.rowsFor(items)),
+		"Done":   r.URL.Query().Get("done"),
+		"Failed": r.URL.Query().Get("failed"),
+	})
 }
 
-// --- decide view: one card at a time ---
+// htmxQueueRow renders a single decision-queue row (SSE-driven insert and
+// refresh). ?compact=1 renders the compact variant. Items no longer awaiting a
+// decision answer 204: nothing to insert.
+func (s *Server) htmxQueueRow(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.Error(w, "missing key", http.StatusBadRequest)
+		return
+	}
+	row := s.queueRowFor(key)
+	if row.QSO == nil {
+		http.Error(w, "QSO not found", http.StatusNotFound)
+		return
+	}
+	if row.Item == nil || row.Item.Status != "queued" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	name := "queue_row_full.html"
+	if r.URL.Query().Get("compact") == "1" {
+		name = "queue_row_compact.html"
+	}
+	row.ShowCheckbox = true
+	s.render(w, name, row)
+}
 
-// pageDecide renders the first queued card. Actions posted with work=1 land
-// back here, so every decision advances to the next card.
+// --- (a) decision queue: one card at a time ---
+
+// pageDecide renders the decide view. Browser navigations get the full page
+// (htmx, CSS and the keyboard handler live in its shell); htmx requests and
+// work=1 action responses get just the swappable card fragment, so every
+// decision advances to the next card.
 func (s *Server) pageDecide(w http.ResponseWriter, r *http.Request) {
-	s.renderWork(w, r)
+	s.renderDecideCard(w, r, !isFragmentRequest(r))
 }
 
-// renderWork renders the decide fragment with the first queued card (or the
-// empty state when nothing is queued).
+// renderWork answers a work=1 action with the next decision card.
 func (s *Server) renderWork(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.QueueByStatus("queued")
+	s.renderDecideCard(w, r, false)
+}
+
+// cardWindow picks the card to show from items: the one named by ?key= when
+// present (browsing), else the first. It also returns the neighbours for
+// prev/next links (wrapping), and the 1-based position.
+func cardWindow(items []*store.QueueItem, key string) (cur *store.QueueItem, prev, next string, pos int) {
+	if len(items) == 0 {
+		return nil, "", "", 0
+	}
+	i := 0
+	for j, it := range items {
+		if it.QSLKey == key {
+			i = j
+			break
+		}
+	}
+	if len(items) > 1 {
+		prev = items[(i+len(items)-1)%len(items)].QSLKey
+		next = items[(i+1)%len(items)].QSLKey
+	}
+	return items[i], prev, next, i + 1
+}
+
+func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPage bool) {
+	items, err := s.store.QueueList("queued")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data := map[string]any{"Pos": "", "Total": len(items)}
-	if len(items) > 0 {
-		row := s.queueRowFor(items[0].QSLKey)
-		if row.QSO != nil {
+	data := map[string]any{"Total": len(items)}
+	// ?key= selects a card only on GET (browsing); actions always advance.
+	want := ""
+	if r.Method == http.MethodGet {
+		want = r.URL.Query().Get("key")
+	}
+	if cur, prev, next, pos := cardWindow(items, want); cur != nil {
+		if row := s.queueRowFor(cur.QSLKey); row.QSO != nil {
+			s.researchFor(row)
 			data["Row"] = row
-			data["Pos"] = fmt.Sprintf("card 1 of %d", len(items))
+			data["Pos"] = fmt.Sprintf("card %d of %d", pos, len(items))
+			data["Prev"], data["Next"] = prev, next
 		}
+	}
+	if fullPage {
+		s.render(w, "decide.html", data)
+		return
 	}
 	s.render(w, "decide_content.html", data)
 }
 
-// workMode reports whether the request came from the decide view, in which
-// case actions respond with the next card instead of a table row.
-func workMode(r *http.Request) bool {
-	return r.FormValue("work") == "1"
+// --- (b) work queue ---
+
+// WorkGroup is one route's slice of the work queue.
+type WorkGroup struct {
+	Method string // B / D / M
+	Title  string
+	Rows   []*QueueRow
+}
+
+var workGroupOrder = []WorkGroup{
+	{Method: "D", Title: "Direct"},
+	{Method: "M", Title: "Via manager"},
+	{Method: "B", Title: "Bureau"},
+}
+
+// pageWork lists the decided cards awaiting production, grouped by route.
+func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.QueueList("decided")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows := withCheckbox(s.rowsFor(items))
+	var groups []WorkGroup
+	for _, g := range workGroupOrder {
+		for _, row := range rows {
+			if row.Item.DesiredMethod == g.Method {
+				g.Rows = append(g.Rows, row)
+			}
+		}
+		if g.Method == "B" { // bureau cards are sorted for the parcel: by call
+			sort.SliceStable(g.Rows, func(i, j int) bool { return g.Rows[i].QSO.Call < g.Rows[j].QSO.Call })
+		}
+		if len(g.Rows) > 0 {
+			groups = append(groups, g)
+		}
+	}
+	s.render(w, "worklist.html", map[string]any{
+		"Groups": groups, "Total": len(rows),
+		"Done": r.URL.Query().Get("done"), "Failed": r.URL.Query().Get("failed"),
+	})
+}
+
+// pageWorkCard shows one decided card at a time (?filter=B|D|M narrows it to
+// one route); Print/Written/Back answer with the next card.
+func (s *Server) pageWorkCard(w http.ResponseWriter, r *http.Request) {
+	s.renderWorkCard(w, r, !isFragmentRequest(r))
+}
+
+func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage bool) {
+	filter := strings.ToUpper(r.FormValue("filter"))
+	items, err := s.store.QueueList("decided")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if filter == "B" || filter == "D" || filter == "M" {
+		var kept []*store.QueueItem
+		for _, it := range items {
+			if it.DesiredMethod == filter {
+				kept = append(kept, it)
+			}
+		}
+		items = kept
+	} else {
+		filter = ""
+	}
+	data := map[string]any{"Total": len(items), "Filter": filter}
+	want := ""
+	if r.Method == http.MethodGet {
+		want = r.URL.Query().Get("key")
+	}
+	if cur, prev, next, pos := cardWindow(items, want); cur != nil {
+		if row := s.queueRowFor(cur.QSLKey); row.QSO != nil {
+			data["Row"] = row
+			data["Pos"] = fmt.Sprintf("card %d of %d", pos, len(items))
+			data["Prev"], data["Next"] = prev, next
+		}
+	}
+	if fullPage {
+		s.render(w, "workcard.html", data)
+		return
+	}
+	s.render(w, "workcard_content.html", data)
+}
+
+// --- done ---
+
+// DoneRow is one finished card with its outcome spelled out.
+type DoneRow struct {
+	Row     *QueueRow
+	Outcome string
+	When    string
+}
+
+func outcomeOf(it *store.QueueItem) string {
+	switch {
+	case it.Status == "skipped":
+		return "no card"
+	case it.DesiredMethod == "W":
+		return "written on the spot"
+	}
+	how := "written"
+	if it.PrintedAt.Valid {
+		how = "printed"
+	}
+	name := map[string]string{"B": "Bureau", "D": "Direct", "M": "via manager"}[it.DesiredMethod]
+	if name == "" {
+		name = "sent"
+	}
+	if it.DesiredMethod == "M" && it.Manager != "" {
+		name += " " + it.Manager
+	}
+	return name + ", " + how
+}
+
+// pageDone lists recently finished cards (sent, declined) with Reopen.
+func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.QueueList("sent", "skipped")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	shown := items[:min(len(items), 200)]
+	var done []DoneRow
+	for _, row := range s.rowsFor(shown) {
+		when := ""
+		if row.Item.SentAt.Valid {
+			when = row.Item.SentAt.String
+		}
+		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item), When: when})
+	}
+	s.render(w, "done.html", map[string]any{"Rows": done, "Total": len(items)})
+}
+
+// htmxNav renders the nav bar alone (badge counts), for live refresh.
+func (s *Server) htmxNav(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "nav", nil)
 }
 
 // --- station page ---
@@ -164,16 +546,17 @@ func workMode(r *http.Request) bool {
 func (s *Server) pageStation(w http.ResponseWriter, r *http.Request) {
 	// Route is /station/*: portable calls contain "/" (EA8/DL1ABC).
 	call := strings.ToUpper(strings.Trim(strings.TrimPrefix(r.URL.Path, "/station/"), "/"))
-	// Best-effort refresh: if the station info is missing or stale, refresh
-	// from QRZ before rendering. If QRZ isn't configured, show the cache.
+	// Best-effort: fill a missing or stale cache entry before rendering (the
+	// "Refresh from QRZ" button forces a lookup). If QRZ isn't configured, show
+	// the cache.
 	if s.refresher != nil {
-		_, _ = s.refresher.Refresh(r.Context(), call)
+		_, _ = s.refresher.Get(r.Context(), call)
 	}
 	info, _ := s.store.GetStation(call)
 	qsos, _ := s.store.RecentQSOsByCall(call, 20)
-	// Queued items for this call: the expanded (deliberation) view embeds the
-	// same decision controls as the queue rows.
-	queued, _ := s.store.QueueByStatus("queued")
+	// Cards awaiting a decision for this call: the expanded (deliberation)
+	// view embeds the same decision controls as the queue rows.
+	queued, _ := s.store.QueueList("queued")
 	var rows []*QueueRow
 	for _, it := range queued {
 		if strings.EqualFold(callFromKey(it.QSLKey), call) {
@@ -250,25 +633,180 @@ func (s *Server) htmxReceiveMark(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`<span class="ok">received</span>`))
 }
 
-// --- queue actions (htmx) ---
+// --- card actions (htmx) ---
 
-func (s *Server) htmxQueuePrint(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	qsos, _ := s.store.RecentQSOsByCall(callFromKey(key), 50)
-	var qso *store.QSO
-	for _, q := range qsos {
-		if q.QSLKey == key {
-			qso = q
-			break
-		}
+// viewMode is the surface an action came from, which decides what the
+// response swaps in.
+type viewMode int
+
+const (
+	viewRow    viewMode = iota // a table row: the card left the list, remove the row
+	viewDecide                 // the decide card view: answer with the next card
+	viewWork                   // the work card view: answer with the next work card
+)
+
+func viewOf(r *http.Request) viewMode {
+	switch {
+	case r.FormValue("work") == "1", r.FormValue("view") == "decide":
+		return viewDecide
+	case r.FormValue("view") == "work":
+		return viewWork
 	}
-	if qso == nil {
-		http.Error(w, "QSO not found", http.StatusNotFound)
+	return viewRow
+}
+
+// publishQueueChanged tells every open window that a card moved.
+func (s *Server) publishQueueChanged(key, to string) {
+	if s.broker != nil {
+		s.broker.Publish(events.QueueChanged(key, to))
+	}
+}
+
+// afterTransition answers a successful card move: tell other windows, then
+// swap in what the originating surface needs next.
+func (s *Server) afterTransition(w http.ResponseWriter, r *http.Request, key, to string) {
+	s.publishQueueChanged(key, to)
+	switch viewOf(r) {
+	case viewDecide:
+		s.renderWork(w, r)
+	case viewWork:
+		s.renderWorkCard(w, r, false)
+	default:
+		// Empty 200: htmx swaps the row out for nothing, i.e. removes it.
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// queueErr maps a store error to an HTTP answer; a conflict is a stale page.
+func (s *Server) queueErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrConflict) {
+		http.Error(w, "This card was already handled (stale page?) - reload the list.", http.StatusConflict)
 		return
 	}
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+// decideOne records a Bureau/Direct/Via-manager decision. Via manager needs
+// the manager's callsign: the form value, else a valid suggested route.
+func (s *Server) decideOne(key, method, managerInput string) error {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	manager := ""
+	switch method {
+	case "B", "D":
+	case "M":
+		manager = strings.ToUpper(strings.TrimSpace(managerInput))
+		if manager == "" {
+			manager = s.queueRowFor(key).MgrPrefill
+		}
+		if !qsldetermine.LooksLikeCallsign(manager) {
+			return errNeedManager
+		}
+	default:
+		return errBadMethod
+	}
+	return s.store.QueueDecide(key, method, manager)
+}
+
+var (
+	errNeedManager = errors.New("Via manager needs the manager's callsign - type it next to the M button.")
+	errBadMethod   = errors.New("method must be B, D or M (None = no card, Written = card written by hand)")
+)
+
+// htmxQueueDecide: Bureau / Direct / Via manager. The card leaves the decision
+// queue and enters the work queue.
+func (s *Server) htmxQueueDecide(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	if err := s.decideOne(key, r.FormValue("method"), r.FormValue("manager")); err != nil {
+		if errors.Is(err, errNeedManager) || errors.Is(err, errBadMethod) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.queueErr(w, err)
+		return
+	}
+	s.afterTransition(w, r, key, "decided")
+}
+
+// htmxQueueNone: the first-class "no paper card" decision.
+func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	if err := s.store.QueueDecline(key); err != nil {
+		s.queueErr(w, err)
+		return
+	}
+	s.afterTransition(w, r, key, "skipped")
+}
+
+// htmxQueueWritten: the card was filled in by hand. From the decision queue
+// it is its own outcome (no route); from the work queue it keeps the route.
+func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	if err := s.store.QueueWritten(key); err != nil {
+		s.queueErr(w, err)
+		return
+	}
+	s.afterTransition(w, r, key, "sent")
+}
+
+// htmxQueueBack takes a decided card back to the decision queue.
+func (s *Server) htmxQueueBack(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	if err := s.store.QueueBack(key); err != nil {
+		s.queueErr(w, err)
+		return
+	}
+	s.afterTransition(w, r, key, "queued")
+}
+
+// htmxQueueReopen puts a finished card back into the decision queue.
+func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	pushed, err := s.store.QueueReopen(key)
+	if err != nil {
+		s.queueErr(w, err)
+		return
+	}
+	if pushed {
+		w.Header().Set("HX-Trigger", `{"qslNotice":"Reopened. Clublog already has this card as sent; reopening does not undo that there."}`)
+	}
+	s.afterTransition(w, r, key, "queued")
+}
+
+// htmxWorkPrint renders and prints a decided card; only a successful print
+// completes it (a printer error leaves it in the work queue).
+func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
+	key := r.FormValue("key")
+	if err := s.printOne(key); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			s.queueErr(w, err)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.afterTransition(w, r, key, "sent")
+}
+
+// printOne prints the card for a decided QSO and marks it sent.
+func (s *Server) printOne(key string) error {
+	item, err := s.store.QueueGet(key)
+	if err != nil {
+		return err
+	}
+	if item == nil || item.Status != "decided" {
+		return store.ErrConflict
+	}
+	qso, err := s.store.GetQSO(key)
+	if err != nil {
+		return err
+	}
+	if qso == nil {
+		return fmt.Errorf("QSO not found")
+	}
+	cfg := s.config()
 	tmpl := template.Default()
-	if s.cfg.Card.Template != "" {
-		if t, err := template.Load(s.cfg.Card.Template); err == nil {
+	if cfg.Card.Template != "" {
+		if t, err := template.Load(cfg.Card.Template); err == nil {
 			tmpl = t
 		}
 	}
@@ -277,247 +815,74 @@ func (s *Server) htmxQueuePrint(w http.ResponseWriter, r *http.Request) {
 		QSODate: qso.QSODate, TimeOn: qso.TimeOn,
 		Band: qso.Band, Mode: qso.Mode,
 		RSTSent: qso.RSTSent, RSTRcvd: qso.RSTRcvd,
-		MyCall: s.cfg.Clublog.Call,
-		MyName: s.cfg.Station.Name,
+		MyCall: cfg.Clublog.Call,
+		MyName: cfg.Station.Name,
 	}
 	pdfPath := printer.TempPDFPath()
 	if err := printer.RenderPDF(pdfPath, tmpl, fields); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
-	err := s.printer.PrintPDF(pdfPath, s.cfg.Printer.Name, printer.Options{
-		PaperWMM: s.cfg.Printer.PaperSizeMM[0],
-		PaperHMM: s.cfg.Printer.PaperSizeMM[1],
+	if err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
+		PaperWMM: cfg.Printer.PaperSizeMM[0],
+		PaperHMM: cfg.Printer.PaperSizeMM[1],
 		Copies:   1,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	}); err != nil {
+		return err
 	}
-	_ = s.store.QueueSetStatus(key, "printed")
-	if workMode(r) {
-		s.renderWork(w, r)
-		return
-	}
-	s.render(w, "queue_row.html", map[string]any{"Key": key, "Status": "printed", "Msg": "sent to printer"})
+	return s.store.QueuePrinted(key)
 }
 
-func (s *Server) htmxQueueSkip(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	_ = s.store.QueueSetStatus(key, "skipped")
-	if workMode(r) {
-		s.renderWork(w, r)
-		return
-	}
-	s.render(w, "queue_row.html", map[string]any{"Key": key, "Status": "skipped", "Msg": "skipped"})
-}
-
-// htmxQueueMethod records the operator's method decision for a queued QSO.
-// Choosing "N" (none) is the first-class "no paper card" decision: it skips
-// the QSO with the decision recorded in the event log, and recompute will not
-// resurrect it.
-func (s *Server) htmxQueueMethod(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	method := strings.ToUpper(strings.TrimSpace(r.FormValue("method")))
-	switch method {
-	case "B", "D", "M":
-		manager := strings.ToUpper(strings.TrimSpace(r.FormValue("manager")))
-		if err := s.store.QueueSetMethod(key, method, manager); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if workMode(r) {
-			// A stamp is the decision: mark the card decided and advance to
-			// the next one. Decided cards stay visible in the queue list.
-			_ = s.store.QueueSetStatus(key, "decided")
-			s.renderWork(w, r)
-			return
-		}
-		s.renderQueueRow(w, r, key, "")
-	case "N":
-		if err := s.store.QueueSetMethod(key, "N", ""); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := s.store.QueueSetStatus(key, "skipped"); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = s.store.AppendEvent(&store.Event{
-			QSLKey: key, Direction: "sent", Method: "N",
-			Date: time.Now().UTC().Format("20060102"), Source: "manual",
-			Note: "decision: no paper QSL",
-		})
-		if workMode(r) {
-			s.renderWork(w, r)
-			return
-		}
-		s.render(w, "queue_row.html", map[string]any{"Key": key, "Status": "skipped", "Msg": "decision: no paper QSL"})
-	default:
-		http.Error(w, "method must be B, D, E, M or N", http.StatusBadRequest)
-	}
-}
-
-// htmxQueueNone is the one-click "no card" decision (same as choosing N in
-// the method chooser).
-func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	r.Form.Set("method", "N")
-	s.htmxQueueMethod(w, r)
-}
-
-// htmxQueueSend marks the card sent with the chosen method. Resolution order:
-// explicit form value > recorded decision (desired_method) > station
-// suggestion > bureau (legacy default). A resolved "N" is rejected: declining
-// a card is the None action, not a send.
-func (s *Server) htmxQueueSend(w http.ResponseWriter, r *http.Request) {
-	s.doQueueSend(w, r, "marked sent")
-}
-
-// htmxQueueHandwrite is the handwritten-card path: the operator wrote the card
-// by hand; record it as sent with the chosen method.
-func (s *Server) htmxQueueHandwrite(w http.ResponseWriter, r *http.Request) {
-	s.doQueueSend(w, r, "handwritten card marked sent")
-}
-
-// errDeclined marks a card the operator explicitly declined ("none"); batch
-// actions skip such rows instead of failing.
-var errDeclined = errors.New("card declined (none)")
-
-// sendOne marks one card sent with the resolved method (form value >
-// recorded decision > station suggestion > bureau). Returns the method used.
-func (s *Server) sendOne(key, formMethod string) (string, error) {
-	row := s.queueRowFor(key)
-	if row.QSO == nil {
-		return "", fmt.Errorf("QSO not found")
-	}
-	method := strings.ToUpper(strings.TrimSpace(formMethod))
-	if method == "" && row.Item != nil {
-		method = strings.ToUpper(row.Item.DesiredMethod)
-	}
-	// An explicit decline - in the form or recorded on the item - is never a
-	// send. Declining is the None action.
-	if method == "N" {
-		return "", errDeclined
-	}
-	if method == "" {
-		method = row.Suggested
-	}
-	if method == "N" {
-		return "", fmt.Errorf("station prefers no paper QSL - use None to decline the card")
-	}
-	if method == "" {
-		method = "B" // legacy default when nothing suggests otherwise
-	}
-	// Manager: keep the recorded decision; only fill it in when missing.
-	manager := ""
-	if row.Item != nil {
-		manager = row.Item.Manager
-	}
-	if method == "M" && manager == "" && row.Info != nil {
-		manager = row.Info.QSLRoute
-		_ = s.store.QueueSetMethod(key, "M", manager)
-	}
-	if err := s.store.SetQSLSentLocal(key, method); err != nil {
-		return "", err
-	}
-	if err := s.store.QueueSetStatus(key, "sent"); err != nil {
-		return "", err
-	}
-	note := ""
-	if method == "M" && manager != "" {
-		note = "via " + manager
-	}
-	_ = s.store.AppendEvent(&store.Event{
-		QSLKey: key, Direction: "sent", Method: method,
-		Date: time.Now().UTC().Format("20060102"), Source: "manual", Note: note,
-	})
-	return method, nil
-}
-
-func (s *Server) doQueueSend(w http.ResponseWriter, r *http.Request, verb string) {
-	key := r.FormValue("key")
-	method, err := s.sendOne(key, r.FormValue("method"))
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, errDeclined) {
-			http.Error(w, "this card was declined (none) - use None/skip, not Send", status)
-			return
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-	if workMode(r) {
-		s.renderWork(w, r)
-		return
-	}
-	s.render(w, "queue_row.html", map[string]any{
-		"Key": key, "Status": "sent",
-		"Msg": fmt.Sprintf("%s via %s (queued for push-back)", verb, method),
-	})
-}
-
-// batchQueue applies one action to every checked queue row and redirects back
-// to the queue page it came from. Declined ("none") cards are left untouched
-// by sent/handwrite batches.
+// batchQueue applies one action to every checked row of a list page and
+// redirects back with a done/failed count. list=work selects the work queue's
+// action set; the default is the decision queue's.
 func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("action")
+	list := r.FormValue("list")
 	keys := r.Form["keys"]
-	if action != "sent" && action != "handwrite" && action != "none" && action != "skip" {
-		http.Error(w, "action must be sent, handwrite, none or skip", http.StatusBadRequest)
-		return
-	}
-	for _, key := range keys {
-		switch action {
-		case "sent", "handwrite":
-			if _, err := s.sendOne(key, ""); err == nil {
-				// counted implicitly by the queue state after redirect
-			}
-		case "none":
-			_ = s.store.QueueSetMethod(key, "N", "")
-			_ = s.store.QueueSetStatus(key, "skipped")
-			_ = s.store.AppendEvent(&store.Event{
-				QSLKey: key, Direction: "sent", Method: "N",
-				Date: time.Now().UTC().Format("20060102"), Source: "manual",
-				Note: "decision: no paper QSL (batch)",
-			})
-		case "skip":
-			_ = s.store.QueueSetStatus(key, "skipped")
-		}
-	}
-	target := "/queue"
-	if r.FormValue("compact") == "1" {
-		target += "?compact=1"
-	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
-}
 
-// renderQueueRow re-renders the row fragment after a decision, in the variant
-// (full/compact) the client is using. htmx sends HX-Current-URL: the page the
-// action came from, which is how compact vs full is detected.
-func (s *Server) renderQueueRow(w http.ResponseWriter, r *http.Request, key, msg string) {
-	if msg != "" {
-		s.render(w, "queue_row.html", map[string]any{"Key": key, "Status": "", "Msg": msg})
+	var apply func(key string) (to string, err error)
+	switch {
+	case list != "work" && (action == "B" || action == "D"):
+		apply = func(k string) (string, error) { return "decided", s.decideOne(k, action, "") }
+	case action == "none":
+		apply = func(k string) (string, error) { return "skipped", s.store.QueueDecline(k) }
+	case action == "written":
+		apply = func(k string) (string, error) { return "sent", s.store.QueueWritten(k) }
+	case list == "work" && action == "print":
+		apply = func(k string) (string, error) { return "sent", s.printOne(k) }
+	case list == "work" && action == "back":
+		apply = func(k string) (string, error) { return "queued", s.store.QueueBack(k) }
+	default:
+		http.Error(w, "unknown batch action for this list", http.StatusBadRequest)
 		return
 	}
-	row := s.queueRowFor(key)
-	if row.QSO == nil {
-		// QSO gone (e.g. stale page): nothing useful to swap in.
-		w.WriteHeader(http.StatusNoContent)
-		return
+	done, failed := 0, 0
+	for _, key := range keys {
+		to, err := apply(key)
+		if err != nil {
+			failed++
+			continue
+		}
+		done++
+		s.publishQueueChanged(key, to)
 	}
-	name := "queue_row_full.html"
-	if strings.Contains(r.Header.Get("HX-Current-URL"), "compact=1") {
-		name = "queue_row_compact.html"
+
+	target := "/queue"
+	q := url.Values{"done": {fmt.Sprint(done)}, "failed": {fmt.Sprint(failed)}}
+	if list == "work" {
+		target = "/work"
+	} else if r.FormValue("compact") == "1" {
+		q.Set("compact", "1")
 	}
-	s.render(w, name, row)
+	http.Redirect(w, r, target+"?"+q.Encode(), http.StatusSeeOther)
 }
 
 // --- sync handlers ---
 
 func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
-	o := &sync.Orchestrator{Store: s.store, Clublog: clublog.New(s.cfg.Clublog.Email, s.cfg.Clublog.AppPassword,
-		s.cfg.Clublog.Call, s.cfg.Clublog.APIKey), Rules: s.rules}
+	cfg := s.config()
+	o := &sync.Orchestrator{Store: s.store, Clublog: clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
+		cfg.Clublog.Call, cfg.Clublog.APIKey), Rules: s.rules, Broker: s.broker}
 	_, _, err := o.PullAndUpsert()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -528,9 +893,10 @@ func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
+	cfg := s.config()
 	o := &sync.Orchestrator{Store: s.store,
-		Clublog: clublog.New(s.cfg.Clublog.Email, s.cfg.Clublog.AppPassword,
-			s.cfg.Clublog.Call, s.cfg.Clublog.APIKey)}
+		Clublog: clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
+			cfg.Clublog.Call, cfg.Clublog.APIKey)}
 	_, err := o.PushBack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -568,11 +934,15 @@ func (s *Server) htmxQueueRecompute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "qualifier rules not configured", http.StatusInternalServerError)
 		return
 	}
-	n, err := s.rules.EnqueueAll(s.store)
+	keys, err := s.rules.EnqueueAllKeys(s.store)
+	for _, k := range keys {
+		s.publishQueueChanged(k, "queued")
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	n := len(keys)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if n == 0 {
 		_, _ = w.Write([]byte(`<span class="muted">no new QSOs to enqueue</span>`))
@@ -584,8 +954,8 @@ func (s *Server) htmxQueueRecompute(w http.ResponseWriter, r *http.Request) {
 // --- SSE endpoint ---
 
 // sseEvents is a Server-Sent Events stream. Clients subscribe with
-// `new EventSource('/events')`. On each "new_qso" event from the broker, the
-// server writes an SSE message. The queue page listens and fetches the new row.
+// `new EventSource('/events')`. Events: "queue_changed" (a card moved; JSON
+// {key,to}), "station_updated" (QRZ lookup finished for a call), "new_qso".
 func (s *Server) sseEvents(w http.ResponseWriter, r *http.Request) {
 	if s.broker == nil {
 		http.Error(w, "event broker not configured", http.StatusServiceUnavailable)
@@ -618,32 +988,4 @@ func (s *Server) sseEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-}
-
-// htmxQueueRow renders a single queue row for the given QSO key. Used by the
-// queue page's SSE handler to fetch the new row HTML when a "new_qso" event
-// arrives. ?compact=1 renders the compact variant to match the compact page.
-func (s *Server) htmxQueueRow(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Query().Get("key")
-	if key == "" {
-		http.Error(w, "missing key", http.StatusBadRequest)
-		return
-	}
-	row := s.queueRowFor(key)
-	if row.QSO == nil {
-		http.Error(w, "QSO not found", http.StatusNotFound)
-		return
-	}
-	if row.Item == nil {
-		// The QSO exists but is not in the work queue (new_qso fires for every
-		// UDP-ingested QSO, eligible or not). Nothing to insert.
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	name := "queue_row_full.html"
-	if r.URL.Query().Get("compact") == "1" {
-		name = "queue_row_compact.html"
-	}
-	row.ShowCheckbox = true // rows fetched by the queue pages are batch-selectable
-	s.render(w, name, row)
 }

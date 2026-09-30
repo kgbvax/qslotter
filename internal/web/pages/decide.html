@@ -1,0 +1,37 @@
+{{define "decide.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - Decide</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+<script src="/static/live.js" defer></script>
+</head><body data-live="decide">
+<header class="site">
+  <h1>qslotter</h1>
+  {{template "nav" .}}
+</header>
+<main>
+  <h2>Decide, card by card</h2>
+  {{template "decide_content.html" .}}
+</main>
+<script>
+// Keyboard: one key = one decision. The pressed key selects the button whose
+// data-key matches (b/d bureau/direct, m via manager, n no card, w written,
+// arrows browse). A decision moves the card on and shows the next one.
+(function() {
+  document.addEventListener('keydown', function(ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
+    var t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    var k = ev.key.toLowerCase();
+    var btn = document.querySelector('#decide button[data-key="' + k + '"]');
+    if (!btn) return;
+    ev.preventDefault();
+    if (k === 'm') { // via manager needs a callsign: focus the field instead of clicking
+      var inp = document.querySelector('#decide .mgr-in');
+      if (inp && !inp.value.trim()) { inp.focus(); return; }
+    }
+    btn.click();
+  });
+})();
+</script>
+</body></html>{{end}}

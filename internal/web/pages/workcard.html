@@ -1,0 +1,29 @@
+{{define "workcard.html"}}<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>qslotter - Work cards</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/app.js"></script>
+<script src="/static/live.js" defer></script>
+</head><body data-live="workcard">
+<header class="site">
+  <h1>qslotter</h1>
+  {{template "nav" .}}
+</header>
+<main>
+  <h2>Work queue, card by card</h2>
+  {{template "workcard_content.html" .}}
+</main>
+<script>
+// Keyboard: p prints, w records a hand-written card, u sends the card back to
+// the decision queue, arrows browse. Each action shows the next card.
+(function() {
+  document.addEventListener('keydown', function(ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
+    var t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    var btn = document.querySelector('#workcard button[data-key="' + ev.key.toLowerCase() + '"]');
+    if (btn) { ev.preventDefault(); btn.click(); }
+  });
+})();
+</script>
+</body></html>{{end}}

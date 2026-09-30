@@ -1,12 +1,14 @@
-{{define "decide_content.html"}}<div class="decide-wrap" id="decide">
+{{define "decide_content.html"}}<div class="decide-wrap" id="decide"{{if .Row}} data-qslkey="{{.Row.Item.QSLKey}}" data-call="{{.Row.QSO.Call}}"{{end}}>
 {{if not .Row}}
   <div class="empty">
-    <p class="big">No cards waiting.</p>
+    <p class="big">No QSOs waiting for a decision.</p>
     <p>New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere.</p>
-    <p><a href="/queue">Back to the queue</a></p>
+    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{.Work}} decided card(s) are waiting to be produced &rarr;</a>{{else}}<a href="/queue">Back to the queue</a>{{end}}{{end}}</p>
   </div>
 {{else}}
-  <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a></p>
+  <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a>
+    {{if .Prev}}<button type="button" class="mini" data-key="arrowleft" title="Previous card  (&larr;)" hx-get="/decide?key={{q .Prev}}" hx-target="#decide" hx-swap="outerHTML">&lsaquo; prev</button>
+    <button type="button" class="mini" data-key="arrowright" title="Next card  (&rarr;)" hx-get="/decide?key={{q .Next}}" hx-target="#decide" hx-swap="outerHTML">next &rsaquo;</button>{{end}}</p>
   <article class="qslcard">
     <div class="airmail"></div>
     <p class="confirm">Confirming two-way QSO with</p>
@@ -18,34 +20,20 @@
       <div><span class="lbl">Mode</span><span class="val">{{.Row.QSO.Mode}}</span></div>
       <div><span class="lbl">RST</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
-    {{if .Row.Info}}
-    <div class="pref">
-      <h4>Station preference</h4>
-      {{if .Row.Suggested}}<p>Suggests <b>{{.Row.Suggested}}</b>{{if .Row.Info.QSLRoute}} via {{.Row.Info.QSLRoute}}{{end}}{{if .Row.Info.QSLConfidence}} <span class="muted">({{.Row.Info.QSLConfidence}} confidence)</span>{{end}}</p>{{end}}
-      {{if .Row.Info.QSLReason}}<p class="why">{{.Row.Info.QSLReason}}</p>{{end}}
-      {{if or .Row.Info.Addr1 .Row.Info.Addr2 .Row.Info.Country}}
-      <address>{{if .Row.Info.Addr1}}{{.Row.Info.Addr1}}<br>{{end}}{{if .Row.Info.Addr2}}{{.Row.Info.Addr2}}<br>{{end}}{{if .Row.Info.State}}{{.Row.Info.State}} {{.Row.Info.Zip}}<br>{{end}}{{.Row.Info.Country}}</address>
-      {{end}}
-      <p class="flags">{{if .Row.Info.Email}}mail: {{.Row.Info.Email}} {{end}}eqsl: {{.Row.Info.EQSL}} lotw: {{.Row.Info.LoTW}} mqsl: {{.Row.Info.MQSL}}</p>
-    </div>
-    {{else}}
-    <div class="pref"><p class="why">No QRZ info yet - refresh from the station page if the row stays empty.</p></div>
-    {{end}}
+    {{if or .Row.QSO.Freq .Row.QSO.RSTRcvd .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}freq {{.Row.QSO.Freq}} &middot; {{end}}{{if .Row.QSO.RSTRcvd}}RST rcvd {{.Row.QSO.RSTRcvd}}{{end}}{{if .Row.QSO.Notes}} &middot; notes: {{.Row.QSO.Notes}}{{end}}</p>{{end}}
+    {{template "research_panel" .Row}}
   </article>
   <div class="decide-actions">
     <span class="stamps" role="group" aria-label="Decision">
-      <button type="button" class="stamp b" data-key="b" title="Bureau  (b)" hx-post="/queue/method?method=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">B&uuml;ro</button>
-      <button type="button" class="stamp d" data-key="d" title="Direct  (d)" hx-post="/queue/method?method=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Direct</button>
-      <button type="button" class="stamp m" data-key="m" title="Via manager  (m)" hx-post="/queue/method?method=M&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Via</button>
-      <button type="button" class="stamp none" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">None</button>
+      <button type="button" class="stamp b{{if eq .Row.Suggested "B"}} suggested{{end}}" data-key="b" title="Bureau  (b)" hx-post="/queue/decide?method=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">B&uuml;ro</button>
+      <button type="button" class="stamp d{{if eq .Row.Suggested "D"}} suggested{{end}}" data-key="d" title="Direct  (d)" hx-post="/queue/decide?method=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Direct</button>
+      <span class="mgr"><button type="button" class="stamp m{{if eq .Row.Suggested "M"}} suggested{{end}}" data-key="m" title="Via manager - type the callsign, Enter  (m)" hx-post="/queue/decide?method=M&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-include="closest .mgr" hx-target="#decide" hx-swap="outerHTML">Via</button><input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="manager call" value="{{.Row.MgrPrefill}}" aria-label="Manager callsign" onkeydown="if(event.key==='Enter'){event.preventDefault();this.previousElementSibling.click()}else if(event.key==='Escape'){this.blur()}"></span>
+      <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">None</button>
     </span>
     <span class="fulfil">
-      <button type="button" class="mini" data-key="p" title="Print  (p)" hx-post="/queue/print?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Print</button>
-      <button type="button" class="mini" data-key="h" title="Written by hand, marks sent  (h)" hx-post="/queue/handwrite?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Written</button>
-      <button type="button" class="mini" data-key="s" title="Mark sent  (s)" hx-post="/queue/send?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Sent</button>
-      <button type="button" class="mini" data-key="k" title="Skip  (k)" hx-post="/queue/skip?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Skip</button>
+      <button type="button" class="mini" data-key="w" title="Card written by hand on the spot - done  (w)" hx-post="/queue/written?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Written</button>
     </span>
   </div>
-  <p class="muted legend">Keys: <kbd>b</kbd> <kbd>d</kbd> <kbd>e</kbd> <kbd>m</kbd> stamp · <kbd>n</kbd> no card · <kbd>p</kbd>rint · <kbd>h</kbd>andwritten · <kbd>s</kbd>ent · s<kbd>k</kbd>ip &mdash; each move goes to the next card.</p>
+  <p class="muted legend">Keys: <kbd>b</kbd> bureau &middot; <kbd>d</kbd> direct &middot; <kbd>m</kbd> via manager (type call, Enter) &middot; <kbd>n</kbd> no card &middot; <kbd>w</kbd> written on the spot &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; a decision moves the card to the work queue and shows the next one.</p>
 {{end}}
 </div>{{end}}

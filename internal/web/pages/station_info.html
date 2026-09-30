@@ -13,6 +13,6 @@
   <p class="muted">cached {{since .Info.FetchedAt}} ago</p>
 </div>
 {{else}}
-<p class="muted">No station info available for <b>{{.Call}}</b>. Check QRZ credentials in config.yaml.</p>
+<div class="station-info" id="station-info"><p class="muted">No station info available for <b>{{.Call}}</b>. Check QRZ credentials under Settings.</p></div>
 {{end}}
 {{end}}

@@ -69,7 +69,11 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	// Live-swap the QRZ client: the shared refresher serves both the web UI
 	// and the UDP listener's lookups.
 	if s.refresher != nil {
-		s.refresher.SetClient(qrz.New(newCfg.QRZ.Username, newCfg.QRZ.Password, newCfg.QRZ.Agent))
+		var qc *qrz.Client // nil (lookups are no-ops) until a username is set
+		if newCfg.QRZ.Username != "" {
+			qc = qrz.New(newCfg.QRZ.Username, newCfg.QRZ.Password, newCfg.QRZ.Agent)
+		}
+		s.refresher.SetClient(qc)
 	}
 
 	qrzStatus, clublogStatus := s.validateFn(newCfg)

@@ -3,82 +3,41 @@
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
-</head><body class="compact">
+<script src="/static/live.js" defer></script>
+</head><body class="compact" data-live="list">
 <main>
   <h2>Queue <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
-    <a href="/decide">Decide</a>
+    <a href="/decide">Decide</a> <a href="/work">Work</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">↻</button>
     <span id="recompute-msg"></span>
   </h2>
-  {{if not .Rows}}<p class="muted" id="empty-msg">Queue is empty.</p>{{end}}
-  <form method="post" action="/queue/batch">
+  {{if or .Done .Failed}}<p class="banner">{{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span>{{end}}</p>{{end}}
+  <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>Nothing waiting for a decision.</p>
+  <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="compact" value="1">
-    <div class="batchbar">
-      <select name="action">
-        <option value="sent">Sent</option>
-        <option value="handwrite">Written</option>
-        <option value="none">None</option>
-        <option value="skip">Skip</option>
-      </select>
-      <button type="submit" class="mini">Apply</button>
-    </div>
-    <table id="queue-table" class="compact">
-      <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band/Mode</th><th>Name</th><th>M</th><th>Actions</th></tr></thead>
-      <tbody id="queue-body">
-      {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
-      </tbody>
-    </table>
+    <select name="action">
+      <option value="B">Bureau</option>
+      <option value="D">Direct</option>
+      <option value="written">Written</option>
+      <option value="none">None</option>
+    </select>
+    <button type="submit" class="mini">Apply</button>
   </form>
-  <p class="muted legend">B bureau · D direct · M manager · none = no card</p>
+  <table id="queue-table" class="compact">
+    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band/Mode</th><th>Name</th><th title="QRZ suggestion">?</th><th>Decide</th></tr></thead>
+    <tbody id="queue-body">
+    {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
+    </tbody>
+  </table>
+  <p class="muted legend">B bureau · D direct · M via manager · &ndash; no card · Written = done on the spot</p>
 </main>
 <script>
-// Compact decision window: same SSE wiring as the full queue page, but rows
-// are fetched in the compact variant.
-(function() {
-  var es = new EventSource('/events');
-  var empty = document.getElementById('empty-msg');
-  var body = document.getElementById('queue-body');
-  var countEl = document.getElementById('queue-count');
-  es.addEventListener('new_qso', function(e) {
-    var key = e.data;
-    if (empty) empty.remove();
-    if (document.getElementById('row-' + CSS.escape(key))) return;
-    fetch('/queue/row?key=' + encodeURIComponent(key) + '&compact=1', {headers: {'HX-Request': 'true'}})
-      .then(function(r) { return r.text(); })
-      .then(function(html) {
-        body.insertAdjacentHTML('afterbegin', html);
-        if (countEl) countEl.textContent = body.querySelectorAll('tr').length;
-        htmx.process(body);
-      });
-  });
-  es.onerror = function() { /* EventSource auto-reconnects */ };
-  es.addEventListener('station_updated', function(e) {
-    var call = e.data.toUpperCase();
-    body.querySelectorAll('tr').forEach(function(tr) {
-      var link = tr.querySelector('a[href^="/station/"]');
-      if (link && link.textContent.toUpperCase() === call) {
-        var key = tr.id.replace('row-', '');
-        fetch('/queue/row?key=' + encodeURIComponent(key) + '&compact=1', {headers: {'HX-Request': 'true'}})
-          .then(function(r) { return r.text(); })
-          .then(function(html) {
-            var tmp = document.createElement('tbody');
-            tmp.innerHTML = html;
-            var newRow = tmp.firstElementChild;
-            if (newRow) {
-              tr.replaceWith(newRow);
-              if (window.htmx) htmx.process(newRow);
-            }
-          });
-      }
-    });
-  });
-  // In an app-mode window (launched with --app=...) the page may resize its
-  // own height to fit the content. No-op in normal tabs.
-  if (new URLSearchParams(location.search).get('app') === '1') {
-    var fit = function() { try { window.resizeTo(window.outerWidth, 90 + document.body.scrollHeight); } catch (e) {} };
-    window.addEventListener('resize', function() { setTimeout(fit, 50); });
-    setTimeout(fit, 200);
-  }
-})();
+// In an app-mode window (launched with --app=...) the page may resize its
+// own height to fit the content. No-op in normal tabs.
+if (new URLSearchParams(location.search).get('app') === '1') {
+  var fit = function() { try { window.resizeTo(window.outerWidth, 90 + document.body.scrollHeight); } catch (e) {} };
+  window.addEventListener('resize', function() { setTimeout(fit, 50); });
+  setTimeout(fit, 200);
+}
 </script>
 </body></html>{{end}}

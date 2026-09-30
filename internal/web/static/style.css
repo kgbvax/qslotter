@@ -235,3 +235,61 @@ body.compact .qslcard .call { font-size: 30px; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* --- queues: suggestion vs decision, manager field, work cards --- */
+
+/* a suggestion is a hint, never a decision: dashed outline, no fill */
+button.stamp.suggested { outline: 1.5px dashed var(--ink-soft); outline-offset: 2px; }
+.mgr { display: inline-flex; align-items: center; gap: 3px; }
+.mgr .mgr-in { width: 7ch; padding: 1px 4px; font: 500 12px 'IBM Plex Mono', monospace; text-transform: uppercase; }
+.decide-actions .mgr .mgr-in { width: 13ch; padding: 5px 8px; font-size: 13px; }
+body.compact .mgr .mgr-in { width: 6ch; font-size: 10.5px; padding: 0 3px; }
+
+header.site nav .cnt {
+  display: inline-block; min-width: 18px; text-align: center;
+  font: 600 11px 'IBM Plex Mono', monospace; color: var(--card); background: var(--red);
+  border-radius: 9px; padding: 0 5px; vertical-align: 1px;
+}
+header.site nav .pending { margin-left: 8px; font-size: 12px; color: var(--ink-soft); }
+
+.banner { border-left: 3px solid var(--ok); padding: 2px 10px; margin: 6px 0; }
+.grouphead { margin: 20px 0 2px; }
+.grouphead small { color: var(--ink-soft); font-weight: 400; }
+.grouphead .mini { font-size: 12.5px; margin-left: 8px; font-weight: 400; }
+
+.filters { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
+.filters a { margin-right: 10px; }
+.filters a.on { color: var(--ink); font-weight: 700; text-decoration: none; border-bottom: 2px solid var(--ink); }
+
+.route { margin: 0 0 8px; font: 700 13px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; }
+.route .routename { display: inline-block; border: 2px solid currentColor; border-radius: 3px; padding: 1px 10px; transform: rotate(-1.4deg); }
+.route.r-B { color: var(--blue); }
+.route.r-D { color: var(--red); }
+.route.r-M { color: var(--ink); }
+
+/* --- research panel on the decision card --- */
+
+.qsoextra { font: 400 12.5px 'IBM Plex Mono', monospace; color: var(--ink-soft); margin: 0 0 8px; }
+.badges { margin: 4px 0 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: 500 12px 'Schibsted Grotesk', sans-serif; padding: 1px 9px; border-radius: 10px;
+  border: 1px solid var(--ink-soft); color: var(--ink); background: var(--card);
+}
+.chip.sent { border-color: var(--blue); color: var(--blue); }
+.chip.rcvd { border-color: var(--red); color: var(--red); font-weight: 700; }
+.chip.warn { border-style: dashed; }
+.why-queued { font-size: 12.5px; color: var(--red); margin: 4px 0; }
+.qrzstate { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.qrzstate.q-off, .qrzstate.q-notfound { color: var(--red); }
+.sugline .tentative { border-bottom: 1.5px dashed var(--ink-soft); }
+.pref code { font: 400 12px 'IBM Plex Mono', monospace; background: var(--paper-deep); padding: 0 4px; }
+pre.bio {
+  font: 400 12.5px/1.45 'IBM Plex Mono', monospace; white-space: pre-wrap;
+  background: var(--paper-deep); padding: 6px 10px; margin: 6px 0; border-radius: 2px;
+  max-height: 14em; overflow: auto;
+}
+details.fullbio summary { font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.histhead { margin: 14px 0 2px; font-size: 13px; color: var(--ink-soft); font-weight: 500; }
+table.hist { font-size: 12.5px; margin-top: 2px; }
+table.hist td, table.hist th { padding: 2px 10px 2px 0; }
+table.hist td { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }

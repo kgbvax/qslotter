@@ -1,0 +1,27 @@
+{{define "research_panel"}}{{$row := .}}
+{{with .Research}}
+  {{if .WhyQueued}}<p class="why-queued">Queued because: {{.WhyQueued}}</p>{{end}}
+  <p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{.Text}}</span> {{end}}</p>
+{{end}}
+<div class="pref">
+  <h4>What QRZ says{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}QRZ lookups are off - add credentials under Settings{{else if eq .QRZState "pending"}}looking up...{{else if eq .QRZState "notfound"}}station not on QRZ{{else}}cached {{.QRZAge}} ago{{end}}</span>{{end}}</h4>
+  {{if and .Info (not .Info.NotFound)}}
+    {{if .Suggested}}<p class="sugline">Suggests <b class="tentative">{{methodName .Suggested}}</b>{{if .MgrPrefill}} {{.MgrPrefill}}{{end}}{{if .Info.QSLConfidence}} <span class="muted">({{.Info.QSLConfidence}} confidence)</span>{{end}} <span class="muted">- a hint, not a decision</span></p>{{end}}
+    {{if .Info.QSLReason}}<p class="why">{{.Info.QSLReason}}</p>{{end}}
+    {{if .Info.QSLMgr}}<p class="why">QSL manager field: <code>{{.Info.QSLMgr}}</code></p>{{end}}
+    <p class="flags">paper (mQSL): {{yn .Info.MQSL}} &middot; LoTW: {{yn .Info.LoTW}} &middot; eQSL: {{yn .Info.EQSL}}{{if .Info.Email}} &middot; mail: {{.Info.Email}}{{end}}</p>
+    {{with $row.Research}}{{if .BioExcerpt}}<pre class="bio">{{.BioExcerpt}}</pre>{{end}}{{end}}
+    {{if .Info.BioText}}<details class="fullbio"><summary>full bio</summary><pre class="bio">{{.Info.BioText}}</pre></details>{{end}}
+    {{if or .Info.Addr1 .Info.Addr2 .Info.Country}}
+    <address>{{if or .Info.Name .QSO.Name}}{{if .Info.Name}}{{.Info.Name}}{{else}}{{.QSO.Name}}{{end}}<br>{{end}}{{if .Info.Attn}}{{.Info.Attn}}<br>{{end}}{{if .Info.Addr1}}{{.Info.Addr1}}<br>{{end}}{{if .Info.Addr2}}{{.Info.Addr2}}<br>{{end}}{{if or .Info.State .Info.Zip}}{{.Info.State}} {{.Info.Zip}}<br>{{end}}{{.Info.Country}}</address>
+    {{end}}
+  {{end}}
+</div>
+{{with .Research}}{{if .History}}
+<h4 class="histhead">Earlier QSOs with this station</h4>
+<table class="hist">
+  <thead><tr><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>Your card</th><th>Their card</th><th>Now</th></tr></thead>
+  <tbody>{{range .History}}<tr><td>{{.Date}}</td><td>{{.Time}}</td><td>{{.Call}}</td><td>{{.Band}}</td><td>{{.Mode}}</td><td>{{.Sent}}</td><td>{{.Rcvd}}{{if .LoTW}} LoTW{{end}}</td><td>{{.Queue}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}{{end}}
+{{end}}

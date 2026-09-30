@@ -59,22 +59,8 @@ func (s *Server) config() *config.Config {
 // nil when QRZ is not configured. cfgPath is the config file the settings
 // page edits; it may be empty (settings editing disabled).
 func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath string, refresher *station.Refresher) (*Server, error) {
-	rules := &qualify.Rules{
-		ExcludeModes:     cfg.Qualify.ExcludeModes,
-		FirstContactOnly: cfg.Qualify.FirstContactOnly,
-		OverrideMarker:   cfg.Qualify.OverrideMarker,
-	}
-	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"fmtDate": fmtDate,
-		"fmtTime": fmtTime,
-		"upper":   strings.ToUpper,
-		"since":   since,
-		"q":       url.QueryEscape,
-	}).ParseFS(pagesFS, "pages/*.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
-	}
-	return &Server{
+	rules := qualify.NewRules(cfg.Qualify, st)
+	srv := &Server{
 		cfg:        cfg,
 		cfgPath:    cfgPath,
 		store:      st,
@@ -82,32 +68,82 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		rules:      rules,
 		refresher:  refresher,
 		printer:    printer.New(),
-		tmpl:       tmpl,
 		validateFn: validateCredentials,
-	}, nil
+	}
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"fmtDate":    fmtDate,
+		"fmtTime":    fmtTime,
+		"upper":      strings.ToUpper,
+		"since":      since,
+		"q":          url.QueryEscape,
+		"counts":     srv.navCounts,
+		"methodName": methodName,
+		"yn":         yn,
+	}).ParseFS(pagesFS, "pages/*.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse templates: %w", err)
+	}
+	srv.tmpl = tmpl
+	return srv, nil
+}
+
+// NavCounts are the badges in the site nav.
+type NavCounts struct {
+	New, Work, Push int // awaiting a decision, awaiting production, not yet pushed to Clublog
+}
+
+// navCounts is called from the templates on every page render; a store error
+// just hides the badges.
+func (s *Server) navCounts() NavCounts {
+	q, d, p, err := s.store.QueueCounts()
+	if err != nil {
+		return NavCounts{}
+	}
+	return NavCounts{New: q, Work: d, Push: p}
+}
+
+// methodName spells out a decision/method letter.
+func methodName(m string) string {
+	switch strings.ToUpper(m) {
+	case "B":
+		return "Bureau"
+	case "D":
+		return "Direct"
+	case "M":
+		return "Via manager"
+	case "N":
+		return "No card"
+	case "W":
+		return "Written"
+	}
+	return m
 }
 
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", s.pageLog)
 	r.Get("/log", s.pageLog)
-	r.Get("/queue", s.pageQueue)
-	r.Get("/decide", s.pageDecide)
+	r.Get("/queue", s.pageQueue)   // (a) decision queue list
+	r.Get("/decide", s.pageDecide) // (a) decision queue, one card at a time
+	r.Get("/work", s.pageWork)     // (b) work queue list
+	r.Get("/work/card", s.pageWorkCard)
+	r.Get("/done", s.pageDone)
 	r.Get("/receive", s.pageReceive)
 	r.Post("/receive/lookup", s.htmxReceiveLookup)
 	r.Post("/receive/mark", s.htmxReceiveMark)
 	r.Get("/station/*", s.pageStation) // wildcard: portable calls contain "/" (EA8/DL1ABC)
 	r.Get("/settings", s.pageSettings)
 	r.Post("/settings/save", s.saveSettings)
-	// Queue actions take ?key=... (form/query value): keys contain "|" and
+	// Card actions take ?key=... (form/query value): keys contain "|" and
 	// portable calls contain "/", which would break {key} path segments.
-	r.Post("/queue/print", s.htmxQueuePrint)
-	r.Post("/queue/skip", s.htmxQueueSkip)
-	r.Post("/queue/send", s.htmxQueueSend)
-	r.Post("/queue/handwrite", s.htmxQueueHandwrite)
-	r.Post("/queue/method", s.htmxQueueMethod)
+	r.Post("/queue/decide", s.htmxQueueDecide)
 	r.Post("/queue/none", s.htmxQueueNone)
+	r.Post("/queue/written", s.htmxQueueWritten)
+	r.Post("/queue/back", s.htmxQueueBack)
+	r.Post("/queue/reopen", s.htmxQueueReopen)
 	r.Post("/queue/batch", s.batchQueue)
+	r.Post("/work/print", s.htmxWorkPrint)
+	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
@@ -144,6 +180,25 @@ func since(t string) string {
 	if err != nil {
 		return t
 	}
-	d := time.Since(ts).Round(time.Minute)
-	return d.String()
+	d := time.Since(ts)
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// yn renders a QRZ yes/no flag (QRZ sends 1/0) readably.
+func yn(v string) string {
+	switch strings.ToUpper(strings.TrimSpace(v)) {
+	case "1", "Y", "YES", "TRUE":
+		return "yes"
+	case "0", "N", "NO", "FALSE":
+		return "no"
+	}
+	return "?"
 }
