@@ -384,3 +384,93 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// scriptedQRZ serves a login plus lookups answered by lookup(); it counts the
+// lookups so tests can tell cache hits from real requests.
+func scriptedQRZ(t *testing.T, lookup func(w http.ResponseWriter, call string)) (*qrz.Client, *int) {
+	lookups := new(int)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := parseQRZQuery(r.URL.RawQuery)
+		switch {
+		case q["s"] == "":
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><QRZDatabase><Session><Key>k</Key></Session></QRZDatabase>`))
+		case q["callsign"] != "":
+			*lookups++
+			lookup(w, q["callsign"])
+		default: // bio
+			_, _ = w.Write([]byte(`<html><body>hello</body></html>`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl := qrz.New("u", "p", "qslotter/test")
+	cl.BaseURL = srv.URL + "/"
+	cl.HTTP = srv.Client()
+	return cl, lookups
+}
+
+func TestRefresherNotFoundIsCached(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	defer st.Close()
+	cl, lookups := scriptedQRZ(t, func(w http.ResponseWriter, call string) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><QRZDatabase><Session><Error>Not found: ` + call + `</Error></Session></QRZDatabase>`))
+	})
+	ref := New(st, cl, nil, 168*time.Hour)
+
+	si, err := ref.Get(t.Context(), "XX1XX")
+	if err != nil || si == nil || !si.NotFound {
+		t.Fatalf("Get for unknown call = %+v, %v; want a NotFound cache entry", si, err)
+	}
+	if _, err := ref.Get(t.Context(), "XX1XX"); err != nil || *lookups != 1 {
+		t.Fatalf("not-found must be cached: %d lookups, err %v", *lookups, err)
+	}
+	// ... but only for a day (the operator may register on QRZ later).
+	si.FetchedAt = time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	if err := st.PutStation(si); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ref.Get(t.Context(), "XX1XX"); err != nil || *lookups != 2 {
+		t.Fatalf("stale not-found entry must be looked up again: %d lookups, err %v", *lookups, err)
+	}
+}
+
+func TestRefresherFailureCooldown(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	defer st.Close()
+	cl, lookups := scriptedQRZ(t, func(w http.ResponseWriter, call string) {
+		_, _ = w.Write([]byte(`this is not xml`))
+	})
+	ref := New(st, cl, nil, time.Hour)
+
+	if _, err := ref.Get(t.Context(), "DL1ABC"); err == nil {
+		t.Fatal("a failing lookup with nothing cached must return the error")
+	}
+	// Within the cooldown the automatic path does not hit QRZ again ...
+	if si, err := ref.Get(t.Context(), "DL1ABC"); err != nil || si != nil || *lookups != 1 {
+		t.Fatalf("Get during cooldown = %v, %v with %d lookups; want nil, nil, 1", si, err, *lookups)
+	}
+	// ... while the explicit Refresh button always tries.
+	_, _ = ref.Refresh(t.Context(), "DL1ABC")
+	if *lookups != 2 {
+		t.Fatalf("forced Refresh lookups = %d, want 2", *lookups)
+	}
+}
+
+func TestRefresherStoresNameAndAttn(t *testing.T) {
+	st, _ := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	defer st.Close()
+	cl, _ := scriptedQRZ(t, func(w http.ResponseWriter, call string) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><QRZDatabase><Session><Key>k</Key></Session>
+<Callsign><call>DL1ABC</call><fname>Hans</fname><name>Meier</name><attn>c/o Radio Club</attn></Callsign></QRZDatabase>`))
+	})
+	ref := New(st, cl, nil, time.Hour)
+	si, err := ref.Get(t.Context(), "DL1ABC")
+	if err != nil || si == nil || si.Name != "Hans Meier" || si.Attn != "c/o Radio Club" || si.NotFound {
+		t.Fatalf("station = %+v, %v", si, err)
+	}
+	if !ref.Configured() {
+		t.Fatal("Configured() = false with a client set")
+	}
+	if New(st, nil, nil, time.Hour).Configured() {
+		t.Fatal("Configured() = true without a client")
+	}
+}

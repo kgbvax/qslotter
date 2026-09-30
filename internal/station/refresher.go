@@ -31,7 +31,16 @@ type Refresher struct {
 	// block on the per-callsign channel until the lookup completes.
 	mu       sync.Mutex
 	inFlight map[string]chan struct{}
+	failedAt map[string]time.Time // last failed lookup per call (cooldown)
 }
+
+// A station QRZ has no record of is remembered (negative cache) so pages don't
+// re-query it on every render, but only briefly: the operator may register later.
+const notFoundTTL = 24 * time.Hour
+
+// After a failed lookup (QRZ outage, bad credentials) the same call is not
+// retried by the automatic paths for a while; the Refresh button ignores this.
+const failCooldown = 2 * time.Minute
 
 // New returns a Refresher. qrz may be nil (Refresh becomes a no-op); this is
 // used during testing or when QRZ creds are not configured.
@@ -39,6 +48,7 @@ func New(st store.Store, q *qrz.Client, broker *events.Broker, cacheTTL time.Dur
 	return &Refresher{
 		store: st, qrz: q, broker: broker, cacheTTL: cacheTTL,
 		inFlight: make(map[string]chan struct{}),
+		failedAt: make(map[string]time.Time),
 	}
 }
 
@@ -57,6 +67,9 @@ func (r *Refresher) Get(ctx context.Context, callsign string) (*store.StationInf
 	}
 	if si != nil && !r.isStale(si) {
 		return si, nil
+	}
+	if r.recentlyFailed(callsign) {
+		return si, nil // stale cache (or nothing); don't hammer a failing QRZ
 	}
 	// Cache miss or stale. Refresh (deduped).
 	if err := r.refresh(ctx, callsign); err != nil {
@@ -81,15 +94,36 @@ func (r *Refresher) Refresh(ctx context.Context, callsign string) (*store.Statio
 	return r.store.GetStation(callsign)
 }
 
+// IsStale reports whether cached station info is due for a re-lookup.
+func (r *Refresher) IsStale(si *store.StationInfo) bool { return r.isStale(si) }
+
 func (r *Refresher) isStale(si *store.StationInfo) bool {
-	if r.cacheTTL == 0 {
+	ttl := r.cacheTTL
+	if si.NotFound && (ttl == 0 || ttl > notFoundTTL) {
+		ttl = notFoundTTL
+	}
+	if ttl == 0 {
 		return false
 	}
 	t, err := time.Parse(time.RFC3339, si.FetchedAt)
 	if err != nil {
 		return true
 	}
-	return time.Since(t) > r.cacheTTL
+	return time.Since(t) > ttl
+}
+
+func (r *Refresher) recentlyFailed(callsign string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.failedAt[callsign]
+	return ok && time.Since(t) < failCooldown
+}
+
+// Configured reports whether a QRZ client is set, i.e. lookups can happen.
+func (r *Refresher) Configured() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.qrz != nil
 }
 
 // SetClient swaps the QRZ client (after the credentials were changed in the
@@ -135,8 +169,14 @@ func (r *Refresher) refresh(ctx context.Context, callsign string) error {
 
 	cs, err := qrzClient.Lookup(callsign)
 	if err != nil {
+		r.mu.Lock()
+		r.failedAt[callsign] = time.Now()
+		r.mu.Unlock()
 		return err
 	}
+	r.mu.Lock()
+	delete(r.failedAt, callsign)
+	r.mu.Unlock()
 	var bio string
 	if cs != nil {
 		bio, err = qrzClient.FetchBio(callsign)
@@ -159,6 +199,9 @@ func (r *Refresher) refresh(ctx context.Context, callsign string) error {
 		Zip:           fieldStr(cs, func() string { return cs.Zip }),
 		Country:       fieldStr(cs, func() string { return cs.Country }),
 		DXCC:          fieldStr(cs, func() string { return cs.DXCC }),
+		Name:          fieldStr(cs, func() string { return strings.TrimSpace(cs.FName + " " + cs.Name) }),
+		Attn:          fieldStr(cs, func() string { return cs.Attn }),
+		NotFound:      cs == nil,
 		BioText:       bio,
 		QSLMethod:     res.Method,
 		QSLRoute:      res.Manager,

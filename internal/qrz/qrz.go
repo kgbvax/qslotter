@@ -9,9 +9,13 @@ package qrz
 import (
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,7 +26,9 @@ type Client struct {
 	BaseURL  string
 	HTTP     *http.Client
 
-	// Cached session state
+	// Cached session state. Lookups run from concurrent goroutines (web
+	// renders, the UDP feed), so mu guards these fields.
+	mu          sync.Mutex
 	sessionKey  string
 	countUsed   int
 	subExp      string
@@ -79,11 +85,13 @@ type Callsign struct {
 
 // ensureSession logs in if we don't have a usable session key.
 func (c *Client) ensureSession() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.sessionKey != "" && time.Since(c.lastLoginAt) < 30*time.Minute {
 		return nil
 	}
 	u := fmt.Sprintf("%s?username=%s;password=%s;agent=%s",
-		c.BaseURL, c.Username, c.Password, c.Agent)
+		c.BaseURL, url.QueryEscape(c.Username), url.QueryEscape(c.Password), url.QueryEscape(c.Agent))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
 		return fmt.Errorf("qrz login: %w", err)
@@ -112,12 +120,25 @@ func (c *Client) ensureSession() error {
 // settings page so bad credentials surface immediately.
 func (c *Client) CheckCredentials() error { return c.ensureSession() }
 
+// key returns the current session key.
+func (c *Client) key() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessionKey
+}
+
 // Lookup performs a callsign lookup and returns the structured station data.
+// A callsign QRZ has no record of yields (nil, nil): that is an answer, not an
+// error.
 func (c *Client) Lookup(callsign string) (*Callsign, error) {
+	return c.lookup(callsign, true)
+}
+
+func (c *Client) lookup(callsign string, retry bool) (*Callsign, error) {
 	if err := c.ensureSession(); err != nil {
 		return nil, err
 	}
-	u := fmt.Sprintf("%s?s=%s;callsign=%s", c.BaseURL, c.sessionKey, strings.ToUpper(callsign))
+	u := fmt.Sprintf("%s?s=%s;callsign=%s", c.BaseURL, c.key(), url.QueryEscape(strings.ToUpper(callsign)))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
 		return nil, fmt.Errorf("qrz lookup: %w", err)
@@ -129,14 +150,22 @@ func (c *Client) Lookup(callsign string) (*Callsign, error) {
 		return nil, fmt.Errorf("qrz lookup parse: %w", err)
 	}
 	if s.Session.Error != "" {
-		// Session expired: retry once
-		if strings.Contains(strings.ToLower(s.Session.Error), "session") {
+		msg := strings.ToLower(s.Session.Error)
+		// Session expired: log in again and retry once.
+		if retry && strings.Contains(msg, "session") {
+			c.mu.Lock()
 			c.sessionKey = ""
-			return c.Lookup(callsign)
+			c.mu.Unlock()
+			return c.lookup(callsign, false)
+		}
+		if strings.Contains(msg, "not found") {
+			return nil, nil // QRZ has no record: a definite answer, worth caching
 		}
 		return nil, fmt.Errorf("qrz lookup: %s", s.Session.Error)
 	}
+	c.mu.Lock()
 	c.countUsed = parseCount(s.Session.Count)
+	c.mu.Unlock()
 	if s.Callsign == nil {
 		return nil, nil
 	}
@@ -149,7 +178,7 @@ func (c *Client) FetchBio(callsign string) (string, error) {
 	if err := c.ensureSession(); err != nil {
 		return "", err
 	}
-	u := fmt.Sprintf("%s?s=%s;html=%s", c.BaseURL, c.sessionKey, strings.ToUpper(callsign))
+	u := fmt.Sprintf("%s?s=%s;html=%s", c.BaseURL, c.key(), url.QueryEscape(strings.ToUpper(callsign)))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
 		return "", fmt.Errorf("qrz bio: %w", err)
@@ -164,7 +193,11 @@ func (c *Client) FetchBio(callsign string) (string, error) {
 
 // CountUsed returns the number of lookups performed in the current 24h window
 // (per QRZ's <Count> field). Useful for rate-limit backoff.
-func (c *Client) CountUsed() int { return c.countUsed }
+func (c *Client) CountUsed() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.countUsed
+}
 
 func parseCount(s string) int {
 	n := 0
@@ -176,20 +209,33 @@ func parseCount(s string) int {
 	return n
 }
 
-// stripHTML does a coarse HTML-to-text conversion. Good enough for QSL-bio
-// heuristic parsing; not a general-purpose converter.
+var (
+	styleBlockRe  = regexp.MustCompile(`(?is)<style\b.*?</style>`)
+	scriptBlockRe = regexp.MustCompile(`(?is)<script\b.*?</script>`)
+	commentRe     = regexp.MustCompile(`(?s)<!--.*?-->`)
+	lineBreakRe   = regexp.MustCompile(`(?i)<(br|/p|/div|/li|/tr|/h[1-6])\b[^>]*>`)
+	tagRe         = regexp.MustCompile(`<[^>]*>`)
+	spacesRe      = regexp.MustCompile(`[ \t\r\f\v\x{a0}]+`)
+)
+
+// stripHTML converts a QRZ bio page to readable text: style/script blocks and
+// comments are dropped (a QRZ page carries pages of CSS), block tags become
+// line breaks, entities are decoded and whitespace is collapsed. Good enough
+// for QSL-bio heuristics and display; not a general-purpose converter.
 func stripHTML(s string) string {
-	var out strings.Builder
-	inTag := false
-	for _, r := range s {
-		switch {
-		case r == '<':
-			inTag = true
-		case r == '>':
-			inTag = false
-		case !inTag:
-			out.WriteRune(r)
+	s = styleBlockRe.ReplaceAllString(s, " ")
+	s = scriptBlockRe.ReplaceAllString(s, " ")
+	s = commentRe.ReplaceAllString(s, " ")
+	s = lineBreakRe.ReplaceAllString(s, "\n")
+	s = tagRe.ReplaceAllString(s, " ")
+	s = html.UnescapeString(s)
+	var lines []string
+	for _, ln := range strings.Split(s, "\n") {
+		ln = strings.TrimSpace(spacesRe.ReplaceAllString(ln, " "))
+		if ln == "" && (len(lines) == 0 || lines[len(lines)-1] == "") {
+			continue // collapse runs of blank lines
 		}
+		lines = append(lines, ln)
 	}
-	return strings.TrimSpace(out.String())
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
