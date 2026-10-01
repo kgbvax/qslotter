@@ -369,6 +369,10 @@ tr.md-group:first-child > th { padding-top: 2px; }
 .md-list .call { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
 .md-list .routetag { font: 600 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
 .md-list .batchbar { margin-top: 0; }
+/* The QSO in progress sits in the list column: when it appears or goes, only the list moves, never the Yes/No buttons of the detail pane. */
+.md-list .current { margin-bottom: 8px; padding: 6px 8px; }
+.md-list .current .current-head .call { font-size: 17px; }
+.md-list .current .current-research { max-height: 150px; }
 @media (max-width: 900px) {
   .md { grid-template-columns: 1fr; }
   .md-list { position: static; max-height: 40vh; }

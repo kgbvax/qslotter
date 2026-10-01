@@ -453,3 +453,42 @@ func TestPullClosesItemWithClublogSentDate(t *testing.T) {
 		t.Fatalf("a Clublog sent date must close the card: %+v", it)
 	}
 }
+
+func TestDiffQSO(t *testing.T) {
+	a := &store.QSO{QSLKey: "K", Call: "DL1ABC", Name: "Hans", Hash: "x"}
+	b := &store.QSO{QSLKey: "K", Call: "DL1ABC", Name: "Hans-Peter", QTH: "Bonn", Hash: "y"}
+	got := diffQSO(a, b)
+	if got != `Name "Hans" -> "Hans-Peter", QTH "" -> "Bonn"` {
+		t.Errorf("diffQSO = %s", got)
+	}
+	if got := diffQSO(a, a); !strings.Contains(got, "hash") {
+		t.Errorf("no field differs: %s", got)
+	}
+}
+
+// One QSO as two Clublog records (FT4 and MFSK, same minute): inserted once,
+// stable on the next pull, the last record wins.
+func TestPullDuplicateKeyIsStable(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, cl := fakeClublog(t, `<QSO_DATE:8>20250819<TIME_ON:6>204600<CALL:5>DB5HA<BAND:3>40m<MODE:4>MFSK<RST_SENT:3>-10<EOR>
+<QSO_DATE:8>20250819<TIME_ON:6>204600<CALL:5>DB5HA<BAND:3>40m<MODE:3>FT4<RST_SENT:3>599<EOR>
+`)
+	o := &Orchestrator{Store: st, Clublog: cl}
+	for i, want := range [][2]int{{1, 0}, {0, 0}, {0, 0}} {
+		ins, upd, err := o.PullAndUpsert()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ins != want[0] || upd != want[1] {
+			t.Fatalf("pull %d: inserted=%d updated=%d, want %v", i+1, ins, upd, want)
+		}
+	}
+	q, _ := st.GetQSO("DB5HA|20250819|204600|40M")
+	if q == nil || q.Mode != "FT4" {
+		t.Errorf("stored %+v, want the last record (FT4)", q)
+	}
+}

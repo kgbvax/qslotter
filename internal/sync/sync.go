@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -66,11 +68,37 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("parse adif: %w", err)
 	}
+	// Clublog can hold two records with one key (same call, minute and band,
+	// e.g. an FT4 and an MFSK entry for one QSO). Upserting both would flip the
+	// stored row twice per pull and count two updates, so only the last record
+	// of a key is used - the state the row ended in before anyway.
+	var qsos []*store.QSO
+	last := make(map[string]int, len(recs))
+	dups := 0
 	for _, rec := range recs {
 		q, err := toQSO(rec)
 		if err != nil {
 			// Skip unparseable records but continue.
 			continue
+		}
+		if i, ok := last[q.QSLKey]; ok {
+			qsos[i] = nil
+			dups++
+		}
+		last[q.QSLKey] = len(qsos)
+		qsos = append(qsos, q)
+	}
+	if dups > 0 {
+		log.Printf("[pull] %d QSOs have several records in the Clublog export (same call, minute, band); using the last", dups)
+	}
+	logged := 0
+	for _, q := range qsos {
+		if q == nil {
+			continue
+		}
+		var before *store.QSO
+		if logged < 10 {
+			before, _ = o.Store.GetQSO(q.QSLKey)
 		}
 		isNew, changed, err := o.Store.UpsertQSO(q)
 		if err != nil {
@@ -83,6 +111,10 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 			}
 		} else if changed {
 			updated++
+			if before != nil && logged < 10 {
+				logged++
+				log.Printf("[pull] updated %s: %s", q.QSLKey, diffQSO(before, q))
+			}
 		}
 		// The card already went out through another tool: an open queue item
 		// for it is done (a duplicate card costs more than a wrong auto-close).
@@ -261,6 +293,27 @@ func fromQSO(q *store.QSO) adif.Record {
 		rec.Set("QTH", q.QTH)
 	}
 	return rec
+}
+
+// diffQSO names the Clublog-sourced fields that differ between the stored QSO
+// and the pulled one (old -> new), for the pull log.
+func diffQSO(a, b *store.QSO) string {
+	skip := map[string]bool{"QSLKey": true, "Hash": true, "FirstSeenAt": true, "UpdatedAt": true}
+	va, vb := reflect.ValueOf(*a), reflect.ValueOf(*b)
+	var parts []string
+	for i := 0; i < va.NumField(); i++ {
+		f := va.Type().Field(i)
+		if skip[f.Name] || f.Type.Kind() != reflect.String {
+			continue
+		}
+		if x, y := va.Field(i).String(), vb.Field(i).String(); x != y {
+			parts = append(parts, fmt.Sprintf("%s %q -> %q", f.Name, x, y))
+		}
+	}
+	if len(parts) == 0 {
+		return "only fields outside the stored columns (hash)"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // hashRecord returns a stable hex hash of the canonical ADIF representation

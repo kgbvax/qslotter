@@ -24,9 +24,9 @@
       <button hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML" title="{{t "Recompute queue"}}">&#8635;</button><span id="recompute-msg"></span></div>
   </div></div>
 <main>
-  {{template "current_contact" .Current}}
   <div class="md">
     <div class="md-list" aria-label="{{t "QSOs waiting for a decision"}}">
+      {{template "current_contact" .Current}}
       <table class="md-table"><tbody id="md-list">{{template "queue_md_rows" .}}</tbody></table>
       <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "or click: select"}} &middot; {{t "decide in the card on the right; the next QSO down follows."}}</p>
     </div>
