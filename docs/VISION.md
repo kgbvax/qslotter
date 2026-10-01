@@ -87,7 +87,7 @@ down to it) it is a master-detail view.
 | # | Requirement | Status |
 |---|---|---|
 | A1 | Holds the QSOs not qualified yet, from the cutoff (`qualify.since`, default: the day qslotter first ran) on, live from Log4OM. Reverse chronological: newest on top, older below. The **backlog** before the cutoff is **discarded** once: every QSO before the cutoff still waiting for a decision is filed as "no card" (note "backlog", reopenable from Done); older QSOs never enter. Only new QSOs count. | partial: cutoff and newest-first done (rows re-entering live land on top until reload); the one-time backlog discard is missing - bwpc has 2249 waiting items from the 2026-09-29 build |
-| A1b | Ideally also the QSO *in progress* ("eventuell", "idealerweise"), so a card filled in during a rag-chew can be booked at once. **Source exists:** Log4OM broadcasts the call being worked over UDP (operator: "LookupInfo"). Per the live capture in `stationa/logger-spot-bridge` (2026-09-15), Log4OM's outbound **CALLSIGN** service sends the bare call as plain text (e.g. `VU2ATN`), nothing else; N1MM-family loggers send `<lookupinfo>` XML - that bridge's Go decoder handles both and can be reused. Shape: the Inbox shows the call in progress on top with the research panel (QRZ, history); "written now" is remembered for that call and applied to the next logged QSO with it (the QSL key - date, time, band - exists only once Log4OM saves the QSO). | missing (source available; today the UDP listener expects ADIF and logs other datagrams as parse errors) |
+| A1b | Ideally also the QSO *in progress* ("eventuell", "idealerweise"), so a card filled in during a rag-chew can be booked at once. **Source: the logger's "current contact" broadcast over UDP**, in two accepted forms: (1) the **bare callsign** as plain text (Log4OM's CALLSIGN service, e.g. `VU2ATN`), (2) the **standard N1MM `<lookupinfo>` XML** (N1MM-family loggers). The UDP listener tells the datagrams apart: ADIF = QSO saved, plain callsign or `<lookupinfo>` = current contact; other N1MM XML is ignored. The Go decoder in `stationa/logger-spot-bridge` handles both forms and can be reused. Shape: the Inbox shows the current contact on top with the research panel (QRZ, history); "written now" is remembered for that call and applied to the next logged QSO with it (the QSL key - date, time, band - exists only once the QSO is saved). | missing (today the UDP listener expects ADIF, skips N1MM XML and logs a bare callsign as a parse error) |
 | A2 | Inbox decision: **yes, card** (goes to the Desk, no route yet), **no card**, or **written now**. | partial: today every "yes" must carry a route (B/D/M buttons); there is no route-less "yes" |
 | A3 | **Written now**: the card was filled in during a rag-chew QSO - "it's done, I never want to see it again". It records its route: **bureau** or **direct** (no manager, no "other"); supersedes the 2026-09-30 decision "Written is its own outcome". | partial: one route-less Written (stored as `W`, pushed as `QSL_SENT=Y` alone) |
 | A4 | Whatever the decision, the QSO leaves the view at once and the next one is offered. | done |
@@ -302,7 +302,7 @@ Open after the operator walkthrough of 2026-10-01 (section 2, status
 `partial`/`missing`):
 
 - A1/A1b: one-time backlog discard (2249 items on bwpc); the QSO in progress
-  (Log4OM CALLSIGN / "LookupInfo" datagram as source).
+  (current contact: bare callsign or N1MM `<lookupinfo>`).
 - A2/A3/A5: Inbox decides only *whether* (yes / no / written now via bureau or
   direct); compact rows yes/no only.
 - A6/B2: master-detail views for Inbox and Desk (list selects, detail decides).
@@ -438,10 +438,10 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-10-01 — AI is stage 2.** Phone scanning of incoming cards and a
   cheap language model for QRZ free text are explored after the forms and
   flows work.
-- **2026-10-01 — The QSO in progress comes from Log4OM's call broadcast.**
-  Log4OM sends the call being worked over UDP (CALLSIGN service, plain text;
-  N1MM-family `lookupinfo` XML elsewhere). The Inbox can show it before the
-  QSO is logged; a "written now" is applied to the QSO once it is saved.
+- **2026-10-01 — The QSO in progress comes from the logger's "current
+  contact" broadcast:** a bare callsign (Log4OM) or the standard N1MM
+  `<lookupinfo>` XML - both accepted. The Inbox can show it before the QSO is
+  logged; a "written now" is applied to the QSO once it is saved.
 - **2026-10-01 — Backlog discarded.** QSOs before the cutoff that still wait
   for a decision are filed once as "no card" (reopenable); only new QSOs
   count. Supersedes "older unanswered QSOs, each qualified individually".
@@ -450,4 +450,3 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-10-01 — Replying to an incoming card:** written now, print, or later
   via the Desk. OQRS requests are marked overdue after 12 weeks.
 - **2026-10-01 — Multilingual UI** (German and English, extensible).
-
