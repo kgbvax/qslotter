@@ -1,0 +1,19 @@
+{
+  "QSO in progress": "Laufendes QSO",
+  "Card written during the QSO:": "Karte während des QSOs geschrieben:",
+  "Card written now, goes via the bureau - booked when the QSO is logged": "Karte sofort geschrieben, geht über das Büro - wird gebucht, sobald das QSO geloggt ist",
+  "Card written now, goes direct - booked when the QSO is logged": "Karte sofort geschrieben, geht direkt - wird gebucht, sobald das QSO geloggt ist",
+  "Card written now (%s) - it is booked on the QSO as soon as the QSO is logged.": "Karte sofort geschrieben (%s) - sie wird auf das QSO gebucht, sobald es geloggt ist.",
+  "%s: card written now (%s), waiting for the QSO to be logged.": "%s: Karte sofort geschrieben (%s), wartet darauf, dass das QSO geloggt wird.",
+  "Card written during the QSO with %s booked on the logged QSO (%s).": "Karte aus dem QSO mit %s auf das geloggte QSO gebucht (%s).",
+  "The card written during the QSO with %s could not be booked: %s": "Die Karte aus dem QSO mit %s konnte nicht gebucht werden: %s",
+  "Undo": "Rückgängig",
+  "the QSO in progress is not available": "das laufende QSO ist nicht verfügbar",
+  "The QSO in progress has changed - look again.": "Das laufende QSO hat sich geändert - bitte nochmal schauen.",
+  "A card written now goes bureau or direct.": "Eine sofort geschriebene Karte geht übers Büro oder direkt.",
+  "%d open QSO(s) with this station in the Inbox or at the Desk - a card written now books only the QSO being logged": "%d offene(s) QSO(s) mit dieser Station im Eingang oder auf dem Schreibtisch - eine sofort geschriebene Karte bucht nur das QSO, das jetzt geloggt wird",
+  "the logger has not sent this call for a few minutes": "das Logprogramm hat dieses Rufzeichen seit ein paar Minuten nicht mehr gesendet",
+  "not seen for a while": "länger nicht gesehen",
+  "written during the QSO": "während des QSOs geschrieben",
+  "reply to their card": "Antwort auf die Karte der Station"
+}

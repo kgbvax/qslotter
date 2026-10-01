@@ -388,14 +388,16 @@ func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Query().Get("compact") == "1" {
 		s.render(w, r, "queue_compact.html", map[string]any{
-			"Rows":   withCheckbox(s.rowsFor(items, true)),
-			"Done":   r.URL.Query().Get("done"),
-			"Failed": r.URL.Query().Get("failed"),
+			"Current": s.currentView(true),
+			"Rows":    withCheckbox(s.rowsFor(items, true)),
+			"Done":    r.URL.Query().Get("done"),
+			"Failed":  r.URL.Query().Get("failed"),
 		})
 		return
 	}
 	data := s.decideData(r, items, true)
 	data["Rows"] = s.rowsFor(items, true)
+	data["Current"] = s.currentView(false)
 	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
 	s.render(w, r, "queue.html", data)
 }
@@ -911,6 +913,9 @@ func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 	cfg := s.config()
 	o := &sync.Orchestrator{Store: s.store, Clublog: clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
 		cfg.Clublog.Call, cfg.Clublog.APIKey), Rules: s.rules, Broker: s.broker}
+	if s.Contacts != nil {
+		o.OnNewQSO = s.Contacts.QSOLogged
+	}
 	_, _, err := o.PullAndUpsert()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

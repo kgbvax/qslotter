@@ -108,10 +108,15 @@ or just `go build ./cmd/qslotter` for the machine you are on.
 
 In Log4OM → Settings → Program Configuration → **UDP Functions**:
 
-- Add an **outbound** UDP destination pointing at qslotter, e.g.
-  `127.0.0.1:1273` (`udp.listen` in `config.yaml`).
-- **Format: ADIF** (not N1MM XML — XML datagrams are skipped with a warning).
-- Enable on **QSO added**.
+- Add an **outbound** UDP connection pointing at qslotter, e.g.
+  `127.0.0.1:1273` (`udp.listen` in `config.yaml`), service **ADIF MESSAGE**
+  (a logged QSO; ADIF, not N1MM XML).
+- Optional, for the **QSO in progress**: a second outbound connection to the
+  same address with the service **CALLSIGN**. Log4OM then sends the call in
+  its entry field; the Inbox shows that station on top with its research,
+  and a card written during the QSO ("Card written during the QSO: Bureau /
+  Direct") is booked the moment the QSO is logged. N1MM-family loggers
+  (N1MM Logger+, DXLog) send the same as `<lookupinfo>` broadcasts.
 
 Log4OM's HTTP webhook batches on a 2–3 minute timer; UDP is sub-second,
 which is why it is the primary feed and Clublog is the backstop.

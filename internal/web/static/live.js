@@ -8,6 +8,7 @@
 //             handled in another window
 //   worklist  work-queue lists: reload <main>
 //   workcard  work card view: like decide, for decided cards
+//   (Inbox pages also keep the "QSO in progress" box current: current_contact)
 //   md-inbox, md-desk  master-detail pages: the list reloads, the detail pane
 //             follows the selection (and moves on when its card left)
 (function () {
@@ -36,6 +37,23 @@
     }, 250);
   }
   es.addEventListener('queue_changed', refreshNav);
+
+  // The QSO in progress (Inbox pages): the box follows the logger's entry
+  // field and the station's QRZ data.
+  function reloadCurrent() {
+    var box = byId('current');
+    if (!box) return;
+    var url = '/queue/current' + (box.dataset.compact ? '?compact=1' : '');
+    htmx.ajax('GET', url, { source: box, target: '#current', swap: 'outerHTML' });
+  }
+  if (byId('current')) {
+    var curTimer = null; // a burst of events (typing, a logged QSO) reloads once
+    es.addEventListener('current_contact', function () { clearTimeout(curTimer); curTimer = setTimeout(reloadCurrent, SETTLE_MS); });
+    es.addEventListener('station_updated', function (e) {
+      var box = byId('current');
+      if (box && box.dataset.call && box.dataset.call.toUpperCase() === e.data.toUpperCase()) settled(reloadCurrent);
+    });
+  }
 
   if (mode === 'list') {
     var body = byId('queue-body');

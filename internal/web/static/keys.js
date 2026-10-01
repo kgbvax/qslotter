@@ -18,7 +18,12 @@ window.qslKeys = (function () {
       armed = on;
       document.querySelectorAll('#decide .written-now').forEach(function (el) { el.classList.toggle('armed', on); });
     }
-    document.addEventListener('htmx:afterSwap', function () { arm(false); });
+    document.addEventListener('htmx:afterSwap', function (ev) {
+      // only a new decide card ends the "w" prefix (the QSO-in-progress box
+      // and other panes reload on their own)
+      var t = ev.detail && ev.detail.target;
+      if (t && t.id === 'decide') arm(false);
+    });
     document.addEventListener('keydown', function (ev) {
       if (!plain(ev)) return;
       var k = ev.key.toLowerCase();

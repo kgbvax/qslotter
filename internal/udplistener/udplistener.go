@@ -1,6 +1,8 @@
 // Package udplistener receives Log4OM's UDP ADIF broadcast and upserts each
 // QSO into the store. Log4OM fires this sub-second on QSO added. Each UDP
-// datagram is one ADIF record terminated by <EOR>.
+// datagram is one ADIF record terminated by <EOR>. The same port takes the
+// logger's "current contact" broadcast (Log4OM CALLSIGN service: the bare
+// callsign; N1MM-family <lookupinfo>): the QSO in progress (package contact).
 //
 // Log4OM configuration (Settings → Program Configuration → UDP Functions):
 //   - Outbound destination: 127.0.0.1:1273 (or whatever qslotter's udp.listen
@@ -18,8 +20,11 @@ import (
 	"log"
 	"net"
 	"strings"
+	gosync "sync"
+	"time"
 
 	"github.com/dl9et/qslotter/internal/adif"
+	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/station"
@@ -35,6 +40,13 @@ type Listener struct {
 	rules     *qualify.Rules
 	refresher *station.Refresher
 	conn      *net.UDPConn
+
+	// Contacts, when set, receives the QSO in progress and is told about
+	// every newly logged QSO (a card written during it gets booked).
+	Contacts *contact.Tracker
+
+	ignoreOnce  gosync.Once
+	lastUnknown time.Time
 }
 
 // New returns a Listener bound to addr (e.g. "127.0.0.1:1273").
@@ -93,12 +105,33 @@ func (l *Listener) readLoop(ctx context.Context) {
 // with a warning (configure Log4OM to use ADIF format, not N1MM).
 func (l *Listener) handleDatagram(data []byte) {
 	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 {
+	switch kind, c := contact.Classify(trimmed); kind {
+	case contact.KindContact:
+		if l.Contacts != nil {
+			l.Contacts.Set(c)
+		}
 		return
-	}
-	// Detect N1MM <contact> XML envelope and skip with a warning.
-	if bytes.HasPrefix(trimmed, []byte("<contact")) || bytes.HasPrefix(trimmed, []byte("<?xml")) {
-		log.Printf("udplistener: ignoring N1MM XML datagram - set Log4OM UDP format to ADIF")
+	case contact.KindClear:
+		if l.Contacts != nil {
+			l.Contacts.Clear()
+		}
+		return
+	case contact.KindIgnore:
+		l.ignoreOnce.Do(func() {
+			log.Printf("udplistener: ignoring N1MM XML datagrams other than <lookupinfo> - logged QSOs must come as ADIF")
+		})
+		return
+	case contact.KindPartial:
+		return // a call still being typed
+	case contact.KindUnknown:
+		if now := time.Now(); now.Sub(l.lastUnknown) > time.Minute { // at most one line a minute
+			l.lastUnknown = now
+			snippet := string(trimmed)
+			if len(snippet) > 120 {
+				snippet = snippet[:120] + "..."
+			}
+			log.Printf("udplistener: ignoring datagram - neither ADIF nor a callsign (%q)", snippet)
+		}
 		return
 	}
 	rec, err := adif.NewReader(bytes.NewReader(trimmed)).Read()
@@ -151,6 +184,9 @@ func (l *Listener) handleDatagram(data []byte) {
 		}
 		if l.broker != nil {
 			l.broker.Publish(events.Event{Type: "new_qso", Data: q.QSLKey})
+		}
+		if l.Contacts != nil {
+			l.Contacts.QSOLogged(q)
 		}
 	}
 }

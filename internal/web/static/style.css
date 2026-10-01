@@ -366,3 +366,16 @@ header.site nav .areas { display: flex; gap: 22px; font-size: 15.5px; font-weigh
 header.site nav .secondary { display: flex; gap: 14px; font-size: 13px; align-items: baseline; }
 header.site nav .secondary a { color: var(--ink-soft); }
 header.site nav .cnt.exp { background: var(--blue); }
+
+/* The QSO in progress (VISION A1b) */
+.current { border: 1.5px solid var(--red); border-radius: 3px; background: var(--card); padding: 8px 12px; margin: 0 0 12px; }
+.current.idle { display: none; }
+.current.idle:has(p) { display: block; border-color: var(--rule); }
+.current .current-head { font-size: 15px; }
+.current .current-head .lbl { font: 700 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--red); margin-right: 6px; }
+.current .current-head .call { font: 700 20px 'IBM Plex Mono', monospace; }
+.current .current-written { margin: 6px 0; }
+.current .current-written .lbl { font-size: 12px; color: var(--ink-soft); }
+.current.compact { padding: 4px 8px; }
+.current.compact .current-head .call { font-size: 16px; }
+.current .current-research { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--rule); margin-top: 4px; padding-top: 4px; }

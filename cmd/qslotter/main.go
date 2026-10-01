@@ -25,6 +25,7 @@ import (
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/desktop"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
@@ -133,8 +134,14 @@ func main() {
 		srv.OpenExternal = desktop.OpenExternal // only the app window needs it
 	}
 
+	// The QSO in progress (logger's current-contact broadcast) and cards
+	// written during it, shared by the UDP feed, the Clublog pull and the UI.
+	contacts := contact.NewTracker(st, broker, func(ctx context.Context, call string) { _, _ = refresher.Get(ctx, call) })
+	srv.Contacts = contacts
+
 	// UDP listener: real-time feed from Log4OM.
 	udp := udplistener.New(cfg.UDP.Listen, st, broker, rules, refresher)
+	udp.Contacts = contacts
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := udp.Start(ctx); err != nil {
 		fatal("Log4OM UDP feed", err)
@@ -149,7 +156,7 @@ func main() {
 	clublogClient := clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
 		cfg.Clublog.Call, cfg.Clublog.APIKey)
 	if cfg.Clublog.PullInterval > 0 || cfg.Clublog.PushInterval > 0 {
-		o := &sync.Orchestrator{Store: st, Rules: rules, Broker: broker,
+		o := &sync.Orchestrator{Store: st, Rules: rules, Broker: broker, OnNewQSO: contacts.QSOLogged,
 			Configure: func() (*clublog.Client, bool) {
 				c := srv.CurrentConfig().Clublog
 				if c.Email == "" || c.APIKey == "" || c.AppPassword == "" {

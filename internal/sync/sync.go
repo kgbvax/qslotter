@@ -29,6 +29,10 @@ type Orchestrator struct {
 	// Settings apply at once) and false while no credentials are set (the
 	// tick is skipped - no failed logins).
 	Configure func() (*clublog.Client, bool)
+
+	// OnNewQSO, if set, is told about every QSO the pull added (a card
+	// written during that QSO gets booked, package contact).
+	OnNewQSO func(*store.QSO)
 }
 
 // configure refreshes the client for a background run; false = skip it.
@@ -74,6 +78,9 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 		}
 		if isNew {
 			inserted++
+			if o.OnNewQSO != nil {
+				o.OnNewQSO(q)
+			}
 		} else if changed {
 			updated++
 		}

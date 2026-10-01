@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/store"
@@ -120,6 +121,7 @@ func TestListenerIgnoresN1MMXML(t *testing.T) {
 		t.Fatalf("expected 0 QSOs after N1MM XML datagram, got %d", len(qsos))
 	}
 }
+
 // TestUDPQueuesRepeatContactsAndAnnounces: with the default rules a repeat
 // contact enters the decision queue (the operator decides with the history in
 // front of them), a forced-in QSO records why, digital QSOs stay out, and every
@@ -186,5 +188,53 @@ func TestUDPQueuesRepeatContactsAndAnnounces(t *testing.T) {
 				t.Fatalf("forced-in QSO must record why: %+v", it)
 			}
 		}
+	}
+}
+
+// TestCurrentContactFeed: the logger's current-contact broadcast (bare
+// callsign, N1MM lookupinfo) sets the QSO in progress, an empty datagram
+// clears it, and a logged QSO books the card written during it.
+func TestCurrentContactFeed(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	l := New("127.0.0.1:0", st, events.New(), nil, nil)
+	tr := contact.NewTracker(st, nil, nil)
+	l.Contacts = tr
+
+	l.handleDatagram([]byte("VU2ATN"))
+	if cur := tr.Current(); cur == nil || cur.Call != "VU2ATN" {
+		t.Fatalf("bare callsign: %+v", cur)
+	}
+	l.handleDatagram([]byte(`<lookupinfo><call>EA8XYZ</call><mode>CW</mode></lookupinfo>`))
+	if cur := tr.Current(); cur == nil || cur.Call != "EA8XYZ" || cur.Mode != "CW" {
+		t.Fatalf("lookupinfo: %+v", cur)
+	}
+	l.handleDatagram([]byte(""))
+	if tr.Current() != nil {
+		t.Fatal("an empty datagram clears the QSO in progress")
+	}
+	l.handleDatagram([]byte(`<RadioInfo><Freq>1402500</Freq></RadioInfo>`))
+	l.handleDatagram([]byte("garbage text here"))
+	if tr.Current() != nil {
+		t.Fatal("other datagrams change nothing")
+	}
+
+	l.handleDatagram([]byte("VU2ATN"))
+	tr.MarkWritten("VU2ATN", store.Route{Method: "B"})
+	now := time.Now().UTC()
+	l.handleDatagram([]byte("<CALL:6>VU2ATN<QSO_DATE:8>" + now.Format("20060102") + "<TIME_ON:6>" + now.Format("150405") + "<BAND:3>20m<MODE:3>SSB<EOR>"))
+	qsos, _ := st.RecentQSOsByCall("VU2ATN", 5)
+	if len(qsos) != 1 {
+		t.Fatalf("QSO not stored: %d", len(qsos))
+	}
+	it, _ := st.QueueGet(qsos[0].QSLKey)
+	if it == nil || it.Status != "sent" || it.DesiredMethod != "B" {
+		t.Fatalf("the card written during the QSO must be booked: %+v", it)
+	}
+	if tr.Current() != nil {
+		t.Fatal("logging the QSO ends it")
 	}
 }

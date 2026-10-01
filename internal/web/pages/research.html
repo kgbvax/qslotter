@@ -1,6 +1,6 @@
 {{define "research_panel"}}{{$row := .}}
 {{with .Research}}
-  {{if .WhyQueued}}<p class="why-queued">{{t "Queued because: %s" .WhyQueued}}</p>{{end}}
+  {{if .WhyQueued}}<p class="why-queued">{{t "Queued because: %s" (t .WhyQueued)}}</p>{{end}}
   <p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>
 {{end}}
 <div class="pref">

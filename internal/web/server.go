@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/printer"
@@ -51,6 +52,9 @@ type Server struct {
 	// Quit ends the desktop app (set by main in window/browser mode): a way
 	// out that does not depend on the tray icon being visible.
 	Quit func()
+
+	// Contacts is the QSO in progress (set by main; nil = not shown).
+	Contacts *contact.Tracker
 
 	// now is the clock (overdue requests); a field so tests can move it.
 	now func() time.Time
@@ -252,9 +256,12 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
-	r.Get("/queue/row", s.htmxQueueRow)   // ?key=... for SSE-driven fetch
-	r.Get("/queue/list", s.htmxQueueList) // Inbox master list (live refresh)
-	r.Get("/work/list", s.htmxWorkList)   // Desk master list (live refresh)
+	r.Get("/queue/row", s.htmxQueueRow)              // ?key=... for SSE-driven fetch
+	r.Get("/queue/list", s.htmxQueueList)            // Inbox master list (live refresh)
+	r.Get("/queue/current", s.htmxCurrent)           // the QSO in progress (live refresh; ?compact=1)
+	r.Post("/current/written", s.htmxCurrentWritten) // call=, route=B|D: card written during the QSO
+	r.Post("/current/cancel", s.htmxCurrentCancel)   // call=
+	r.Get("/work/list", s.htmxWorkList)              // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
 	r.Handle("/static/*", http.FileServer(http.FS(staticFS)))
