@@ -41,9 +41,6 @@
   src: url('/static/fonts/schibstedgrotesk-700.woff2') format('woff2');
 }
 
-/* Page to page: keep the old page on screen until the new one can paint, no cross-fade. */
-@view-transition { navigation: auto; }
-::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0s; }
 
 :root {
   --paper: #F3F4F1;
