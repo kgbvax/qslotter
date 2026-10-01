@@ -31,7 +31,8 @@ body[data-area=incoming] { --area: var(--incoming); }
 
 * { box-sizing: border-box; }
 
-html { background: var(--paper); }
+/* A scrollbar on one page and none on the next must not shift the centred layout. */
+html { background: var(--paper); scrollbar-gutter: stable; }
 
 body {
   margin: 0;
@@ -408,6 +409,9 @@ header.site nav .areas a:hover { background: var(--card); box-shadow: none; colo
 body[data-area=inbox] header.site nav .areas a[data-area=inbox], body[data-area=desk] header.site nav .areas a[data-area=desk], body[data-area=incoming] header.site nav .areas a[data-area=incoming] {
   background: var(--tab); color: #fff; cursor: default;
 }
+/* A tab keeps its width whether or not it carries a count: nothing slides when a badge appears. */
+header.site nav .areas a:not(:has(.cnt))::after { content: ""; display: inline-block; width: 25px; }
+
 header.site nav .secondary { display: flex; gap: 14px; font-size: 13px; align-items: baseline; padding-bottom: 9px; }
 header.site nav .secondary a { color: var(--ink-soft); }
 header.site nav .secondary a:hover { color: var(--ink); box-shadow: 0 2px 0 var(--ink-soft); }
@@ -420,7 +424,7 @@ header.site nav .cnt.exp { background: var(--tab); }
 
 /* The band: name, one line of purpose, how many are left, how to view them. */
 .band { background: var(--area); color: #fff; padding: 14px var(--gutter) 16px; }
-.band-in { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
+.band-in { min-height: 57px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
 .band h2 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; color: #fff; }
 .band p { margin: 4px 0 0; font-size: 14px; color: rgba(255, 255, 255, 0.9); }
 .band p b { font: 600 14px 'IBM Plex Mono', monospace; }
