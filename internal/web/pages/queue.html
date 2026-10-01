@@ -2,13 +2,14 @@
   <td class="c-date">{{fmtDate .QSO.QSODate}}<br><span class="muted">{{fmtTime .QSO.TimeOn}}</span></td>
   <td><span class="call">{{.QSO.Call}}</span><br><span class="muted">{{.QSO.Name}}</span></td>
   <td class="c-bm">{{.QSO.Band}}<br>{{.QSO.Mode}}</td>
-  <td class="method" title="{{if .Info}}{{.Info.QSLConfidence}} confidence: {{.Info.QSLReason}}{{end}}">{{template "row_suggestion" .}}</td>
-</tr>{{end}}{{if not .Rows}}<tr class="md-empty"><td colspan="4" class="muted">Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged.</td></tr>{{end}}{{end}}
+  <td class="method" title="{{if and .Info .Info.QSLConfidence}}{{t "%s confidence: %s" (t .Info.QSLConfidence) .Info.QSLReason}}{{end}}">{{template "row_suggestion" .}}</td>
+</tr>{{end}}{{if not .Rows}}<tr class="md-empty"><td colspan="4" class="muted">{{t "Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged."}}</td></tr>{{end}}{{end}}
 
 {{define "queue.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Inbox"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 <script src="/static/keys.js"></script>
 <script src="/static/live.js" defer></script>
@@ -18,16 +19,16 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span> QSOs: card or not?)</small>
-    <a class="h2link" href="/queue?compact=1" title="Compact list for operating: yes / no per row">compact list</a>
-    <a class="h2link" href="/decide" title="One QSO at a time">card by card</a>
-    <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">Recompute queue</button>
+  <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span> {{t "QSOs: card or not?"}})</small>
+    <a class="h2link" href="/queue?compact=1" title="{{t "Compact list for operating: yes / no per row"}}">{{t "compact list"}}</a>
+    <a class="h2link" href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
+    <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">{{t "Recompute queue"}}</button>
     <span id="recompute-msg"></span></h2>
-  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span> (already handled){{end}}.</p>{{end}}
+  {{if or .Done .Failed}}<p class="banner">{{t "Batch: %s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s skipped" .Failed}}</span> {{t "(already handled)"}}{{end}}.</p>{{end}}
   <div class="md">
-    <div class="md-list" aria-label="QSOs waiting for a decision">
+    <div class="md-list" aria-label="{{t "QSOs waiting for a decision"}}">
       <table class="md-table"><tbody id="md-list">{{template "queue_md_rows" .}}</tbody></table>
-      <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or click: select &middot; decide in the card on the right; the next QSO down follows.</p>
+      <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "or click: select"}} &middot; {{t "decide in the card on the right; the next QSO down follows."}}</p>
     </div>
     <div class="md-detail">{{template "decide_content.html" .}}</div>
   </div>

@@ -1,40 +1,40 @@
 {{define "decide_content.html"}}<div class="decide-wrap" id="decide"{{if .Row}} data-qslkey="{{.Row.Item.QSLKey}}" data-call="{{.Row.QSO.Call}}"{{end}}>
 {{if not .Row}}
   <div class="empty">
-    <p class="big">No QSOs waiting for a decision.</p>
-    <p>New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere.</p>
-    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{.Work}} card(s) waiting at the Desk &rarr;</a>{{else}}<a href="/queue">Back to the Inbox list</a>{{end}}{{end}}</p>
+    <p class="big">{{t "No QSOs waiting for a decision."}}</p>
+    <p>{{t "New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere."}}</p>
+    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{t "%d card(s) waiting at the Desk" .Work}} &rarr;</a>{{else}}<a href="/queue">{{t "Back to the Inbox list"}}</a>{{end}}{{end}}</p>
   </div>
 {{else}}
   {{$nx := printf "&md=%s&next=%s&prev=%s" (mdflag .MD) (q .Down) (q .Up)}}
-  <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a>
-    {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="Previous card  (&larr;)" hx-get="/decide?key={{q .Prev}}" hx-target="#decide" hx-swap="outerHTML">&lsaquo; prev</button>
-    <button type="button" class="mini" data-key="arrowright" title="Next card  (&rarr;)" hx-get="/decide?key={{q .Next}}" hx-target="#decide" hx-swap="outerHTML">next &rsaquo;</button>{{end}}</p>
+  <p class="decide-head"><span class="pos">{{tm .Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">{{t "station details"}}</a>
+    {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/decide?key={{q .Prev}}" hx-target="#decide" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
+    <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/decide?key={{q .Next}}" hx-target="#decide" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <article class="qslcard">
     <div class="airmail"></div>
-    <p class="confirm">Confirming two-way QSO with</p>
+    <p class="confirm">{{t "Confirming two-way QSO with"}}</p>
     <p class="call"><a href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a>{{if .Row.QSO.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{.Row.QSO.Name}}</span>{{end}}</p>
     <div class="loggrid">
-      <div><span class="lbl">Date</span><span class="val">{{fmtDate .Row.QSO.QSODate}}</span></div>
-      <div><span class="lbl">UTC</span><span class="val">{{fmtTime .Row.QSO.TimeOn}}</span></div>
-      <div><span class="lbl">Band</span><span class="val">{{.Row.QSO.Band}}</span></div>
-      <div><span class="lbl">Mode</span><span class="val">{{.Row.QSO.Mode}}</span></div>
-      <div><span class="lbl">RST</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
+      <div><span class="lbl">{{t "Date"}}</span><span class="val">{{fmtDate .Row.QSO.QSODate}}</span></div>
+      <div><span class="lbl">{{t "UTC"}}</span><span class="val">{{fmtTime .Row.QSO.TimeOn}}</span></div>
+      <div><span class="lbl">{{t "Band"}}</span><span class="val">{{.Row.QSO.Band}}</span></div>
+      <div><span class="lbl">{{t "Mode"}}</span><span class="val">{{.Row.QSO.Mode}}</span></div>
+      <div><span class="lbl">{{t "RST"}}</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
-    {{if or .Row.QSO.Freq .Row.QSO.RSTRcvd .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}freq {{.Row.QSO.Freq}} &middot; {{end}}{{if .Row.QSO.RSTRcvd}}RST rcvd {{.Row.QSO.RSTRcvd}}{{end}}{{if .Row.QSO.Notes}} &middot; notes: {{.Row.QSO.Notes}}{{end}}</p>{{end}}
+    {{if or .Row.QSO.Freq .Row.QSO.RSTRcvd .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}{{t "freq %s" .Row.QSO.Freq}} &middot; {{end}}{{if .Row.QSO.RSTRcvd}}{{t "RST rcvd %s" .Row.QSO.RSTRcvd}}{{end}}{{if .Row.QSO.Notes}} &middot; {{t "notes: %s" .Row.QSO.Notes}}{{end}}</p>{{end}}
     {{template "research_panel" .Row}}
   </article>
   <div class="decide-actions">
-    <span class="stamps" role="group" aria-label="Card?">
-      <button type="button" class="stamp yes{{if or (eq .Row.Suggested "B") (eq .Row.Suggested "D") (eq .Row.Suggested "M")}} suggested{{end}}" data-key="y" title="Yes, card - goes to the Desk, where the route is chosen  (y)" hx-post="/queue/yes?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">Yes, card</button>
-      <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">No card</button>
+    <span class="stamps" role="group" aria-label="{{t "Card?"}}">
+      <button type="button" class="stamp yes{{if or (eq .Row.Suggested "B") (eq .Row.Suggested "D") (eq .Row.Suggested "M")}} suggested{{end}}" data-key="y" title="{{t "Yes, card - goes to the Desk, where the route is chosen"}}  (y)" hx-post="/queue/yes?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Yes, card"}}</button>
+      <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="{{t "No card"}}  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "No card"}}</button>
     </span>
-    <span class="fulfil written-now" role="group" aria-label="Written now">
-      <span class="lbl" title="Card filled in during the QSO - done, never shown again">Written now:</span>
-      <button type="button" class="mini" data-key="wb" title="Written now, goes via the bureau - done  (w, then b)" hx-post="/queue/written?route=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">Bureau</button>
-      <button type="button" class="mini" data-key="wd" title="Written now, goes direct - done  (w, then d)" hx-post="/queue/written?route=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">Direct</button>
+    <span class="fulfil written-now" role="group" aria-label="{{t "Written now"}}">
+      <span class="lbl" title="{{t "Card filled in during the QSO - done, never shown again"}}">{{t "Written now:"}}</span>
+      <button type="button" class="mini" data-key="wb" title="{{t "Written now, goes via the bureau - done"}}  ({{t "w, then b"}})" hx-post="/queue/written?route=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Bureau"}}</button>
+      <button type="button" class="mini" data-key="wd" title="{{t "Written now, goes direct - done"}}  ({{t "w, then d"}})" hx-post="/queue/written?route=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Direct"}}</button>
     </span>
   </div>
-  <p class="muted legend">Keys: <kbd>y</kbd> yes, card &middot; <kbd>n</kbd> no card &middot; <kbd>w</kbd> then <kbd>b</kbd> / <kbd>d</kbd> written now via bureau / direct &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> select in the list{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse{{end}} &mdash; "yes" sends the card to the Desk, where its route is chosen; the next QSO follows.</p>
+  <p class="muted legend">{{t "Keys:"}} <kbd>y</kbd> {{t "yes, card"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>w</kbd> {{t "then"}} <kbd>b</kbd> / <kbd>d</kbd> {{t "written now via bureau / direct"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t `"yes" sends the card to the Desk, where its route is chosen; the next QSO follows.`}}</p>
 {{end}}
 </div>{{end}}

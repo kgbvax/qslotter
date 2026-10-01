@@ -126,9 +126,9 @@ radio. Here the route is chosen.
 
 | # | Requirement | Status |
 |---|---|---|
-| D1 | The three areas are the top-level menu. Log, Done and Settings are secondary. | missing: eight equal nav items today |
-| D3 | **Multilingual UI**: German and English, more languages possible (translation files, no hard-coded strings in templates). German names: Eingang / Schreibtisch / Posteingang; English: Inbox / Desk / Incoming QSLs. Proposal: the language is chosen under Settings, defaulting to the browser language. | missing: English-only strings in the templates |
-| D2 | No separate start page: `/` opens the Inbox; the counters in the menu (Inbox, Desk, pending push) are the overview. Statistics later, if at all. | missing: `/` opens the log |
+| D1 | The three areas are the top-level menu. Log, Done and Settings are secondary. | done (2026-10-01): Eingang / Schreibtisch / Posteingang (Inbox / Desk / Incoming QSLs) with counters (Inbox QSOs, Desk cards, expected cards); Log, Done, Settings and "to push" small on the right; card-by-card and compact views are linked from their pages |
+| D3 | **Multilingual UI**: German and English, more languages possible (translation files, no hard-coded strings in templates). German names: Eingang / Schreibtisch / Posteingang; English: Inbox / Desk / Incoming QSLs. Proposal: the language is chosen under Settings, defaulting to the browser language. | done (2026-10-01): German and English; catalogs `internal/i18n/locales/<lang>/*.json` keyed by the English text (a missing translation falls back to English; a new language = a new directory); Settings -> Language: automatic (browser language - in the app window the system language), Deutsch, English (`ui.language`); the tray menu follows it, else the system language; a test renders every page and flow in German and fails on any missing text. Still English: the QRZ-derived reason text and low-level errors (printer, database, Clublog) |
+| D2 | No separate start page: `/` opens the Inbox; the counters in the menu (Inbox, Desk, pending push) are the overview. Statistics later, if at all. | done (2026-10-01): `/` opens the Inbox |
 
 ### 2.5 Stage 2 - AI support (after the forms and flows above work)
 
@@ -298,7 +298,6 @@ Open after the operator walkthrough of 2026-10-01 (section 2, status
   done 2026-10-01.)
 - A7: research panel limits (12 newest QSOs; own received state). (B3/B4/
   B4b/B6/B9, the Desk: done 2026-10-01.)
-- D1-D3: three-area top menu; `/` opens the Inbox; German/English UI.
 
 Remaining gaps (v2 / later):
 
@@ -353,7 +352,7 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
     later via the Desk; requested cards listed as expected, overdue after 12
     weeks (C2, C3, C5); portable calls (C1). **Done 2026-10-01.**
 13. Top menu = Eingang/Inbox, Schreibtisch/Desk, Posteingang/Incoming QSLs;
-    `/` opens the Inbox; German and English UI (D1, D2, D3).
+    `/` opens the Inbox; German and English UI (D1, D2, D3). **Done 2026-10-01.**
 14. QSO in progress from Log4OM's call broadcast (A1b).
 
 **v2 — platform (stage 2: AI support):**

@@ -121,6 +121,9 @@ type QualifyCfg struct {
 // only). The -ui flag overrides it.
 type UICfg struct {
 	Mode string `yaml:"mode"`
+	// Language of the user interface: "de", "en" (any language with a
+	// catalog), or empty for the browser's / system's language (VISION D3).
+	Language string `yaml:"language"`
 }
 
 type StoreCfg struct {

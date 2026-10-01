@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
@@ -211,7 +212,7 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	data := s.workCardData(r, listOrder(groups), "", true)
 	data["Groups"] = groups
 	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
-	s.render(w, "worklist.html", data)
+	s.render(w, r, "worklist.html", data)
 }
 
 // htmxWorkList renders the Desk master list alone (live refresh).
@@ -221,7 +222,7 @@ func (s *Server) htmxWorkList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "work_md_rows", map[string]any{"Groups": groupCards(cards)})
+	s.render(w, r, "work_md_rows", map[string]any{"Groups": groupCards(cards)})
 }
 
 // pageWorkCard shows one Desk card at a time (?filter=O|B|D|M narrows the
@@ -266,7 +267,7 @@ func (s *Server) mgrBlock(call string) MgrBlock {
 
 // htmxWorkManager renders the manager block for the typed manager callsign.
 func (s *Server) htmxWorkManager(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "mgr_block", s.mgrBlock(r.FormValue("manager")))
+	s.render(w, r, "mgr_block", s.mgrBlock(r.FormValue("manager")))
 }
 
 func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage bool) {
@@ -293,10 +294,10 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 	}
 	data := s.workCardData(r, cards, filter, md)
 	if fullPage {
-		s.render(w, "workcard.html", data)
+		s.render(w, r, "workcard.html", data)
 		return
 	}
-	s.render(w, "workcard_content.html", data)
+	s.render(w, r, "workcard_content.html", data)
 }
 
 // workCardData picks the Desk card to show from cards: ?key= on GET
@@ -347,7 +348,7 @@ func (s *Server) workCardData(r *http.Request, cards []*DeskCard, filter string,
 		data["Card"] = c
 		data["Skip"] = skip
 		data["Mgr"] = s.mgrBlock(c.MgrPrefill)
-		data["Pos"] = fmt.Sprintf("card %d of %d", i+1, len(cards))
+		data["Pos"] = i18n.M("card %d of %d", i+1, len(cards))
 		if len(cards) > 1 {
 			data["Prev"] = cards[(i+len(cards)-1)%len(cards)].Lead.Item.QSLKey
 			data["Next"] = cards[(i+1)%len(cards)].Lead.Item.QSLKey
@@ -387,15 +388,15 @@ var errNoKeys = errors.New("No QSO selected for this card - tick at least one.")
 func (s *Server) deskAction(w http.ResponseWriter, r *http.Request, to string, act func(keys []string) error) {
 	keys := deskKeys(r)
 	if len(keys) == 0 {
-		http.Error(w, errNoKeys.Error(), http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, errNoKeys.Error())
 		return
 	}
 	if err := act(keys); err != nil {
 		switch {
 		case errors.Is(err, errNeedManager), errors.Is(err, errNeedRoute), errors.Is(err, errBadRoute):
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			s.fail(w, r, http.StatusBadRequest, err.Error())
 		case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrBadRoute):
-			s.queueErr(w, err)
+			s.queueErr(w, r, err)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -557,7 +558,7 @@ func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string
 	case "back":
 		apply = func(keys []string, _ string) (string, error) { return "queued", s.store.QueueBack(keys...) }
 	default:
-		http.Error(w, "unknown batch action for the Desk", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "unknown batch action for the Desk")
 		return
 	}
 	done, failed := 0, 0

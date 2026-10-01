@@ -57,3 +57,11 @@ func TestStartPathOnlyForTheFirstWindow(t *testing.T) {
 		t.Fatalf("reopened main window = %s", url)
 	}
 }
+
+func TestPosixToTag(t *testing.T) {
+	for in, want := range map[string]string{"de_DE.UTF-8": "de-DE", "en_US": "en-US", "de": "de", "sr_RS@latin": "sr-RS"} {
+		if got := posixToTag(in); got != want {
+			t.Errorf("posixToTag(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

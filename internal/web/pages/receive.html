@@ -1,7 +1,8 @@
 {{define "receive.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Incoming QSLs</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Incoming QSLs"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 <script src="/static/keys.js"></script>
 </head><body>
@@ -10,12 +11,12 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Incoming QSLs</h2>
+  <h2>{{t "Incoming QSLs"}}</h2>
   <form id="rcv-find" hx-post="/receive/lookup" hx-target="#results" hx-swap="innerHTML" class="rcv-find">
-    <input type="text" id="rcv-call" name="call" placeholder="Callsign on the card" value="{{.Call}}" autofocus autocomplete="off"
-           aria-label="Callsign on the card">
-    <button type="submit">Find</button>
-    <span class="muted">Enter: find &middot; tick the QSO(s) the card confirms &middot; Enter: book &middot; then answer it or not. Portable calls of the station are found too.</span>
+    <input type="text" id="rcv-call" name="call" placeholder="{{t "Callsign on the card"}}" value="{{.Call}}" autofocus autocomplete="off"
+           aria-label="{{t "Callsign on the card"}}">
+    <button type="submit">{{t "Find"}}</button>
+    <span class="muted">{{t "Enter: find"}} &middot; {{t "tick the QSO(s) the card confirms"}} &middot; {{t "Enter: book"}} &middot; {{t "then answer it or not."}} {{t "Portable calls of the station are found too."}}</span>
   </form>
   <div id="results">{{if .Call}}{{template "receive_results.html" .}}{{end}}</div>
 

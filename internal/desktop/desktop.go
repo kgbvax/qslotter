@@ -47,12 +47,27 @@ type Options struct {
 	StartPath   string // first page of the main window, e.g. "/queue" or "/settings"
 	Title       string
 	OpenCompact bool // also open the compact decision window at start
+	Labels      Labels
+
 
 	// Teardown, if set, runs the program's shutdown synchronously. macOS
 	// calls it when the system asks the app to terminate (Dock Quit, Cmd-Q,
 	// logout, restart): AppKit exits the process right after, so main's own
 	// shutdown after Run would never run. Must be idempotent.
 	Teardown func()
+}
+
+// Labels are the shell's texts in the UI language (tray menu, compact window
+// title); empty fields fall back to English.
+type Labels struct {
+	Open, Compact, Quit, Tooltip, CompactTitle string
+}
+
+func (l Labels) or(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
 }
 
 const (
@@ -105,13 +120,13 @@ func (s *Shell) Run() error {
 	}
 	err := tray.Run(tray.Config{
 		Title:   "qslotter",
-		Tooltip: "qslotter - QSL workbench",
+		Tooltip: s.opts.Labels.or(s.opts.Labels.Tooltip, "qslotter - QSL workbench"),
 		Icon:    trayIcon(),
 		Items: []tray.Item{
-			{Title: "Open qslotter", OnClick: func() { s.open("main") }},
-			{Title: "Compact queue", OnClick: func() { s.open("compact") }},
+			{Title: s.opts.Labels.or(s.opts.Labels.Open, "Open qslotter"), OnClick: func() { s.open("main") }},
+			{Title: s.opts.Labels.or(s.opts.Labels.Compact, "Compact Inbox"), OnClick: func() { s.open("compact") }},
 			{Separator: true},
-			{Title: "Quit qslotter", OnClick: s.Quit},
+			{Title: s.opts.Labels.or(s.opts.Labels.Quit, "Quit qslotter"), OnClick: s.Quit},
 		},
 		OnReady: func() {
 			if s.quitting() {
@@ -176,7 +191,7 @@ func (s *Shell) open(role string) {
 // target returns url, size and title of a window role.
 func (s *Shell) target(role string) (url string, w, h int, title string) {
 	if role == "compact" {
-		return s.opts.BaseURL + compactPath, compactW, compactH, s.opts.Title + " - compact"
+		return s.opts.BaseURL + compactPath, compactW, compactH, s.opts.Labels.or(s.opts.Labels.CompactTitle, s.opts.Title+" - compact")
 	}
 	path := "/queue"
 	s.mu.Lock()

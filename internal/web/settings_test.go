@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/store"
 )
@@ -35,7 +36,7 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Stub the credential checks: no network from tests.
-	srv.validateFn = func(*config.Config) (string, string) { return "OK - stub", "OK - stub" }
+	srv.validateFn = func(*config.Config) (i18n.Msg, i18n.Msg) { return i18n.M("OK - stub"), i18n.M("OK - stub") }
 	h := srv.Routes()
 
 	// Save: new username, empty password (keep old), numeric-looking app

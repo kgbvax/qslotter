@@ -1,5 +1,13 @@
 // Global error surfacing for htmx actions: a failed request (printer missing,
 // declined card, server down) shows a toast instead of doing nothing.
+// tr translates a message the page handed over (window.qslT, see jsStrings in
+// server.go); English otherwise.
+function qslTr(text) {
+  var t = (window.qslT && window.qslT[text]) || text;
+  var args = Array.prototype.slice.call(arguments, 1);
+  return t.replace(/%[sd]/g, function () { return args.length ? String(args.shift()) : ''; });
+}
+
 (function () {
   var toast = null, timer = null;
   function show(msg) {
@@ -17,14 +25,14 @@
     var xhr = ev.detail.xhr;
     var text = (xhr.responseText || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     if (text.length > 220) text = text.slice(0, 220) + '...';
-    show('Error ' + xhr.status + ': ' + (text || xhr.statusText));
+    show(qslTr('Error') + ' ' + xhr.status + ': ' + (text || xhr.statusText));
   });
   // Server-sent notices (HX-Trigger: {"qslNotice": "..."}) use the same toast.
   document.addEventListener('qslNotice', function (ev) {
     show(ev.detail && ev.detail.value ? ev.detail.value : '');
   });
   document.addEventListener('htmx:sendError', function () {
-    show('Network error - is the qslotter server running?');
+    show(qslTr('Network error - is the qslotter server running?'));
   });
 })();
 

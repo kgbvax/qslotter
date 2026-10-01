@@ -1,7 +1,8 @@
 {{define "decide.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Inbox"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 <script src="/static/live.js" defer></script>
 </head><body data-live="decide">
@@ -10,7 +11,7 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Inbox, card by card</h2>
+  <h2>{{t "Inbox, card by card"}}</h2>
   {{template "decide_content.html" .}}
 </main>
 <script src="/static/keys.js"></script>

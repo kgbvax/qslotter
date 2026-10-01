@@ -1,7 +1,8 @@
 {{define "settings.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Settings</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Settings"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 </head><body>
 <header class="site">
@@ -9,31 +10,36 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Settings</h2>
-  {{if .Saved}}<p class="ok">Saved. Credential checks: <b>QRZ:</b> {{.QrzStatus}} &nbsp;·&nbsp; <b>Clublog:</b> {{.ClublogStatus}} <span class="muted">(also written to the server log)</span></p>{{end}}
-  <p class="muted">Leave a password field empty to keep the stored value. Changes apply immediately;
-  QRZ lookups use the new credentials at once. Sync interval changes need a restart.</p>
+  <h2>{{t "Settings"}}</h2>
+  {{if .Saved}}<p class="ok">{{t "Saved. Credential checks:"}} <b>QRZ:</b> {{tm .QrzStatus}} &nbsp;·&nbsp; <b>Clublog:</b> {{tm .ClublogStatus}} <span class="muted">{{t "(also written to the server log)"}}</span></p>{{end}}
+  <p class="muted">{{t "Leave a password field empty to keep the stored value. Changes apply immediately; QRZ lookups use the new credentials at once. Sync interval changes need a restart."}}</p>
   <form method="post" action="/settings/save" class="settings-form">
-    <h3>QRZ (callsign lookups; needs the XML subscription)</h3>
-    <label>Username <input type="text" name="qrz_username" value="{{.Cfg.QRZ.Username}}"></label>
-    <label>Password <input type="password" name="qrz_password" value="" placeholder="{{if .Cfg.QRZ.Password}}stored - leave empty to keep{{else}}not set{{end}}"></label>
+    <h3>{{t "QRZ (callsign lookups; needs the XML subscription)"}}</h3>
+    <label>{{t "Username"}} <input type="text" name="qrz_username" value="{{.Cfg.QRZ.Username}}"></label>
+    <label>{{t "Password"}} <input type="password" name="qrz_password" value="" placeholder="{{if .Cfg.QRZ.Password}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
 
-    <h3>Clublog (log sync + push-back)</h3>
-    <label>Email <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
-    <label>Application password <input type="password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}stored - leave empty to keep{{else}}not set{{end}}"></label>
-    <label>Callsign <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>
-    <label>API key <input type="password" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}stored - leave empty to keep{{else}}not set{{end}}"></label>
+    <h3>{{t "Clublog (log sync + push-back)"}}</h3>
+    <label>{{t "Email"}} <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
+    <label>{{t "Application password"}} <input type="password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
+    <label>{{t "Callsign"}} <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>
+    <label>{{t "API key"}} <input type="password" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
 
-    <h3>Station identity (printed on cards)</h3>
-    <label>Operator name <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>
-    <label>QTH <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
+    <h3>{{t "Station identity (printed on cards)"}}</h3>
+    <label>{{t "Operator name"}} <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>
+    <label>{{t "QTH"}} <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
 
-    <p><button type="submit">Save &amp; validate</button></p>
+    <h3>{{t "Language"}}</h3>
+    <label>{{t "User interface"}} <select name="ui_language">
+      <option value="">{{t "Automatic (browser / system language)"}}</option>
+      {{range .Langs}}<option value="{{.Code}}"{{if eq $.Cfg.UI.Language .Code}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+
+    <p><button type="submit">{{t "Save & validate"}}</button></p>
   </form>
   {{if .CanQuit}}
-  <h3>Program</h3>
-  <p class="muted">Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon.</p>
-  <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="Quit qslotter? The Log4OM feed stops until you start it again.">Quit qslotter</button></p>
+  <h3>{{t "Program"}}</h3>
+  <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
+  <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
   {{end}}
 </main>
 </body></html>{{end}}

@@ -1,33 +1,34 @@
 {{define "queue_compact.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Inbox"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 <script src="/static/live.js" defer></script>
 </head><body class="compact" data-live="list">
 <main>
-  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
-    <a href="/decide">Decide</a> <a href="/work">Desk</a>
+  <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
+    <a href="/decide">{{t "Decide"}}</a> <a href="/work">{{t "Desk"}}</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">↻</button>
     <span id="recompute-msg"></span>
   </h2>
-  {{if or .Done .Failed}}<p class="banner">{{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span>{{end}}</p>{{end}}
-  <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>Nothing waiting for a decision.</p>
+  {{if or .Done .Failed}}<p class="banner">{{t "%s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s skipped" .Failed}}</span>{{end}}</p>{{end}}
+  <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>{{t "Nothing waiting for a decision."}}</p>
   <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="compact" value="1">
     <select name="action">
-      <option value="yes">Yes</option>
-      <option value="none">No</option>
+      <option value="yes">{{t "Yes"}}</option>
+      <option value="none">{{t "No"}}</option>
     </select>
-    <button type="submit" class="mini">Apply</button>
+    <button type="submit" class="mini">{{t "Apply"}}</button>
   </form>
   <table id="queue-table" class="compact">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band/Mode</th><th>Name</th><th title="QRZ suggestion">?</th><th>Card?</th></tr></thead>
+    <thead><tr><th class="ck"></th><th>{{t "Date"}}</th><th>{{t "Call"}}</th><th>{{t "Band/Mode"}}</th><th>{{t "Name"}}</th><th title="{{t "QRZ suggestion"}}">?</th><th>{{t "Card?"}}</th></tr></thead>
     <tbody id="queue-body">
     {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
     </tbody>
   </table>
-  <p class="muted legend">Yes = card (route chosen at the Desk) · No = no card. Written now: in the full view.</p>
+  <p class="muted legend">{{t "Yes = card (route chosen at the Desk) · No = no card. Written now: in the full view."}}</p>
 </main>
 <script>
 // In an app-mode window (launched with --app=...) the page may resize its

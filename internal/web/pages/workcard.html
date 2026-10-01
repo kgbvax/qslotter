@@ -1,7 +1,8 @@
 {{define "workcard.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Desk</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Desk"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
 <script src="/static/live.js" defer></script>
 </head><body data-live="workcard">
@@ -10,7 +11,7 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Desk, card by card</h2>
+  <h2>{{t "Desk, card by card"}}</h2>
   {{template "workcard_content.html" .}}
 </main>
 <script src="/static/keys.js"></script>

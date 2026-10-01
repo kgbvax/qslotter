@@ -3,12 +3,12 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -75,28 +75,13 @@ func (s *Server) expectedCards() ([]*ExpectedCard, error) {
 // RcvdLine is one QSO with the looked-up station and where both cards stand.
 type RcvdLine struct {
 	QSO      *store.QSO
-	Received bool   // their card is on record
-	RcvdDate string // YYYYMMDD
-	Status   string // queue status ("" = never queued)
-	Yours    string // where your card stands, spelled out
-	Reply    string // "" = a reply is due (or the QSO is at the Desk); else why none is needed
-	AtDesk   bool   // a card for it is already at the Desk: it goes on the reply card
-	Checked  bool   // preselected for booking
-}
-
-// sentText spells out a sent card: "sent 2024-03-02 via Bureau, manager K2ABC".
-func sentText(date, method, desired, manager string) string {
-	t := "sent"
-	if date != "" {
-		t += " " + fmtDate(date)
-	}
-	if method != "" {
-		t += " via " + methodName(method)
-	}
-	if desired == "M" && manager != "" && method != "M" {
-		t += ", manager " + manager
-	}
-	return t
+	Received bool     // their card is on record
+	RcvdDate string   // YYYYMMDD
+	Status   string   // queue status ("" = never queued)
+	Yours    i18n.Msg // where your card stands, spelled out
+	Reply    i18n.Msg // zero = a reply is due (or the QSO is at the Desk); else why none is needed
+	AtDesk   bool     // a card for it is already at the Desk: it goes on the reply card
+	Checked  bool     // preselected for booking
 }
 
 // rcvdLines describes the station's QSOs for booking (base-call aware: a
@@ -114,19 +99,19 @@ func (s *Server) rcvdLines(call string) (lines []*RcvdLine, truncated bool, err 
 		switch {
 		case h.QueueStatus == "requested":
 			it, _ := s.store.QueueGet(h.QSO.QSLKey)
-			l.Yours = "their card requested"
+			l.Yours = i18n.M("their card requested")
 			if it != nil {
-				l.Yours += " via " + it.Channel
+				l.Yours = i18n.M("their card requested via %s", i18n.M(it.Channel))
 				if it.SentAt.Valid {
 					if t, err := time.Parse(time.RFC3339, it.SentAt.String); err == nil {
-						l.Yours += " on " + t.Format("2006-01-02")
+						l.Yours = i18n.M("their card requested via %s on %s", i18n.M(it.Channel), t.Format("2006-01-02"))
 						if overdue > 0 && s.now().Sub(t) > overdue && !l.Received {
-							l.Yours += " - overdue"
+							l.Yours = i18n.M("their card requested via %s on %s - overdue", i18n.M(it.Channel), t.Format("2006-01-02"))
 						}
 					}
 				}
 			}
-			l.Reply = l.Yours + " - no reply needed"
+			l.Reply = i18n.M("%s - no reply needed", l.Yours)
 		case sent || h.QueueStatus == "sent":
 			if !sent { // pushed, and Clublog's state changed since: the queue knows
 				if it, _ := s.store.QueueGet(h.QSO.QSLKey); it != nil {
@@ -139,14 +124,14 @@ func (s *Server) rcvdLines(call string) (lines []*RcvdLine, truncated bool, err 
 					}
 				}
 			}
-			l.Yours = sentText(date, method, h.DesiredMethod, h.Manager)
-			l.Reply = "your card went out (" + l.Yours + ")"
+			l.Yours = sentMsg(date, method, h.DesiredMethod, h.Manager)
+			l.Reply = i18n.M("your card went out (%s)", l.Yours)
 		case h.QueueStatus == "decided":
-			l.Yours, l.AtDesk = "at the Desk", true
+			l.Yours, l.AtDesk = i18n.M("at the Desk"), true
 		case h.QueueStatus == "queued":
-			l.Yours = "in the Inbox"
+			l.Yours = i18n.M("in the Inbox")
 		case h.QueueStatus == "skipped":
-			l.Yours = "no card decided"
+			l.Yours = i18n.M("no card decided")
 		}
 		lines = append(lines, l)
 	}
@@ -201,7 +186,7 @@ func (s *Server) prefetchStations(lines []*RcvdLine) {
 	seen := map[string]bool{}
 	for _, l := range lines {
 		c := strings.ToUpper(l.QSO.Call)
-		if l.Reply != "" || seen[c] {
+		if !l.Reply.IsZero() || seen[c] {
 			continue
 		}
 		seen[c] = true
@@ -227,14 +212,14 @@ func (s *Server) pageReceive(w http.ResponseWriter, r *http.Request) {
 		s.prefetchStations(lines)
 		data["Call"], data["Lines"], data["Truncated"] = call, lines, truncated
 	}
-	s.render(w, "receive.html", data)
+	s.render(w, r, "receive.html", data)
 }
 
 // htmxReceiveLookup lists the station's QSOs for booking.
 func (s *Server) htmxReceiveLookup(w http.ResponseWriter, r *http.Request) {
 	call := strings.ToUpper(strings.TrimSpace(r.FormValue("call")))
 	if call == "" {
-		s.render(w, "receive_results.html", map[string]any{"Call": ""})
+		s.render(w, r, "receive_results.html", map[string]any{"Call": ""})
 		return
 	}
 	lines, truncated, err := s.rcvdLines(call)
@@ -243,7 +228,7 @@ func (s *Server) htmxReceiveLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.prefetchStations(lines)
-	s.render(w, "receive_results.html", map[string]any{"Call": call, "Lines": lines, "Truncated": truncated})
+	s.render(w, r, "receive_results.html", map[string]any{"Call": call, "Lines": lines, "Truncated": truncated})
 }
 
 // ReplyCard is one reply to write: the QSOs with one worked callsign that
@@ -267,7 +252,7 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 	call := strings.ToUpper(strings.TrimSpace(r.FormValue("call")))
 	keys := deskKeys(r)
 	if len(keys) == 0 {
-		http.Error(w, "Tick the QSO(s) the card confirms.", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "Tick the QSO(s) the card confirms.")
 		return
 	}
 	today := s.now().UTC().Format("20060102")
@@ -278,7 +263,7 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if q == nil {
-			http.Error(w, "QSO not found: "+key, http.StatusNotFound)
+			s.fail(w, r, http.StatusNotFound, "QSO not found: %s", key)
 			return
 		}
 		if rcvd, _ := q.EffectiveRcvd(); rcvd {
@@ -317,8 +302,8 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 	// station wants no card from you, for none of the QSOs it confirms.
 	if expectedCard {
 		for _, l := range mine {
-			if l.Reply == "" {
-				l.Reply, l.AtDesk = "their card answers your request - no reply needed", false
+			if l.Reply.IsZero() {
+				l.Reply, l.AtDesk = i18n.M("their card answers your request - no reply needed"), false
 			}
 		}
 	}
@@ -328,7 +313,7 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expected, _ := s.expectedCards()
-	s.render(w, "receive_reply.html", map[string]any{
+	s.render(w, r, "receive_reply.html", map[string]any{
 		"Call": call, "Booked": mine, "Cards": cards,
 		// the Expected list on the page, refreshed out of band
 		"Expected": expected, "OverdueWeeks": s.config().Receive.OverdueWeeks, "OOB": true,
@@ -345,7 +330,7 @@ func (s *Server) replyCards(booked []*RcvdLine) ([]*ReplyCard, error) {
 	var cards []*ReplyCard
 	byCall := map[string]*ReplyCard{}
 	for _, l := range booked {
-		if l.Reply != "" {
+		if !l.Reply.IsZero() {
 			continue
 		}
 		c := strings.ToUpper(l.QSO.Call)
@@ -365,7 +350,7 @@ func (s *Server) replyCards(booked []*RcvdLine) ([]*ReplyCard, error) {
 				continue
 			}
 			if q, _ := s.store.GetQSO(it.QSLKey); q != nil {
-				rc.Lines = append(rc.Lines, &RcvdLine{QSO: q, Status: "decided", Yours: "at the Desk", AtDesk: true})
+				rc.Lines = append(rc.Lines, &RcvdLine{QSO: q, Status: "decided", Yours: i18n.M("at the Desk"), AtDesk: true})
 			}
 		}
 		sort.SliceStable(rc.Lines, func(i, j int) bool {
@@ -405,16 +390,16 @@ func suggestedRoute(row *QueueRow) (code, manager string) {
 func (s *Server) htmxReceiveResearch(w http.ResponseWriter, r *http.Request) {
 	keys := deskKeys(r)
 	if len(keys) == 0 {
-		http.Error(w, "missing key", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "missing key")
 		return
 	}
 	row := s.queueRowFor(keys[len(keys)-1])
 	if row.QSO == nil {
-		http.Error(w, "QSO not found", http.StatusNotFound)
+		s.fail(w, r, http.StatusNotFound, "QSO not found")
 		return
 	}
 	s.researchFor(row, keys...)
-	s.render(w, "research_panel", row)
+	s.render(w, r, "research_panel", row)
 }
 
 // htmxReceiveReply answers a received card (C3): how=written (written now,
@@ -423,7 +408,7 @@ func (s *Server) htmxReceiveResearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 	keys := deskKeys(r)
 	if len(keys) == 0 {
-		http.Error(w, errNoKeys.Error(), http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, errNoKeys.Error())
 		return
 	}
 	how := r.FormValue("how")
@@ -432,50 +417,50 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 	case "written", "print":
 		var err error
 		if rt, err = parseRoute(r.FormValue("route"), r.FormValue("manager")); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			s.fail(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 		for _, k := range keys[1:] { // one card = one worked callsign
 			if !strings.EqualFold(callFromKey(k), callFromKey(keys[0])) {
-				http.Error(w, "One card answers one callsign - these QSOs have different calls.", http.StatusBadRequest)
+				s.fail(w, r, http.StatusBadRequest, "One card answers one callsign - these QSOs have different calls.")
 				return
 			}
 		}
 	case "later":
 	default:
-		http.Error(w, "unknown reply", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "unknown reply")
 		return
 	}
 	if err := s.store.QueueReply(keys); err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
-	route := strings.ToLower(routeName(routeCode(rt.Method, rt.Via)))
-	msg, to := fmt.Sprintf("Reply to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys)), "decided"
+	route := i18n.M(routeName(routeCode(rt.Method, rt.Via)))
+	msg, to := i18n.M("Reply to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys)), "decided"
 	switch how {
 	case "written":
 		if err := s.store.QueueWritten(keys, rt); err != nil {
-			s.queueErr(w, err)
+			s.queueErr(w, r, err)
 			return
 		}
-		msg, to = fmt.Sprintf("Reply to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
+		msg, to = i18n.M("Reply to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
 	case "print":
 		if err := s.printCard(keys, rt); err != nil {
 			if errors.Is(err, store.ErrConflict) {
-				s.queueErr(w, err)
+				s.queueErr(w, r, err)
 				return
 			}
 			// The reply is at the Desk now: say so in place of the panel.
 			for _, k := range keys {
 				s.publishQueueChanged(k, "decided")
 			}
-			s.render(w, "receive_msg", map[string]any{"Msg": "Printing failed (" + err.Error() + ") - the reply to " + callFromKey(keys[0]) + " waits at the Desk.", "Err": true})
+			s.render(w, r, "receive_msg", map[string]any{"Msg": i18n.M("Printing failed (%s) - the reply to %s waits at the Desk.", err.Error(), callFromKey(keys[0])), "Err": true})
 			return
 		}
-		msg, to = fmt.Sprintf("Reply to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
+		msg, to = i18n.M("Reply to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
 	}
 	for _, k := range keys {
 		s.publishQueueChanged(k, to)
 	}
-	s.render(w, "receive_msg", map[string]any{"Msg": msg})
+	s.render(w, r, "receive_msg", map[string]any{"Msg": msg})
 }

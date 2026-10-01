@@ -1,18 +1,18 @@
 {{define "station_info.html"}}
 {{if .Info}}
 <div class="station-info" id="station-info">
-  <p><b>QSL method (suggested):</b> {{if .Info.QSLMethod}}{{.Info.QSLMethod}}{{else}}-{{end}}
-     {{if .Info.QSLRoute}}via {{.Info.QSLRoute}}{{end}}
-     {{if .Info.RefusePaper}}<span class="err">(NO PAPER)</span>{{end}}
-     {{if .Info.QSLConfidence}}<span class="muted">· {{.Info.QSLConfidence}} confidence</span>{{end}}</p>
-  {{if .Info.QSLReason}}<p class="muted">Why: {{.Info.QSLReason}}</p>{{end}}
-  <p><b>QSL manager:</b> {{if .Info.QSLMgr}}{{.Info.QSLMgr}}{{else}}-{{end}}</p>
-  <p><b>Address:</b> {{.Info.Addr1}} {{.Info.Addr2}} {{.Info.State}} {{.Info.Zip}} {{.Info.Country}}</p>
-  <p><b>Email:</b> {{.Info.Email}}</p>
+  <p><b>{{t "QSL method (suggested):"}}</b> {{if .Info.QSLMethod}}{{.Info.QSLMethod}}{{else}}-{{end}}
+     {{if .Info.QSLRoute}}{{t "via %s" .Info.QSLRoute}}{{end}}
+     {{if .Info.RefusePaper}}<span class="err">{{t "(NO PAPER)"}}</span>{{end}}
+     {{if .Info.QSLConfidence}}<span class="muted">· {{t "%s confidence" (t .Info.QSLConfidence)}}</span>{{end}}</p>
+  {{if .Info.QSLReason}}<p class="muted">{{t "Why:"}} {{.Info.QSLReason}}</p>{{end}}
+  <p><b>{{t "QSL manager:"}}</b> {{if .Info.QSLMgr}}{{.Info.QSLMgr}}{{else}}-{{end}}</p>
+  <p><b>{{t "Address:"}}</b> {{.Info.Addr1}} {{.Info.Addr2}} {{.Info.State}} {{.Info.Zip}} {{.Info.Country}}</p>
+  <p><b>{{t "Email:"}}</b> {{.Info.Email}}</p>
   <p><b>eQSL:</b> {{.Info.EQSL}} &nbsp; <b>mQSL:</b> {{.Info.MQSL}} &nbsp; <b>LoTW:</b> {{.Info.LoTW}}</p>
-  <p class="muted">cached {{since .Info.FetchedAt}} ago</p>
+  <p class="muted">{{t "cached %s ago" (since .Info.FetchedAt)}}</p>
 </div>
 {{else}}
-<div class="station-info" id="station-info"><p class="muted">No station info available for <b>{{.Call}}</b>. Check QRZ credentials under Settings.</p></div>
+<div class="station-info" id="station-info"><p class="muted">{{th "No station info available for <b>%s</b>. Check QRZ credentials under Settings." (html .Call)}}</p></div>
 {{end}}
 {{end}}

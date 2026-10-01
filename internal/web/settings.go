@@ -11,6 +11,7 @@ import (
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"gopkg.in/yaml.v3"
 )
@@ -18,7 +19,7 @@ import (
 // pageSettings renders the service-configuration form (QRZ/Clublog
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil})
+	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices()})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -28,7 +29,7 @@ func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
 // in the log). Sync intervals still need a restart.
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if s.cfgPath == "" {
-		http.Error(w, "settings editing is disabled (no config path given at startup)", http.StatusServiceUnavailable)
+		s.fail(w, r, http.StatusServiceUnavailable, "settings editing is disabled (no config path given at startup)")
 		return
 	}
 	cur := s.config()
@@ -41,6 +42,13 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"clublog.api_key":      strings.TrimSpace(r.FormValue("clublog_api_key")),
 		"station.name":         strings.TrimSpace(r.FormValue("station_name")),
 		"station.qth":          strings.TrimSpace(r.FormValue("station_qth")),
+		"ui.language":          "",
+	}
+	// The UI language: one with a catalog, or empty = the browser's.
+	for _, l := range s.i18n.Languages() {
+		if r.FormValue("ui_language") == l {
+			vals["ui.language"] = l
+		}
 	}
 	// Empty secret fields mean "keep the stored value".
 	if vals["qrz.password"] == "" {
@@ -54,12 +62,12 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := updateConfigFile(s.cfgPath, vals); err != nil {
-		http.Error(w, "saving config: "+err.Error(), http.StatusInternalServerError)
+		s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
 		return
 	}
 	newCfg, err := config.Load(s.cfgPath)
 	if err != nil {
-		http.Error(w, "config saved, but reloading it failed: "+err.Error(), http.StatusInternalServerError)
+		s.fail(w, r, http.StatusInternalServerError, "config saved, but reloading it failed: %s", err.Error())
 		return
 	}
 	s.cfgMu.Lock()
@@ -77,44 +85,56 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	qrzStatus, clublogStatus := s.validateFn(newCfg)
-	s.render(w, "settings.html", map[string]any{
+	s.render(w, r, "settings.html", map[string]any{
 		"Cfg":           newCfg,
 		"CanQuit":       s.Quit != nil,
+		"Langs":         s.langChoices(),
 		"Saved":         true,
 		"QrzStatus":     qrzStatus,
 		"ClublogStatus": clublogStatus,
 	})
 }
 
+// LangChoice is one entry of the language select.
+type LangChoice struct{ Code, Name string }
+
+func (s *Server) langChoices() []LangChoice {
+	var out []LangChoice
+	for _, l := range s.i18n.Languages() {
+		out = append(out, LangChoice{Code: l, Name: s.i18n.Name(l)})
+	}
+	return out
+}
+
 // validateCredentials checks both services right now and returns human-ready
 // status lines for the settings page. Uses short-timeout clients so the form
 // round-trip stays snappy; the outcome also lands in the log.
-func validateCredentials(cfg *config.Config) (qrzStatus, clublogStatus string) {
+func validateCredentials(cfg *config.Config) (qrzStatus, clublogStatus i18n.Msg) {
 	if cfg.QRZ.Username != "" {
 		q := qrz.New(cfg.QRZ.Username, cfg.QRZ.Password, cfg.QRZ.Agent)
 		q.HTTP = &http.Client{Timeout: 12 * time.Second}
 		if err := q.CheckCredentials(); err != nil {
-			qrzStatus = "ERROR: " + err.Error()
+			qrzStatus = i18n.M("ERROR: %s", err.Error())
 			log.Printf("settings: QRZ credential check failed: %v", err)
 		} else {
-			qrzStatus = "OK - logged in as " + cfg.QRZ.Username
+			qrzStatus = i18n.M("OK - logged in as %s", cfg.QRZ.Username)
 			log.Printf("settings: QRZ credential check OK (%s)", cfg.QRZ.Username)
 		}
 	} else {
-		qrzStatus = "not configured (station info disabled)"
+		qrzStatus = i18n.M("not configured (station info disabled)")
 	}
 	if cfg.Clublog.Email != "" && cfg.Clublog.APIKey != "" {
 		c := clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword, cfg.Clublog.Call, cfg.Clublog.APIKey)
 		c.HTTP = &http.Client{Timeout: 15 * time.Second}
 		if err := c.CheckCredentials(); err != nil {
-			clublogStatus = "ERROR: " + err.Error()
+			clublogStatus = i18n.M("ERROR: %s", err.Error())
 			log.Printf("settings: Clublog credential check failed: %v", err)
 		} else {
-			clublogStatus = "OK (" + cfg.Clublog.Call + ")"
+			clublogStatus = i18n.M("OK (%s)", cfg.Clublog.Call)
 			log.Printf("settings: Clublog credential check OK (%s)", cfg.Clublog.Call)
 		}
 	} else {
-		clublogStatus = "not configured (pull/push disabled)"
+		clublogStatus = i18n.M("not configured (pull/push disabled)")
 	}
 	return qrzStatus, clublogStatus
 }

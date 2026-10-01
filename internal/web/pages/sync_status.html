@@ -1,6 +1,6 @@
 {{define "sync_status.html"}}
-{{if .LastPull}}<span class="ok">last pull: {{since .LastPull}} ago</span>{{else}}<span class="muted">never pulled</span>{{end}}
-{{if .LastPush}}<span class="ok">last push: {{since .LastPush}} ago</span>{{else}}<span class="muted">never pushed</span>{{end}}
+{{if .LastPull}}<span class="ok">{{t "last pull: %s ago" (since .LastPull)}}</span>{{else}}<span class="muted">{{t "never pulled"}}</span>{{end}}
+{{if .LastPush}}<span class="ok">{{t "last push: %s ago" (since .LastPush)}}</span>{{else}}<span class="muted">{{t "never pushed"}}</span>{{end}}
 {{if .PullErr}}<span class="err">{{.PullErr}}</span>{{end}}
 {{if .PushErr}}<span class="err">{{.PushErr}}</span>{{end}}
 {{end}}

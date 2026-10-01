@@ -54,6 +54,7 @@ type Store interface {
 	QueueCloseSentElsewhere(qslKey string) error
 	QueueDiscardBacklog(before string) (int, error)
 	QueueCounts() (queued, decided, pendingPush int, err error)
+	ExpectedCount() (int, error)
 	AppendEvent(e *Event) error
 	CallHistory(call string, limit int) ([]*HistoryRow, error)
 	GetStation(callsign string) (*StationInfo, error)
@@ -1173,6 +1174,16 @@ func (s *SQLiteStore) QueueCounts() (queued, decided, pendingPush int, err error
 	}
 	err = s.db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE ` + pendingPushWhere).Scan(&pendingPush)
 	return queued, decided, pendingPush, err
+}
+
+// ExpectedCount counts the open requests (B4b) whose card has not arrived;
+// QSOs requested together (one card) count once.
+func (s *SQLiteStore) ExpectedCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(DISTINCT upper(q.call) || '|' || COALESCE(w.sent_at,'') || '|' || COALESCE(w.channel,'') || '|' || COALESCE(w.note,''))
+		FROM qsl_work_queue w JOIN qsos q ON q.qsl_key = w.qsl_key
+		WHERE w.status = 'requested' AND COALESCE(q.qsl_rcvd_local,'') <> 'Y' AND COALESCE(q.qsl_rcvd,'') <> 'Y'`).Scan(&n)
+	return n, err
 }
 
 // --- events ---

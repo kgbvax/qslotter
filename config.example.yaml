@@ -53,3 +53,4 @@ store:
 
 ui:
   mode: window          # window (own app window + tray) | browser (browser app windows) | headless (server only)
+  language: ""          # "" = the browser's / system's language; "de", "en" (also under Settings)

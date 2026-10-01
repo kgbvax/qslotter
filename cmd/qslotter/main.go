@@ -27,6 +27,7 @@ import (
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/desktop"
 	"github.com/dl9et/qslotter/internal/events"
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/station"
@@ -234,12 +235,22 @@ func main() {
 	if firstRun {
 		startPath = "/settings" // new install: enter credentials first
 	}
+	// The shell's own texts follow ui.language, else the system language
+	// (the window gets the browser language from the WebView).
+	lang := i18n.Default.Match(cfg.UI.Language, desktop.SystemLanguage())
 	sh := desktop.New(desktop.Options{
 		Mode:        mode,
 		BaseURL:     cfg.Server.LocalURL(),
 		StartPath:   startPath,
 		OpenCompact: cfg.Server.OpenCompact,
 		Teardown:    teardown,
+		Labels: desktop.Labels{
+			Open:         i18n.Default.T(lang, "Open qslotter"),
+			Compact:      i18n.Default.T(lang, "Compact Inbox"),
+			Quit:         i18n.Default.T(lang, "Quit qslotter"),
+			Tooltip:      i18n.Default.T(lang, "qslotter - QSL workbench"),
+			CompactTitle: i18n.Default.T(lang, "qslotter - compact"),
+		},
 	})
 	shell.Store(sh)
 	if mode != desktop.ModeHeadless {

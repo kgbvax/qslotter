@@ -67,7 +67,7 @@ func TestReceiveBookAndReply(t *testing.T) {
 		t.Fatalf("written reply without a route = %d, want 400", r.Code)
 	}
 	r = postForm(t, h, "/receive/reply?how=written", url.Values{"key": {inbox, never}, "route": {"B"}})
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "Reply to DL1ABC written (bureau)") {
+	if r.Code != 200 || !strings.Contains(r.Body.String(), "Reply to DL1ABC written (Bureau)") {
 		t.Fatalf("reply written:\n%s", r.Body)
 	}
 	for _, k := range []string{inbox, never} {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/events"
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
@@ -43,7 +45,7 @@ func (s *Server) pageLog(w http.ResponseWriter, r *http.Request) {
 	}
 	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
 	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
-	s.render(w, "log.html", map[string]any{
+	s.render(w, r, "log.html", map[string]any{
 		"QSOs":     qsos[:min(len(qsos), 200)],
 		"LastPull": lastPull,
 		"LastPush": lastPush,
@@ -71,15 +73,15 @@ type QueueRow struct {
 // card already sent or received, LoTW confirmation...
 type Badge struct {
 	Kind string // "info", "sent", "rcvd", "warn"
-	Text string
+	Text i18n.Msg
 }
 
 // HistoryLine is one earlier QSO with the station, with the state of its card.
 type HistoryLine struct {
 	Date, Time, Call, Band, Mode string
-	Sent                         string // "sent 2024-03-02 via Bureau" / ""
-	Rcvd                         string // "received 2024-03-05" / ""
-	Queue                        string // where the card stands: "awaiting decision", "work queue", "no card", ""
+	Sent                         i18n.Msg // "sent 2024-03-02 via Bureau" / zero
+	Rcvd                         i18n.Msg // "received 2024-03-05" / zero
+	Queue                        i18n.Msg // where the card stands: "awaiting decision", "at the Desk", "no card" / zero
 	LoTW                         bool
 }
 
@@ -88,11 +90,11 @@ type HistoryLine struct {
 type Research struct {
 	Badges     []Badge
 	History    []HistoryLine
-	Others     int    // other cards of this station awaiting a decision or production
-	BioExcerpt string // the QSL-relevant lines of the QRZ bio
-	QRZState   string // "off", "pending", "notfound", "ok"
-	QRZAge     string
-	WhyQueued  string // override reason, when a normally filtered QSO was forced in
+	Others     int      // other cards of this station awaiting a decision or production
+	BioExcerpt string   // the QSL-relevant lines of the QRZ bio
+	QRZState   string   // "off", "pending", "notfound", "ok"
+	QRZAge     i18n.Msg // how old the cached entry is ("3h")
+	WhyQueued  string   // override reason, when a normally filtered QSO was forced in
 }
 
 // suggestFor maps cached station info to the suggestion value.
@@ -219,23 +221,48 @@ func bioExcerpt(bio string) string {
 }
 
 // queueStateText spells out where an earlier QSO's card stands.
-func queueStateText(status, method, manager string) string {
+func queueStateText(status, method, manager string) i18n.Msg {
 	switch status {
 	case "queued":
-		return "awaiting decision"
+		return i18n.M("awaiting decision")
 	case "decided":
 		if c := routeCode(method, ""); c != "" {
-			return "at the Desk: " + strings.ToLower(routeName(c))
+			return i18n.M("at the Desk (%s)", i18n.M(routeName(c)))
 		}
-		return "at the Desk"
+		return i18n.M("at the Desk")
 	case "skipped":
-		return "no card"
+		return i18n.M("no card")
 	case "requested":
-		return "their card requested"
-	case "sent":
-		return ""
+		return i18n.M("their card requested")
 	}
-	return ""
+	return i18n.Msg{}
+}
+
+// sentMsg spells out a sent card: "sent 2024-03-02 via Bureau, manager K2ABC"
+// (date YYYYMMDD, method B/D/M; manager only for a manager route).
+func sentMsg(date, method, desired, manager string) i18n.Msg {
+	format, args := "sent", []any{}
+	if date != "" {
+		format += " %s"
+		args = append(args, fmtDate(date))
+	}
+	if method != "" {
+		format += " via %s"
+		args = append(args, i18n.M(methodName(method)))
+	}
+	if desired == "M" && manager != "" && method != "M" {
+		format += ", manager %s"
+		args = append(args, manager)
+	}
+	return i18n.M(format, args...)
+}
+
+// rcvdMsg spells out a received card: "received 2024-03-05".
+func rcvdMsg(date string) i18n.Msg {
+	if date == "" {
+		return i18n.M("received")
+	}
+	return i18n.M("received %s", fmtDate(date))
 }
 
 // researchFor gathers the research panel for one card: what QRZ says about the
@@ -261,7 +288,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		res.QRZState = "notfound"
 	case row.Info != nil:
 		res.QRZState = "ok"
-		res.QRZAge = since(row.Info.FetchedAt)
+		res.QRZAge = sinceMsg(row.Info.FetchedAt)
 	case s.refresher == nil || !s.refresher.Configured():
 		res.QRZState = "off"
 	default:
@@ -291,27 +318,15 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		line := HistoryLine{Date: fmtDate(q.QSODate), Time: fmtTime(q.TimeOn), Call: q.Call, Band: q.Band, Mode: q.Mode,
 			LoTW: q.LoTWQSLRcvd == "Y", Queue: queueStateText(h.QueueStatus, h.DesiredMethod, h.Manager)}
 		if sent, method, date := q.EffectiveSent(); sent {
-			line.Sent = "sent"
-			if date != "" {
-				line.Sent += " " + fmtDate(date)
-			}
-			if method != "" {
-				line.Sent += " via " + methodName(method)
-			}
-			if h.DesiredMethod == "M" && h.Manager != "" && method != "M" {
-				line.Sent += ", manager " + h.Manager
-			}
+			line.Sent = sentMsg(date, method, h.DesiredMethod, h.Manager)
 			if sentBadge == nil {
-				sentBadge = &Badge{Kind: "sent", Text: "card already " + line.Sent}
+				sentBadge = &Badge{Kind: "sent", Text: i18n.M("card already %s", line.Sent)}
 			}
 		}
 		if rcvd, date := q.EffectiveRcvd(); rcvd {
-			line.Rcvd = "received"
-			if date != "" {
-				line.Rcvd += " " + fmtDate(date)
-			}
+			line.Rcvd = rcvdMsg(date)
 			if rcvdBad == nil {
-				rcvdBad = &Badge{Kind: "rcvd", Text: "their card " + line.Rcvd + " - a reply is due unless you already sent one"}
+				rcvdBad = &Badge{Kind: "rcvd", Text: i18n.M("their card %s - a reply is due unless you already sent one", line.Rcvd)}
 			}
 		}
 		lotw = lotw || line.LoTW
@@ -334,9 +349,9 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		}
 	}
 	if prior == 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "info", Text: "first QSO with this station"})
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("first QSO with this station")})
 	} else {
-		res.Badges = append(res.Badges, Badge{Kind: "info", Text: fmt.Sprintf("%d earlier QSO(s) with this station", prior)})
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d earlier QSO(s) with this station", prior)})
 	}
 	if sentBadge != nil {
 		res.Badges = append(res.Badges, *sentBadge)
@@ -345,18 +360,18 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		res.Badges = append(res.Badges, *rcvdBad)
 	}
 	if lotw {
-		res.Badges = append(res.Badges, Badge{Kind: "info", Text: "LoTW confirmed"})
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("LoTW confirmed")})
 	}
 	// One card covers the open QSOs with the same call at the Desk (B9); a
 	// /P or prefixed call is a separate card.
 	if sameDesk > 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d QSO(s) with %s already at the Desk - a yes puts this one on the same card", sameDesk, row.QSO.Call)})
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: i18n.M("%d QSO(s) with %s already at the Desk - a yes puts this one on the same card", sameDesk, row.QSO.Call)})
 	}
 	if sameInbox > 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d more QSO(s) with %s wait in the Inbox - with a yes they share one card", sameInbox, row.QSO.Call)})
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: i18n.M("%d more QSO(s) with %s wait in the Inbox - with a yes they share one card", sameInbox, row.QSO.Call)})
 	}
 	if otherCallOp > 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "info", Text: fmt.Sprintf("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
 	}
 }
 
@@ -372,7 +387,7 @@ func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("compact") == "1" {
-		s.render(w, "queue_compact.html", map[string]any{
+		s.render(w, r, "queue_compact.html", map[string]any{
 			"Rows":   withCheckbox(s.rowsFor(items, true)),
 			"Done":   r.URL.Query().Get("done"),
 			"Failed": r.URL.Query().Get("failed"),
@@ -382,7 +397,7 @@ func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
 	data := s.decideData(r, items, true)
 	data["Rows"] = s.rowsFor(items, true)
 	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
-	s.render(w, "queue.html", data)
+	s.render(w, r, "queue.html", data)
 }
 
 // htmxQueueList renders the Inbox master list alone (live refresh).
@@ -392,7 +407,7 @@ func (s *Server) htmxQueueList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "queue_md_rows", map[string]any{"Rows": s.rowsFor(items, false)})
+	s.render(w, r, "queue_md_rows", map[string]any{"Rows": s.rowsFor(items, false)})
 }
 
 // firstPresent returns the first of keys that is still among items: after an
@@ -415,12 +430,12 @@ func firstPresent(items []*store.QueueItem, keys ...string) string {
 func (s *Server) htmxQueueRow(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
-		http.Error(w, "missing key", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "missing key")
 		return
 	}
 	row := s.queueRowFor(key)
 	if row.QSO == nil {
-		http.Error(w, "QSO not found", http.StatusNotFound)
+		s.fail(w, r, http.StatusNotFound, "QSO not found")
 		return
 	}
 	if row.Item == nil || row.Item.Status != "queued" {
@@ -432,7 +447,7 @@ func (s *Server) htmxQueueRow(w http.ResponseWriter, r *http.Request) {
 		name = "queue_row_compact.html"
 	}
 	row.ShowCheckbox = true
-	s.render(w, name, row)
+	s.render(w, r, name, row)
 }
 
 // --- (a) decision queue: one card at a time ---
@@ -479,10 +494,10 @@ func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPa
 	}
 	data := s.decideData(r, items, r.FormValue("md") == "1")
 	if fullPage {
-		s.render(w, "decide.html", data)
+		s.render(w, r, "decide.html", data)
 		return
 	}
-	s.render(w, "decide_content.html", data)
+	s.render(w, r, "decide_content.html", data)
 }
 
 // decideData picks the Inbox card to show: ?key= on GET (browsing, the
@@ -499,7 +514,7 @@ func (s *Server) decideData(r *http.Request, items []*store.QueueItem, md bool) 
 		if row := s.queueRowFor(cur.QSLKey); row.QSO != nil {
 			s.researchFor(row)
 			data["Row"] = row
-			data["Pos"] = fmt.Sprintf("card %d of %d", pos, len(items))
+			data["Pos"] = i18n.M("card %d of %d", pos, len(items))
 			data["Prev"], data["Next"] = prev, next
 			if pos < len(items) { // neighbours without wrap-around, for "next one down"
 				data["Down"] = items[pos].QSLKey
@@ -517,50 +532,54 @@ func (s *Server) decideData(r *http.Request, items []*store.QueueItem, md bool) 
 // DoneRow is one finished card with its outcome spelled out.
 type DoneRow struct {
 	Row     *QueueRow
-	Outcome string
+	Outcome i18n.Msg
 	When    string
 }
 
-func outcomeOf(it *store.QueueItem) string {
+func outcomeOf(it *store.QueueItem) i18n.Msg {
 	switch {
 	case it.Status == "skipped" && it.Note == "backlog":
-		return "no card (backlog)"
+		return i18n.M("no card (backlog)")
 	case it.Status == "skipped":
-		return "no card"
+		return i18n.M("no card")
 	case it.Status == "requested":
-		out := "their card requested via " + it.Channel
 		if it.Note != "" {
-			out += ": " + it.Note
+			return i18n.M("their card requested via %s: %s", i18n.M(it.Channel), it.Note)
 		}
-		return out
+		return i18n.M("their card requested via %s", i18n.M(it.Channel))
 	case it.Note == "sent elsewhere":
-		return "sent elsewhere (per Clublog)"
+		return i18n.M("sent elsewhere (per Clublog)")
 	case it.DesiredMethod == "W":
-		return "written on the spot"
+		return i18n.M("written on the spot")
 	}
-	how := "written"
+	how := i18n.M("written")
 	if it.PrintedAt.Valid {
-		how = "printed"
+		how = i18n.M("printed")
 	}
 	if it.Note == "written now" {
-		how = "written now"
+		how = i18n.M("written now")
 	}
-	name := map[string]string{"B": "Bureau", "D": "Direct", "M": "via manager"}[it.DesiredMethod]
-	if name == "" {
-		name = "sent"
-	}
-	if it.DesiredMethod == "M" {
-		if it.Manager != "" {
-			name += " " + it.Manager
+	var name i18n.Msg
+	switch it.DesiredMethod {
+	case "B":
+		name = i18n.M("Bureau")
+	case "D":
+		name = i18n.M("Direct")
+	case "M":
+		switch {
+		case it.Manager != "" && it.SendVia == "B":
+			name = i18n.M("via manager %s (bureau)", it.Manager)
+		case it.Manager != "" && it.SendVia == "D":
+			name = i18n.M("via manager %s (direct)", it.Manager)
+		case it.Manager != "":
+			name = i18n.M("via manager %s", it.Manager)
+		default:
+			name = i18n.M("via manager")
 		}
-		switch it.SendVia {
-		case "B":
-			name += " (bureau)"
-		case "D":
-			name += " (direct)"
-		}
+	default:
+		name = i18n.M("sent")
 	}
-	return name + ", " + how
+	return i18n.M("%s, %s", name, how)
 }
 
 // pageDone lists recently finished cards (sent, declined) with Reopen.
@@ -579,7 +598,7 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 		}
 		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item), When: when})
 	}
-	s.render(w, "done.html", map[string]any{"Rows": done, "Total": len(items)})
+	s.render(w, r, "done.html", map[string]any{"Rows": done, "Total": len(items)})
 }
 
 // externalHosts may be opened in the system browser from the app window. The
@@ -591,12 +610,12 @@ var externalHosts = []string{"qrz.com", "clublog.org", "lotw.arrl.org", "eqsl.cc
 // no second browser window), so static/app.js posts it here.
 func (s *Server) apiOpenExternal(w http.ResponseWriter, r *http.Request) {
 	if s.OpenExternal == nil {
-		http.Error(w, "not running as the desktop app", http.StatusNotImplemented)
+		s.fail(w, r, http.StatusNotImplemented, "not running as the desktop app")
 		return
 	}
 	u, err := url.Parse(r.FormValue("url"))
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedExternal(u.Hostname()) {
-		http.Error(w, "this link cannot be opened from qslotter", http.StatusForbidden)
+		s.fail(w, r, http.StatusForbidden, "this link cannot be opened from qslotter")
 		return
 	}
 	if err := s.OpenExternal(u.String()); err != nil {
@@ -620,17 +639,17 @@ func allowedExternal(host string) bool {
 // available (e.g. Windows hid it, or Explorer was not ready at logon).
 func (s *Server) apiQuit(w http.ResponseWriter, r *http.Request) {
 	if s.Quit == nil {
-		http.Error(w, "not running as the desktop app", http.StatusNotImplemented)
+		s.fail(w, r, http.StatusNotImplemented, "not running as the desktop app")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<p class="ok">qslotter is shutting down.</p>`))
+	_, _ = w.Write([]byte(`<p class="ok">` + template.HTMLEscapeString(s.tr(r, "qslotter is shutting down.")) + `</p>`))
 	go s.Quit()
 }
 
 // htmxNav renders the nav bar alone (badge counts), for live refresh.
 func (s *Server) htmxNav(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "nav", nil)
+	s.render(w, r, "nav", nil)
 }
 
 // --- station page ---
@@ -655,7 +674,7 @@ func (s *Server) pageStation(w http.ResponseWriter, r *http.Request) {
 			rows = append(rows, s.queueRowFor(it.QSLKey))
 		}
 	}
-	s.render(w, "station.html", map[string]any{
+	s.render(w, r, "station.html", map[string]any{
 		"Call": call, "Info": info, "QSOs": qsos, "Rows": rows,
 	})
 }
@@ -669,19 +688,19 @@ func (s *Server) htmxStationRefresh(w http.ResponseWriter, r *http.Request) {
 		call = strings.ToUpper(chi.URLParam(r, "call"))
 	}
 	if call == "" {
-		http.Error(w, "missing call", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "missing call")
 		return
 	}
 	if s.refresher == nil {
-		http.Error(w, "QRZ not configured", http.StatusServiceUnavailable)
+		s.fail(w, r, http.StatusServiceUnavailable, "QRZ not configured")
 		return
 	}
 	info, err := s.refresher.Refresh(r.Context(), call)
 	if err != nil || info == nil {
-		s.render(w, "station_info.html", map[string]any{"Call": call, "Info": nil})
+		s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": nil})
 		return
 	}
-	s.render(w, "station_info.html", map[string]any{"Call": call, "Info": info})
+	s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": info})
 }
 
 // --- card actions (htmx) ---
@@ -728,14 +747,15 @@ func (s *Server) afterTransition(w http.ResponseWriter, r *http.Request, key, to
 	}
 }
 
-// queueErr maps a store error to an HTTP answer; a conflict is a stale page.
-func (s *Server) queueErr(w http.ResponseWriter, err error) {
+// queueErr maps a store error to an HTTP answer in the request's language; a
+// conflict is a stale page.
+func (s *Server) queueErr(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, store.ErrConflict) {
-		http.Error(w, "This card was already handled (stale page?) - reload the list.", http.StatusConflict)
+		s.fail(w, r, http.StatusConflict, "This card was already handled (stale page?) - reload the list.")
 		return
 	}
 	if errors.Is(err, store.ErrBadRoute) {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, strings.TrimPrefix(err.Error(), store.ErrBadRoute.Error()+": "))
 		return
 	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -785,7 +805,7 @@ var (
 func (s *Server) htmxQueueYes(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
 	if err := s.store.QueueAccept(key); err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
 	s.afterTransition(w, r, key, "decided")
@@ -795,7 +815,7 @@ func (s *Server) htmxQueueYes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
 	if err := s.store.QueueDecline(key); err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
 	s.afterTransition(w, r, key, "skipped")
@@ -807,11 +827,11 @@ func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
 	rt, err := routeFrom(r, key)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.QueueWrittenNow([]string{key}, rt); err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
 	s.afterTransition(w, r, key, "sent")
@@ -821,7 +841,7 @@ func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
 func (s *Server) htmxQueueBack(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
 	if err := s.store.QueueBack(key); err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
 	s.afterTransition(w, r, key, "queued")
@@ -832,14 +852,14 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
 	inClublog, err := s.store.QueueReopen(key)
 	if err != nil {
-		s.queueErr(w, err)
+		s.queueErr(w, r, err)
 		return
 	}
 	switch inClublog {
 	case "sent":
-		w.Header().Set("HX-Trigger", `{"qslNotice":"Reopened. Clublog already has this card as sent; reopening does not undo that there."}`)
+		s.notice(w, r, "Reopened. Clublog already has this card as sent; reopening does not undo that there.")
 	case "requested":
-		w.Header().Set("HX-Trigger", `{"qslNotice":"Reopened. Clublog already has their card as requested (QSL_RCVD=R); reopening does not undo that there."}`)
+		s.notice(w, r, "Reopened. Clublog already has their card as requested (QSL_RCVD=R); reopening does not undo that there.")
 	}
 	s.afterTransition(w, r, key, "queued")
 }
@@ -863,7 +883,7 @@ func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 	case action == "none":
 		apply = func(k string) (string, error) { return "skipped", s.store.QueueDecline(k) }
 	default:
-		http.Error(w, "unknown batch action for this list", http.StatusBadRequest)
+		s.fail(w, r, http.StatusBadRequest, "unknown batch action for this list")
 		return
 	}
 	done, failed := 0, 0
@@ -897,7 +917,7 @@ func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	last, _ := s.store.MetaGet("clublog_last_pull_at")
-	s.render(w, "sync_status.html", map[string]any{"LastPull": last, "PullErr": ""})
+	s.render(w, r, "sync_status.html", map[string]any{"LastPull": last, "PullErr": ""})
 }
 
 func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
@@ -911,7 +931,7 @@ func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	last, _ := s.store.MetaGet("clublog_last_push_at")
-	s.render(w, "sync_status.html", map[string]any{"LastPush": last, "PushErr": ""})
+	s.render(w, r, "sync_status.html", map[string]any{"LastPush": last, "PushErr": ""})
 }
 
 // --- helpers ---
@@ -939,7 +959,7 @@ func min(a, b int) int {
 // page. Useful after editing qualifier rules or after a manual Clublog pull.
 func (s *Server) htmxQueueRecompute(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		http.Error(w, "qualifier rules not configured", http.StatusInternalServerError)
+		s.fail(w, r, http.StatusInternalServerError, "qualifier rules not configured")
 		return
 	}
 	keys, err := s.rules.EnqueueAllKeys(s.store)
@@ -953,9 +973,9 @@ func (s *Server) htmxQueueRecompute(w http.ResponseWriter, r *http.Request) {
 	n := len(keys)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if n == 0 {
-		_, _ = w.Write([]byte(`<span class="muted">no new QSOs to enqueue</span>`))
+		_, _ = w.Write([]byte(`<span class="muted">` + template.HTMLEscapeString(s.tr(r, "no new QSOs to enqueue")) + `</span>`))
 	} else {
-		_, _ = w.Write([]byte(`<span class="ok">enqueued ` + fmt.Sprintf("%d", n) + ` new QSO(s)</span>`))
+		_, _ = w.Write([]byte(`<span class="ok">` + template.HTMLEscapeString(s.tr(r, "enqueued %d new QSO(s)", n)) + `</span>`))
 	}
 }
 
