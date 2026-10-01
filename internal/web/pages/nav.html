@@ -8,6 +8,7 @@
     <a href="/log">{{t "Log"}}</a>
     <a href="/done" title="{{t "Finished cards"}}">{{t "Done"}}</a>
     <a href="/settings">{{t "Settings"}}</a>
+    <button type="button" class="mini view-switch" data-view="compact" title="{{t "Switch this window to the small compact Inbox"}}" hidden>{{t "compact"}}</button>
     {{if $c.Push}}<span class="pending" title="{{t "Local QSL state not yet pushed to Clublog"}}">{{t "%d to push" $c.Push}}</span>{{end}}
   </span>
 </nav>{{end}}

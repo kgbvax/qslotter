@@ -28,7 +28,7 @@
   "received %s": "erhalten am %s",
   "card already %s": "Karte bereits %s",
   "their card %s - a reply is due unless you already sent one": "die Karte der Station %s - Antwort fällig, falls du noch keine gesendet hast",
-  "first QSO with this station": "erstes QSO mit dieser Station",
+  "first QSO": "erstes QSO",
   "%d earlier QSO(s) with this station": "frühere QSOs mit dieser Station: %d",
   "LoTW confirmed": "über LoTW bestätigt",
   "%d QSO(s) with %s already at the Desk - a yes puts this one on the same card": "%d QSO(s) mit %s schon auf dem Schreibtisch - ein Ja setzt dieses mit auf dieselbe Karte",

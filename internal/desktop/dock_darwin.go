@@ -24,7 +24,7 @@ func (s *Shell) setupDock() {
 		{
 			Cmd: sel("applicationShouldHandleReopen:hasVisibleWindows:"),
 			Fn: func(self objc.ID, _cmd objc.SEL, app objc.ID, hasVisible bool) bool {
-				s.open("main") // Dock click: bring back the window
+				s.open("") // Dock click: bring back the window
 				return true
 			},
 		},

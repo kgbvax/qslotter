@@ -6,7 +6,6 @@
 server:
   addr: 127.0.0.1:8473   # loopback only. 0.0.0.0:8473 = all IPv4 interfaces (reachable from the LAN;
                          # the UI has no login - trusted network only, and open the firewall for it)
-  open_compact: false  # also open the compact decision window at start
 
 station:
   name: Ingo           # your name, printed on cards (my_name field)

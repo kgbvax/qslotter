@@ -19,7 +19,7 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span> {{t "QSOs: card or not?"}})</small>
+  <h2>{{t "Inbox"}}
     <a class="h2link" href="/queue?compact=1" title="{{t "Compact list for operating: yes / no per row"}}">{{t "compact list"}}</a>
     <a class="h2link" href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">{{t "Recompute queue"}}</button>

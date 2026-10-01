@@ -12,8 +12,7 @@
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/decide?key={{q .Next}}" hx-target="#decide" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <article class="qslcard">
     <div class="airmail"></div>
-    <p class="confirm">{{t "Confirming two-way QSO with"}}</p>
-    <p class="call"><a href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a>{{if .Row.QSO.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{.Row.QSO.Name}}</span>{{end}}</p>
+    <p class="call"><a href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a>{{with .Row.Research}}{{range .Badges}}{{if eq .Kind "first"}} <span class="chip first">{{tm .Text}}</span>{{end}}{{end}}{{end}}{{if .Row.QSO.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{.Row.QSO.Name}}</span>{{end}}</p>
     <div class="loggrid">
       <div><span class="lbl">{{t "Date"}}</span><span class="val">{{fmtDate .Row.QSO.QSODate}}</span></div>
       <div><span class="lbl">{{t "UTC"}}</span><span class="val">{{fmtTime .Row.QSO.TimeOn}}</span></div>
@@ -21,8 +20,8 @@
       <div><span class="lbl">{{t "Mode"}}</span><span class="val">{{.Row.QSO.Mode}}</span></div>
       <div><span class="lbl">{{t "RST"}}</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
-    {{if or .Row.QSO.Freq .Row.QSO.RSTRcvd .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}{{t "freq %s" .Row.QSO.Freq}} &middot; {{end}}{{if .Row.QSO.RSTRcvd}}{{t "RST rcvd %s" .Row.QSO.RSTRcvd}}{{end}}{{if .Row.QSO.Notes}} &middot; {{t "notes: %s" .Row.QSO.Notes}}{{end}}</p>{{end}}
-    {{template "research_panel" .Row}}
+    {{if or .Row.QSO.Freq .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}{{t "freq %s" .Row.QSO.Freq}}{{end}}{{if .Row.QSO.Notes}}{{if .Row.QSO.Freq}} &middot; {{end}}{{t "notes: %s" .Row.QSO.Notes}}{{end}}</p>{{end}}
+    <div class="at-call">{{template "research_panel" .Row}}</div>
   </article>
   <div class="decide-actions">
     <span class="stamps" role="group" aria-label="{{t "Card?"}}">

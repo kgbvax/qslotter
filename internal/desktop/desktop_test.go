@@ -1,6 +1,8 @@
 package desktop
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -37,24 +39,59 @@ func TestAppArgsSizeOnlyOnFirstStart(t *testing.T) {
 
 func TestTargets(t *testing.T) {
 	s := New(Options{BaseURL: "http://127.0.0.1:8473", StartPath: "/settings"})
-	if url, w, _, _ := s.target("main"); url != "http://127.0.0.1:8473/settings" || w != mainW {
-		t.Errorf("main = %s %d", url, w)
+	if url, w, _, _ := s.target(); url != "http://127.0.0.1:8473/settings" || w != mainW {
+		t.Errorf("full = %s %d", url, w)
 	}
-	if url, w, h, title := s.target("compact"); url != "http://127.0.0.1:8473/queue?compact=1&app=1" || w != compactW || h != compactH || !strings.Contains(title, "compact") {
+	s.rememberView(viewCompact)
+	if url, w, h, title := s.target(); url != "http://127.0.0.1:8473/queue?compact=1&app=1" || w != compactW || h != compactH || !strings.Contains(title, "compact") {
 		t.Errorf("compact = %s %dx%d %q", url, w, h, title)
 	}
 }
 
-// The first-run start page (Settings) is for the first main window only;
+// The first-run start page (Settings) is for the first window only;
 // reopening the window later shows the queue.
 func TestStartPathOnlyForTheFirstWindow(t *testing.T) {
 	s := New(Options{BaseURL: "http://127.0.0.1:8473", StartPath: "/settings"})
-	if url, _, _, _ := s.target("main"); url != "http://127.0.0.1:8473/settings" {
-		t.Fatalf("first main window = %s", url)
+	if url, _, _, _ := s.target(); url != "http://127.0.0.1:8473/settings" {
+		t.Fatalf("first window = %s", url)
 	}
 	s.started = true
-	if url, _, _, _ := s.target("main"); url != "http://127.0.0.1:8473/queue" {
-		t.Fatalf("reopened main window = %s", url)
+	if url, _, _, _ := s.target(); url != "http://127.0.0.1:8473/queue" {
+		t.Fatalf("reopened window = %s", url)
+	}
+}
+
+// The view and the positions of both views survive a restart.
+func TestStateRemembered(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "window-state.json")
+	s := New(Options{StatePath: path})
+	if s.view != viewFull {
+		t.Fatalf("default view = %q", s.view)
+	}
+	s.rememberView(viewCompact)
+	s.st.setRect(viewFull, Rect{10, 20, 1200, 860})
+	s.st.setRect(viewCompact, Rect{30, 40, 480, 640})
+	saveState(path, s.st)
+
+	n := New(Options{StatePath: path})
+	if n.view != viewCompact {
+		t.Errorf("view = %q, want compact", n.view)
+	}
+	if r := n.st.rect(viewFull); r == nil || *r != (Rect{10, 20, 1200, 860}) {
+		t.Errorf("full rect = %v", r)
+	}
+	if r := n.st.rect(viewCompact); r == nil || *r != (Rect{30, 40, 480, 640}) {
+		t.Errorf("compact rect = %v", r)
+	}
+}
+
+func TestStateDamagedFileIsEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "window-state.json")
+	if err := os.WriteFile(path, []byte("{nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := New(Options{StatePath: path}); s.view != viewFull || s.st.Full != nil {
+		t.Errorf("damaged state not ignored: %+v", s.st)
 	}
 }
 

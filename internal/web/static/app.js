@@ -52,3 +52,17 @@ function qslTr(text) {
     });
   });
 })();
+
+// In the desktop app the window can switch between the full and the compact
+// view (qslotterView is bound by the shell); elsewhere the switches stay hidden.
+(function () {
+  function init() {
+    if (typeof window.qslotterView !== 'function') return;
+    document.querySelectorAll('.view-switch').forEach(function (b) {
+      b.hidden = false;
+      b.addEventListener('click', function () { window.qslotterView(b.dataset.view); });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
