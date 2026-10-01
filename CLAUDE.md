@@ -47,6 +47,41 @@ There is no Makefile or CI config; use the standard Go toolchain.
 
 On Windows, install or bundle SumatraPDF under `third_party/sumatrapdf/` for printing. macOS and Linux use `lp`/`lpstat`.
 
+## Deploying to the shack PC (bwpc)
+
+The production instance runs on **bwpc** (`192.168.1.197`, also `bwpc.local`) —
+a German-locale Windows 11 box. SSH: `iotte@bwpc`, key auth (use
+`ConnectTimeout >= 20`; the first banner is slow). Deploy dir:
+`C:\Users\iotte\qslotter\` with `qslotter.exe`, `config.yaml` (real secrets,
+absolute `store.path`), `third_party\sumatrapdf\SumatraPDF.exe` (must stay on
+**3.5.x** — the 3.6 print engine hangs).
+
+Deploy cycle (the exe is the windowed GUI build with icon; it runs in the
+interactive session via the at-logon scheduled task `qslotter`):
+
+    scripts/release.sh                              # dist/qslotter-windows-amd64.exe
+    # clean shutdown (closes the DB; taskkill without /f does not reach the session):
+    ssh iotte@bwpc "powershell -NoProfile -c \"Invoke-WebRequest -UseBasicParsing -Method Post http://127.0.0.1:8473/api/quit\""
+    ssh iotte@bwpc "cd qslotter && mkdir backup-<name> & copy /y qslotter.exe backup-<name>\ & copy /y qslotter.db backup-<name>\"
+    scp dist/qslotter-windows-amd64.exe iotte@bwpc:qslotter/qslotter.exe
+    ssh iotte@bwpc "schtasks /run /tn qslotter"
+
+Verify from the box itself (`server.addr` is `0.0.0.0:8473` there, so the LAN
+reaches it too); the log is `%LOCALAPPDATA%\qslotter\qslotter.log`:
+
+    ssh iotte@bwpc "powershell -NoProfile -c \"(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8473/ -TimeoutSec 5).StatusCode\""
+
+Longer PowerShell is easiest sent as `-EncodedCommand` (UTF-16LE base64): the
+German-locale cmd mangles quotes and umlauts.
+
+Gotchas learned the hard way: templates/static are embedded in the binary, so
+a fresh checkout run without `go build` fails to parse pages; SSH-spawned
+processes die when the session closes (use the scheduled task, not
+`start /b`, for durable runs); action URLs take the QSL key as a query/form
+value (`?key=`), never as a path segment — keys contain `|` and portable
+calls contain `/`. Never write config credentials into shell commands; edit
+`config.yaml` on the box or use the /settings view.
+
 ## High-level architecture
 
 ### Data flow
@@ -99,11 +134,13 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 ### Package layout
 
 - `cmd/qslotter`: entrypoint, wiring, config bootstrap (user config dir on first start), log file, shutdown.
+- `cmd/ocr-eval`: offline calibration CLI for received-card photo intake. Runs OCR output (from `tools/ocr-dump.swift`, Apple Vision) through `internal/intake` against a copy of the database and reports auto/pick/miss rates. Working data lives in `/eval/` (git-ignored). Not part of the app.
 - `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against the `qsldetermine` heuristic. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
 - `internal/adif`: minimal ADIF reader/writer used for Clublog round-trip.
 - `internal/clublog`: Clublog HTTP client (`getadif.php`, `putlogs.php`).
 - `internal/config`: YAML loader with `${ENV}` expansion.
 - `internal/events`: in-process pub/sub broker used for UDP → SSE (event names `new_qso`, `station_updated`; the queue page listens on `/events`).
+- `internal/intake`: pure-function matcher from OCR text of a photographed incoming card to a QSO in the log (callsign match tolerant of OCR-confusable characters, date/band/mode scoring, `auto`/`pick`/`miss` classes). Roadmap v2 "receive-card photo + OCR"; not yet wired into the web UI.
 - `internal/llmqsl`: LLM-based QSL-method vocabulary/mapping (`none/direct/buero/manager-*`); used only by `cmd/qsl-eval`.
 - `internal/printer`: PDF rendering and platform print shims.
 - `internal/qualify`: eligibility rules and auto-enqueue logic.

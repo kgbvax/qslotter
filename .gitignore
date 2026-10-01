@@ -26,3 +26,5 @@ third_party/
 
 # Release output (scripts/release.sh)
 /dist/
+# Received-card OCR eval data: card photos show other stations' addresses (see cmd/ocr-eval)
+/eval/
