@@ -106,6 +106,9 @@ func (s *Shell) Run() error {
 			s.mu.Lock()
 			s.hasTray = true
 			s.mu.Unlock()
+			if s.opts.Mode == ModeWindow {
+				s.setupDock()
+			}
 			s.start()
 		},
 	})

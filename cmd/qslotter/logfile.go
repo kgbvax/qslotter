@@ -25,8 +25,19 @@ func setupLog() string {
 	if err != nil {
 		return ""
 	}
-	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	log.SetOutput(teeWriter{f})
 	return path
+}
+
+// teeWriter writes to the log file and, best effort, to stderr. Not
+// io.MultiWriter: that stops at the first error, and a windowed exe (no
+// console on Windows) fails every stderr write - the file would get nothing.
+type teeWriter struct{ f io.Writer }
+
+func (t teeWriter) Write(p []byte) (int, error) {
+	n, err := t.f.Write(p)
+	_, _ = os.Stderr.Write(p)
+	return n, err
 }
 
 // logDir: %LOCALAPPDATA%\qslotter on Windows, ~/Library/Logs/qslotter on

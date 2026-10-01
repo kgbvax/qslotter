@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=qslotter
+Comment=QSL card workbench
+Exec=qslotter
+Icon=qslotter
+Terminal=false
+Categories=Utility;HamRadio;
+StartupWMClass=qslotter

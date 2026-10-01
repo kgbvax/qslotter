@@ -23,3 +23,6 @@ third_party/
 
 # Local Claude Code state
 .claude/
+
+# Release output (scripts/release.sh)
+/dist/
