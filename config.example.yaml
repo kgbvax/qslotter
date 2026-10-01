@@ -6,8 +6,7 @@
 server:
   addr: 127.0.0.1:8473   # loopback only. 0.0.0.0:8473 = all IPv4 interfaces (reachable from the LAN;
                          # the UI has no login - trusted network only, and open the firewall for it)
-  tray: false          # Windows: system-tray icon with compact-queue/log/receive menu
-  open_compact: false  # open the compact queue window on startup
+  open_compact: false  # also open the compact decision window at start
 
 station:
   name: Ingo           # your name, printed on cards (my_name field)
@@ -22,7 +21,7 @@ clublog:
   call: DL9ET
   api_key: ${CLUBLOG_API_KEY}
   pull_interval: 1h          # background reconciliation pull; 0 or omitted = off
-  push_interval: 0           # background push-back of QSL state; 0 or omitted = off
+  push_interval: 0s          # background push-back of QSL state; 0s or omitted = off
 
 qrz:
   username: dl9et
@@ -48,3 +47,6 @@ qualify:
 store:
   driver: sqlite        # v1 only supports sqlite; v2 will add couchdb
   path: qslotter.db
+
+ui:
+  mode: window          # window (own app window + tray) | browser (browser app windows) | headless (server only)

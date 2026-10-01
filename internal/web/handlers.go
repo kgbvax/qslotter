@@ -536,6 +536,40 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "done.html", map[string]any{"Rows": done, "Total": len(items)})
 }
 
+// externalHosts may be opened in the system browser from the app window. The
+// app window itself only ever shows qslotter; everything else leaves it.
+var externalHosts = []string{"qrz.com", "clublog.org", "lotw.arrl.org", "eqsl.cc"}
+
+// apiOpenExternal opens an allow-listed URL in the system browser: in the
+// desktop app window a target=_blank link has nowhere to go (a WebView opens
+// no second browser window), so static/app.js posts it here.
+func (s *Server) apiOpenExternal(w http.ResponseWriter, r *http.Request) {
+	if s.OpenExternal == nil {
+		http.Error(w, "not running as the desktop app", http.StatusNotImplemented)
+		return
+	}
+	u, err := url.Parse(r.FormValue("url"))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedExternal(u.Hostname()) {
+		http.Error(w, "this link cannot be opened from qslotter", http.StatusForbidden)
+		return
+	}
+	if err := s.OpenExternal(u.String()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func allowedExternal(host string) bool {
+	host = strings.ToLower(host)
+	for _, h := range externalHosts {
+		if host == h || strings.HasSuffix(host, "."+h) {
+			return true
+		}
+	}
+	return false
+}
+
 // htmxNav renders the nav bar alone (badge counts), for live refresh.
 func (s *Server) htmxNav(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "nav", nil)

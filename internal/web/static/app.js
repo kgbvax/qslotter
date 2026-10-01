@@ -27,3 +27,20 @@
     show('Network error - is the qslotter server running?');
   });
 })();
+
+// In the desktop app window (glaze sets window.__webview__) a target=_blank
+// link has nowhere to go: hand it to the system browser via the server.
+(function () {
+  document.addEventListener('click', function (ev) {
+    if (!window.__webview__) return;
+    var a = ev.target.closest && ev.target.closest('a[target="_blank"]');
+    if (!a || !a.href) return;
+    ev.preventDefault();
+    var body = new URLSearchParams({ url: a.href });
+    fetch('/api/open-external', { method: 'POST', body: body }).then(function (r) {
+      if (!r.ok) r.text().then(function (t) {
+        document.dispatchEvent(new CustomEvent('qslNotice', { detail: { value: t.trim() } }));
+      });
+    });
+  });
+})();

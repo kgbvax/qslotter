@@ -41,6 +41,10 @@ type Server struct {
 	printer   printer.Printer
 	tmpl      *template.Template
 
+	// OpenExternal opens a URL in the system browser; set by main in the
+	// desktop app (nil: the endpoint answers 501).
+	OpenExternal func(url string) error
+
 	// validateFn checks the configured credentials (settings page); a field
 	// so tests can stub the network out.
 	validateFn func(*config.Config) (qrzStatus, clublogStatus string)
@@ -144,6 +148,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/batch", s.batchQueue)
 	r.Post("/work/print", s.htmxWorkPrint)
 	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
+	r.Post("/api/open-external", s.apiOpenExternal)
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)

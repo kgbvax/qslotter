@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestServerLocalURLAndWildcard(t *testing.T) {
 	for _, c := range []struct {
@@ -23,5 +27,51 @@ func TestServerLocalURLAndWildcard(t *testing.T) {
 		if got := s.Wildcard(); got != c.wildcard {
 			t.Errorf("Wildcard(%q) = %v, want %v", c.addr, got, c.wildcard)
 		}
+	}
+}
+
+func TestRelativePathsFollowTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(p, []byte("store:\n  path: data/q.db\ncard:\n  template: cards/t.yaml\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Store.Path != filepath.Join(dir, "data", "q.db") || cfg.Card.Template != filepath.Join(dir, "cards", "t.yaml") {
+		t.Fatalf("paths = %q / %q", cfg.Store.Path, cfg.Card.Template)
+	}
+	abs := filepath.Join(dir, "elsewhere.db")
+	if err := os.WriteFile(p, []byte("store:\n  path: "+abs+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := Load(p); cfg.Store.Path != abs {
+		t.Fatalf("absolute path changed: %q", cfg.Store.Path)
+	}
+}
+
+func TestWriteDefaultLoadsAndNeverOverwrites(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "sub", "config.yaml")
+	if err := WriteDefault(p); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Addr != "127.0.0.1:8473" || cfg.UI.Mode != "window" || cfg.Store.Path != filepath.Join(filepath.Dir(p), "qslotter.db") || cfg.Qualify.FirstContactOnly {
+		t.Fatalf("default config = %+v", cfg)
+	}
+	if err := WriteDefault(p); err == nil {
+		t.Fatal("WriteDefault overwrote an existing config")
+	}
+}
+
+// The shipped example must load as-is.
+func TestExampleConfigLoads(t *testing.T) {
+	if _, err := Load(filepath.Join("..", "..", "config.example.yaml")); err != nil {
+		t.Fatalf("config.example.yaml: %v", err)
 	}
 }

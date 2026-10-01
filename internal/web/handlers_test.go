@@ -867,3 +867,28 @@ func TestDecideCardResearchStates(t *testing.T) {
 	}
 	_ = key
 }
+
+// TestOpenExternal: the app window hands target=_blank links to the system
+// browser - only for allow-listed hosts.
+func TestOpenExternal(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	h := srv.Routes()
+	if r := postForm(t, h, "/api/open-external", url.Values{"url": {"https://www.qrz.com/db/DL1ABC"}}); r.Code != http.StatusNotImplemented {
+		t.Fatalf("without a desktop opener = %d, want 501", r.Code)
+	}
+	var opened []string
+	srv.OpenExternal = func(u string) error { opened = append(opened, u); return nil }
+	for _, ok := range []string{"https://www.qrz.com/db/DL1ABC", "https://qrz.com/db/K2ABC", "https://clublog.org/logsearch/DL1ABC"} {
+		if r := postForm(t, h, "/api/open-external", url.Values{"url": {ok}}); r.Code != http.StatusNoContent {
+			t.Errorf("%s = %d, want 204", ok, r.Code)
+		}
+	}
+	for _, bad := range []string{"https://evil.example/qrz.com", "file:///etc/passwd", "javascript:alert(1)", "https://qrz.com.evil.example/", "http://127.0.0.1:8473/settings", ""} {
+		if r := postForm(t, h, "/api/open-external", url.Values{"url": {bad}}); r.Code != http.StatusForbidden {
+			t.Errorf("%q = %d, want 403", bad, r.Code)
+		}
+	}
+	if len(opened) != 3 {
+		t.Fatalf("opened %v", opened)
+	}
+}

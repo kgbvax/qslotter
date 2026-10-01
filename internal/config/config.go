@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -18,6 +19,7 @@ type Config struct {
 	QRZ     QRZCfg     `yaml:"qrz"`
 	Printer PrinterCfg `yaml:"printer"`
 	Card    CardCfg    `yaml:"card"`
+	UI      UICfg      `yaml:"ui"`
 	Qualify QualifyCfg `yaml:"qualify"`
 	Store   StoreCfg   `yaml:"store"`
 	UDP     UDPCfg     `yaml:"udp"`
@@ -48,10 +50,10 @@ func (s ServerCfg) Wildcard() bool {
 
 type ServerCfg struct {
 	Addr string `yaml:"addr"`
-	// Tray shows a system-tray icon (Windows) whose menu opens the compact
-	// queue / log / receive windows. Tray-less platforms ignore it.
+	// Tray is ignored since the desktop app (2026-10): the tray icon is
+	// always there on macOS and Windows. Kept so old configs still load.
 	Tray bool `yaml:"tray"`
-	// OpenCompact opens the compact queue window on startup.
+	// OpenCompact also opens the compact decision window on startup.
 	OpenCompact bool `yaml:"open_compact"`
 }
 
@@ -106,6 +108,13 @@ type QualifyCfg struct {
 	Since string `yaml:"since"`
 }
 
+// UICfg selects the user interface: "window" (own app window + tray,
+// default), "browser" (tray + browser app windows) or "headless" (server
+// only). The -ui flag overrides it.
+type UICfg struct {
+	Mode string `yaml:"mode"`
+}
+
 type StoreCfg struct {
 	Driver string `yaml:"driver"` // "sqlite" (default, only v1 option) | "couchdb" (v2)
 	Path   string `yaml:"path"`
@@ -142,6 +151,15 @@ func Load(path string) (*Config, error) {
 	if cfg.Store.Path == "" {
 		cfg.Store.Path = "qslotter.db"
 	}
+	// Relative paths are relative to the config file, not to the working
+	// directory: an app started by double-click has an arbitrary one.
+	dir := filepath.Dir(path)
+	if cfg.Store.Path != ":memory:" && !filepath.IsAbs(cfg.Store.Path) {
+		cfg.Store.Path = filepath.Join(dir, cfg.Store.Path)
+	}
+	if cfg.Card.Template != "" && !filepath.IsAbs(cfg.Card.Template) {
+		cfg.Card.Template = filepath.Join(dir, cfg.Card.Template)
+	}
 	// Clublog.PullInterval / PushInterval: 0 (or omitted) disables the
 	// respective background loop; the log-page buttons always work.
 	return &cfg, nil
@@ -157,4 +175,70 @@ func expandEnv(s string) string {
 		}
 		return ""
 	})
+}
+
+// DefaultPath is where qslotter keeps its config when none is given:
+// <user config dir>/qslotter/config.yaml (%AppData% on Windows,
+// ~/Library/Application Support on macOS, ~/.config on Linux).
+func DefaultPath() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "qslotter", "config.yaml"), nil
+}
+
+// defaultConfig is written on the first start. Credentials stay empty: they
+// are entered under Settings, which edits this file.
+const defaultConfig = `# qslotter configuration - created on the first start.
+# Credentials are easiest to enter in the app under Settings.
+server:
+    addr: 127.0.0.1:8473      # 0.0.0.0:8473 = reachable from the LAN (no login!)
+    open_compact: false       # also open the compact decision window at start
+station:
+    name: ""                  # your name, printed on cards
+    qth: ""
+udp:
+    listen: 127.0.0.1:1273    # Log4OM UDP: ADIF (QSO logged) and current call
+clublog:
+    email: ""
+    app_password: ""
+    call: ""
+    api_key: ""
+    pull_interval: 1h         # background reconciliation pull; 0s = off
+    push_interval: 0s         # background push-back; 0s = off
+qrz:
+    username: ""
+    password: ""
+    cache_ttl: 168h
+printer:
+    name: ""                  # empty = system default
+    paper_size_mm: [100, 74]
+qualify:
+    exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
+    first_contact_only: false
+    override_marker: "QSL!"
+    since: ""                 # "" = from the first start on, "all" = whole log
+store:
+    driver: sqlite
+    path: qslotter.db         # relative to this file
+ui:
+    mode: window              # window | browser | headless
+`
+
+// WriteDefault creates a starter config at path (and its directory). It
+// refuses to overwrite an existing file.
+func WriteDefault(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(defaultConfig); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

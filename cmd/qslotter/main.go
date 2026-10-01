@@ -1,56 +1,96 @@
 // Command qslotter is the QSL card handling tool, DL9ET style.
 // It runs a local web UI backed by a Clublog QSO source and a QRZ station-info
-// cache. A UDP listener receives Log4OM's ADIF broadcast for sub-second
-// ingestion of newly-logged QSOs; Clublog pull runs in the background for
-// reconciliation (config-gated). See README.md, docs/VISION.md and
-// config.example.yaml.
+// cache, shown in its own application window (native WebView; -ui browser or
+// headless for the alternatives). A UDP listener receives Log4OM's ADIF
+// broadcast for sub-second ingestion of newly-logged QSOs; Clublog pull runs in
+// the background for reconciliation (config-gated). See README.md,
+// docs/VISION.md and config.example.yaml.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
+	"github.com/dl9et/qslotter/internal/desktop"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/station"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
-	"github.com/dl9et/qslotter/internal/tray"
 	"github.com/dl9et/qslotter/internal/udplistener"
 	"github.com/dl9et/qslotter/internal/web"
 )
 
+// The native window and the tray must run on the main OS thread (macOS
+// requires it); lock before anything else starts.
+func init() { runtime.LockOSThread() }
+
+const appID = "qslotter" // single-instance identity
+
 func main() {
-	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
+	cfgFlag := flag.String("config", "", "path to config.yaml (default: ./config.yaml if present, else the user config dir; created on first start)")
+	uiFlag := flag.String("ui", "", "user interface: window (own app window + tray), browser (tray + browser app windows), headless (server only); default from ui.mode")
 	flag.Parse()
 
-	cfg, err := config.Load(*cfgPath)
+	logPath := setupLog()
+
+	cfgPath, firstRun, err := resolveConfig(*cfgFlag)
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		fatal("Configuration", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fatal("Configuration", err)
+	}
+	log.Printf("config %s, log %s", cfgPath, logPath)
+	uiValue := cfg.UI.Mode
+	if *uiFlag != "" {
+		uiValue = *uiFlag
+	}
+	mode, err := desktop.ParseMode(uiValue)
+	if err != nil {
+		fatal("Configuration", err)
 	}
 
 	if cfg.Store.Driver != "sqlite" {
-		log.Fatalf("store driver %q not supported in v1 (only sqlite)", cfg.Store.Driver)
+		fatal("Configuration", fmt.Errorf("store driver %q not supported in v1 (only sqlite)", cfg.Store.Driver))
 	}
-	// Single-instance guard before touching UDP or SQLite (Windows; no-op
-	// elsewhere). Two instances would fight over the UDP port and the DB.
-	if already, err := tray.AcquireSingleInstance(); err != nil {
-		log.Fatalf("single-instance check: %v", err)
-	} else if already {
-		log.Fatalf("qslotter is already running")
+
+	// Single instance before touching UDP or SQLite: two copies would fight
+	// over the UDP port and the DB. A second launch asks the running one to
+	// show its window, then exits.
+	var shell atomic.Pointer[desktop.Shell]
+	release, err := desktop.SingleInstance(appID, func() {
+		if s := shell.Load(); s != nil {
+			s.Show()
+		}
+	})
+	if errors.Is(err, desktop.ErrAlreadyRunning) {
+		log.Printf("qslotter is already running - asked it to show its window")
+		return
 	}
+	if err != nil {
+		log.Printf("single-instance check: %v (continuing)", err)
+	}
+	defer release()
+
 	st, err := store.Open(cfg.Store.Path)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		fatal("Database", err)
 	}
 	defer st.Close()
 
@@ -77,24 +117,25 @@ func main() {
 	}
 	refresher := station.New(st, qrzClient, broker, cfg.QRZ.CacheTTL)
 
-	srv, err := web.New(cfg, st, broker, *cfgPath, refresher)
+	srv, err := web.New(cfg, st, broker, cfgPath, refresher)
 	if err != nil {
-		log.Fatalf("web: %v", err)
+		fatal("Web UI", err)
 	}
+	srv.OpenExternal = desktop.OpenExternal
 
 	// UDP listener: real-time feed from Log4OM.
 	udp := udplistener.New(cfg.UDP.Listen, st, broker, rules, refresher)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := udp.Start(ctx); err != nil {
-		log.Fatalf("udp listener: %v", err)
+		fatal("Log4OM UDP feed", err)
 	}
 	defer udp.Stop()
 	log.Printf("udp listener on %s (Log4OM ADIF feed)", cfg.UDP.Listen)
 
 	// Background reconciliation loop, config-gated (pull_interval>0 pulls,
 	// push_interval>0 pushes). The manual buttons on the log page stay.
-	var loopDone <-chan struct{} = nil
+	var loopDone <-chan struct{}
 	clublogClient := clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
 		cfg.Clublog.Call, cfg.Clublog.APIKey)
 	if cfg.Clublog.PullInterval > 0 || cfg.Clublog.PushInterval > 0 {
@@ -124,39 +165,52 @@ func main() {
 		}
 	}()
 
-	httpSrv := &http.Server{
-		Addr:    cfg.Server.Addr,
-		Handler: srv.Routes(),
+	// Bind before any window opens, so the window never races the server.
+	// Request contexts derive from reqCtx: cancelling it ends the long-lived
+	// SSE streams at shutdown instead of waiting out the shutdown timeout.
+	ln, err := net.Listen("tcp", cfg.Server.Addr)
+	if err != nil {
+		fatal("Web server", fmt.Errorf("listen on %s: %w (is another program using the port?)", cfg.Server.Addr, err))
 	}
-
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	httpSrv := &http.Server{
+		Handler:     srv.Routes(),
+		BaseContext: func(net.Listener) context.Context { return reqCtx },
+	}
 	go func() {
 		log.Printf("qslotter listening on http://%s", cfg.Server.Addr)
 		if cfg.Server.Wildcard() {
 			log.Printf("server.addr is a wildcard: the UI is reachable from the network and has no login - keep it on a trusted LAN")
 		}
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("http server: %v", err)
 		}
 	}()
 
-	// Tray shell (Windows): menu opens the compact queue / log / receive and
-	// shuts down via trayDone.
-	trayDone := make(chan struct{})
-	if cfg.Server.Tray {
-		go tray.Run(tray.Options{
-			BaseURL:            cfg.Server.LocalURL(),
-			OpenCompactOnStart: cfg.Server.OpenCompact,
-			OnExit:             func() { close(trayDone) },
-		})
+	// The UI owns the main thread until the user quits (or a signal).
+	startPath := "/queue"
+	if firstRun {
+		startPath = "/settings" // new install: enter credentials first
 	}
-
+	sh := desktop.New(desktop.Options{
+		Mode:        mode,
+		BaseURL:     cfg.Server.LocalURL(),
+		StartPath:   startPath,
+		OpenCompact: cfg.Server.OpenCompact,
+	})
+	shell.Store(sh)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-stop:
-	case <-trayDone:
+	go func() {
+		<-stop
+		sh.Quit()
+	}()
+	if err := sh.Run(); err != nil {
+		log.Printf("desktop: %v", err)
 	}
+
 	log.Printf("shutting down...")
+	reqCancel()
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutCancel()
 	_ = httpSrv.Shutdown(shutCtx)
@@ -170,4 +224,36 @@ func main() {
 			log.Printf("background sync still running; exiting anyway")
 		}
 	}
+}
+
+// resolveConfig picks the config file: the -config flag, else ./config.yaml
+// when present (existing installs), else the user config dir - where a
+// starter config is written on the very first start (firstRun).
+func resolveConfig(flagPath string) (path string, firstRun bool, err error) {
+	if flagPath != "" {
+		return flagPath, false, nil
+	}
+	if _, err := os.Stat("config.yaml"); err == nil {
+		return "config.yaml", false, nil
+	}
+	path, err = config.DefaultPath()
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := config.WriteDefault(path); err != nil {
+			return "", false, fmt.Errorf("create %s: %w", path, err)
+		}
+		log.Printf("first start: created %s", path)
+		return path, true, nil
+	}
+	return path, false, nil
+}
+
+// fatal reports a startup error where the user can see it - a dialog, since a
+// double-clicked app has no console - and exits.
+func fatal(what string, err error) {
+	log.Printf("%s: %v", what, err)
+	desktop.ShowError("qslotter cannot start", fmt.Sprintf("%s: %v", what, err))
+	os.Exit(1)
 }
