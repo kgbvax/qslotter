@@ -348,3 +348,14 @@ tr.md-group:first-child > th { padding-top: 2px; }
   .md-list { position: static; max-height: 40vh; }
 }
 h2 .h2link { font: 400 13px 'Schibsted Grotesk', sans-serif; margin-left: 10px; }
+
+/* Incoming QSLs */
+.rcv-find { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.rcv-find #rcv-call { text-transform: uppercase; font: 600 18px 'IBM Plex Mono', monospace; width: 11ch; padding: 4px 8px; }
+table.rcvtable tr.got > td { color: var(--ink-soft); }
+ul.verdicts { margin: 6px 0 12px; padding-left: 18px; font-size: 14px; }
+.reply { border: 1.5px solid var(--ink); border-radius: 3px; padding: 10px 14px; background: var(--card); margin-top: 8px; }
+.reply:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+table.expected tr.overdue > td { background: #fbeee9; }
+.reply button.armed { outline: 2px solid var(--red); outline-offset: 2px; }
+.banner.errbanner { border-left-color: var(--red); }

@@ -21,6 +21,7 @@ type Config struct {
 	Card    CardCfg    `yaml:"card"`
 	UI      UICfg      `yaml:"ui"`
 	Qualify QualifyCfg `yaml:"qualify"`
+	Receive ReceiveCfg `yaml:"receive"`
 	Store   StoreCfg   `yaml:"store"`
 	UDP     UDPCfg     `yaml:"udp"`
 }
@@ -94,6 +95,13 @@ type CardCfg struct {
 	Template string `yaml:"template"`
 }
 
+// ReceiveCfg configures Incoming QSLs.
+type ReceiveCfg struct {
+	// OverdueWeeks marks a card requested via OQRS & co. (VISION C5) as
+	// overdue when it has not arrived after this many weeks. Default 12.
+	OverdueWeeks int `yaml:"overdue_weeks"`
+}
+
 type QualifyCfg struct {
 	ExcludeModes []string `yaml:"exclude_modes"`
 	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
@@ -135,6 +143,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.QRZ.Agent == "" {
 		cfg.QRZ.Agent = "qslotter/1.0"
+	}
+	if cfg.Receive.OverdueWeeks <= 0 {
+		cfg.Receive.OverdueWeeks = 12
 	}
 	if cfg.Qualify.OverrideMarker == "" {
 		cfg.Qualify.OverrideMarker = "QSL!"

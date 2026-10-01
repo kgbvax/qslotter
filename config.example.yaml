@@ -44,6 +44,9 @@ qualify:
   since: ""                   # only QSOs on/after this date enter the queue. "" = the day qslotter first
                               # ran, YYYY-MM-DD = that day, "all" = import the whole Clublog backlog
 
+receive:
+  overdue_weeks: 12           # a card requested via OQRS, PayPal ... counts as overdue after this many weeks
+
 store:
   driver: sqlite        # v1 only supports sqlite; v2 will add couchdb
   path: qslotter.db

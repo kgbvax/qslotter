@@ -49,6 +49,9 @@ type Server struct {
 	// out that does not depend on the tray icon being visible.
 	Quit func()
 
+	// now is the clock (overdue requests); a field so tests can move it.
+	now func() time.Time
+
 	// validateFn checks the configured credentials (settings page); a field
 	// so tests can stub the network out.
 	validateFn func(*config.Config) (qrzStatus, clublogStatus string)
@@ -76,6 +79,7 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		rules:      rules,
 		refresher:  refresher,
 		printer:    printer.New(),
+		now:        time.Now,
 		validateFn: validateCredentials,
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
@@ -146,8 +150,10 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/done", s.pageDone)
 	r.Get("/receive", s.pageReceive)
 	r.Post("/receive/lookup", s.htmxReceiveLookup)
-	r.Post("/receive/mark", s.htmxReceiveMark)
-	r.Get("/station/*", s.pageStation) // wildcard: portable calls contain "/" (EA8/DL1ABC)
+	r.Post("/receive/book", s.htmxReceiveBook)        // key=... per QSO the card confirms
+	r.Post("/receive/reply", s.htmxReceiveReply)      // key=..., how=written|print|later
+	r.Get("/receive/research", s.htmxReceiveResearch) // key=... of a reply card (live QRZ refresh)
+	r.Get("/station/*", s.pageStation)                // wildcard: portable calls contain "/" (EA8/DL1ABC)
 	r.Get("/settings", s.pageSettings)
 	r.Post("/settings/save", s.saveSettings)
 	// Card actions take ?key=... (form/query value): keys contain "|" and

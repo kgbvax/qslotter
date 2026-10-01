@@ -660,6 +660,8 @@ func TestBaseCall(t *testing.T) {
 	for in, want := range map[string]string{
 		"DL1ABC": "DL1ABC", "dl1abc": "DL1ABC", "DL1ABC/P": "DL1ABC", "EA8/DL1ABC": "DL1ABC",
 		"EA8/DL1ABC/P": "DL1ABC", "W1AW/1": "W1AW", "VK9/DL1ABC/MM": "DL1ABC", "K1ABC/QRP": "K1ABC",
+		// a prefix as long as the call is not the station
+		"KH6/K1A": "K1A", "OH0/K1A": "K1A", "VP2V/W1AW": "W1AW", "VK9X/K1ZZ": "K1ZZ", "W1AW/KH6": "W1AW",
 	} {
 		if got := BaseCall(in); got != want {
 			t.Errorf("BaseCall(%q) = %q, want %q", in, got, want)
@@ -930,5 +932,44 @@ func TestInboxAndDeskTransitionsStartFromTheirOwnStatus(t *testing.T) {
 	}
 	if statusOf(t, st, inbox).Status != "queued" || statusOf(t, st, desk).Status != "decided" {
 		t.Fatal("a refused transition changed a card")
+	}
+}
+
+// TestQueueReply: a received card's QSOs that need an answer go to the Desk,
+// whatever the Inbox said; sent or requested ones are a conflict.
+func TestQueueReply(t *testing.T) {
+	st := openTemp(t)
+	queued := seedQueued(t, st, "DL1ABC", "20240101")
+	skipped := seedQueued(t, st, "DL2ZZZ", "20240102")
+	decided := seedQueued(t, st, "DL3YYY", "20240103")
+	if err := st.QueueDecline(skipped); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueAccept(decided); err != nil {
+		t.Fatal(err)
+	}
+	never := &QSO{QSLKey: "DL4XXX|20240104|120000|20m", Call: "DL4XXX", QSODate: "20240104", TimeOn: "120000", Band: "20m", Mode: "FT8", Hash: "h4"}
+	if _, _, err := st.UpsertQSO(never); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueReply([]string{queued, skipped, decided, never.QSLKey}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{queued, skipped, decided, never.QSLKey} {
+		if it := statusOf(t, st, k); it.Status != "decided" || it.DesiredMethod != "" {
+			t.Fatalf("%s after reply: %+v", k, it)
+		}
+	}
+	if it := statusOf(t, st, never.QSLKey); it.OverrideReason != "reply to their card" {
+		t.Fatalf("new item reason: %+v", it)
+	}
+	if err := st.QueueWritten([]string{queued}, Route{Method: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueReply([]string{queued}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reply to a sent card = %v, want ErrConflict", err)
+	}
+	if err := st.QueueReply([]string{"NOPE|1|1|1"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reply to an unknown QSO = %v, want ErrConflict", err)
 	}
 }

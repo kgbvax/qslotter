@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
@@ -683,47 +682,6 @@ func (s *Server) htmxStationRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "station_info.html", map[string]any{"Call": call, "Info": info})
-}
-
-// --- receive page + htmx handlers ---
-
-func (s *Server) pageReceive(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "receive.html", nil)
-}
-
-func (s *Server) htmxReceiveLookup(w http.ResponseWriter, r *http.Request) {
-	call := strings.ToUpper(strings.TrimSpace(r.FormValue("call")))
-	if call == "" {
-		s.render(w, "receive_results.html", map[string]any{"Call": call, "QSOs": nil})
-		return
-	}
-	qsos, err := s.store.RecentQSOsByCall(call, 20)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.render(w, "receive_results.html", map[string]any{"Call": call, "QSOs": qsos})
-}
-
-func (s *Server) htmxReceiveMark(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	if key == "" {
-		http.Error(w, "missing key", http.StatusBadRequest)
-		return
-	}
-	if err := s.store.SetQSLRcvdLocal(key); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.store.AppendEvent(&store.Event{
-		QSLKey: key, Direction: "rcvd", Date: time.Now().UTC().Format("20060102"), Source: "manual",
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("HX-Trigger", "refreshQueue")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<span class="ok">received</span>`))
 }
 
 // --- card actions (htmx) ---

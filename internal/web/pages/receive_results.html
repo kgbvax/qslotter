@@ -1,24 +1,15 @@
-{{define "receive_results.html"}}
-{{if .QSOs}}
-<table id="results-table">
-  <thead><tr><th>Mark</th><th>Date</th><th>Time</th><th>Band</th><th>Mode</th><th>RST Sent</th><th>QSL Sent</th></tr></thead>
-  <tbody>
-  {{range .QSOs}}
-    <tr>
-      <td><button hx-post="/receive/mark" hx-vals='{"key": "{{.QSLKey}}"}'
-                  hx-target="closest td" hx-swap="innerHTML"
-                  hx-trigger="click">Mark Rcvd</button></td>
-      <td>{{fmtDate .QSODate}}</td>
-      <td>{{fmtTime .TimeOn}}</td>
-      <td>{{.Band}}</td>
-      <td>{{.Mode}}</td>
-      <td>{{.RSTSent}}</td>
-      <td>{{.QSLSent}}</td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}
-<p class="muted">No QSOs found with <b>{{.Call}}</b>.</p>
-{{end}}
-{{end}}
+{{define "receive_results.html"}}{{if not .Call}}{{else if not .Lines}}<p class="muted">No QSOs with <b>{{.Call}}</b> (portable calls of the same station included).</p>{{else}}
+<form id="book" hx-post="/receive/book" hx-target="#results" hx-swap="innerHTML">
+  <input type="hidden" name="call" value="{{.Call}}">
+  <table class="rcvtable">
+    <thead><tr><th>On the card</th><th>Date</th><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Your card</th></tr></thead>
+    <tbody>{{range .Lines}}<tr{{if .Received}} class="got"{{end}}>
+      <td>{{if .Received}}{{if not .Reply}}<label title="Their card is booked, your reply is still open: tick to answer it"><input type="checkbox" name="key" value="{{.QSO.QSLKey}}"> <b class="err">reply due</b></label>{{else}}<span class="muted">received {{fmtDate .RcvdDate}}</span>{{end}}{{else}}<input type="checkbox" name="key" value="{{.QSO.QSLKey}}"{{if .Checked}} checked{{end}} aria-label="The card confirms {{.QSO.Call}} {{fmtDate .QSO.QSODate}} {{.QSO.Band}}">{{end}}</td>
+      <td class="c-date">{{fmtDate .QSO.QSODate}}</td><td class="c-bm">{{fmtTime .QSO.TimeOn}}</td>
+      <td><span class="call">{{.QSO.Call}}</span></td><td class="c-bm">{{.QSO.Band}}</td><td class="c-bm">{{.QSO.Mode}}</td><td class="c-bm">{{.QSO.RSTSent}}</td>
+      <td>{{if .Yours}}{{.Yours}}{{else}}<span class="muted">none yet</span>{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table>
+  {{if .Truncated}}<p class="muted">Showing the newest QSOs only - type the exact call (e.g. with /P) to narrow the list.</p>{{end}}
+  <p><button type="submit" class="stamp yes" data-focus>Book as received</button> <span class="muted">Enter &middot; their card goes to Clublog with the next push &middot; a ticked "reply due" line just opens the reply</span></p>
+</form>{{end}}{{end}}

@@ -56,9 +56,9 @@ where it stands today.
 - **Electronic QSL is out of scope** — left to the logbook. Enforced since
   2026-09-30: E is no longer a decision; eQSL-only stations resolve to
   "no card".
-- **Receiving: quick keyboard entry of received cards.** Partially done: the
-  Receive page does callsign → pick QSOs → mark received. Reply due / answer
-  right there and cards requested via OQRS are section 2.3 (C2, C3, C5).
+- **Receiving: quick keyboard entry of received cards.** Done 2026-10-01:
+  callsign, Enter, tick, Enter; the reply question and answering right there,
+  and cards requested via OQRS as expected (section 2.3).
 - **Optional photo capture of received cards with data extraction.** Not
   built (roadmap v2).
 
@@ -106,7 +106,7 @@ radio. Here the route is chosen.
 | B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | done (2026-10-01): `/work` is the master-detail view - cards grouped by the route offered first (route open, direct, via manager, bureau), the selected card in the detail pane, finishing moves to the card below; batch actions on ticked cards use the route shown; the card-by-card view `/work/card` stays |
 | B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | done (2026-10-01): the work card shows every QSO on the card (freq, RST sent/rcvd, notes), the research panel (QRZ, indicators, history without the card's own QSOs), the station address for direct and the manager's QRZ address for the manager routes (refreshed as the call is typed; live update when the lookup lands) |
 | B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | done (2026-10-01): bureau / direct / via manager direct / via manager bureau, preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it; manager cards print "via <manager>" |
-| B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | done (2026-10-01): "Requested..." (`r`) with channel OQRS / PayPal / e-mail / other and a note; status `requested`, `QSL_RCVD=R` pushed, `QSL_SENT` untouched; QRZ mentioning OQRS (manager field or bio) marks the button and the list row. Listing as *expected* on Incoming QSLs comes with C5 |
+| B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | done (2026-10-01): "Requested..." (`r`) with channel OQRS / PayPal / e-mail / other and a note; status `requested`, `QSL_RCVD=R` pushed, `QSL_SENT` untouched; QRZ mentioning OQRS (manager field or bio) marks the button and the list row. Listed as *expected* on Incoming QSLs (C5) |
 | B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. | done: card by card (`p` on `/work/card`) or batch Print of ticked rows on `/work`; one print job per card, no select-all |
 | B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | done (2026-10-01): "No card" (`n`) on the work card and the list, for the whole card |
 | B7 | A finished card leaves the queue for good. Written or printed means **sent** - no separate "mailed" step (confirms 2026-09-30). | done |
@@ -116,11 +116,11 @@ radio. Here the route is chosen.
 
 | # | Requirement | Status |
 |---|---|---|
-| C1 | Enter the DX callsign of a received card, pick the QSO(s) it confirms, book the card received - with as few key presses as possible. | done (basic `/receive`): exact-call match only (portable variants not found), newest 20 QSOs, one click per QSO |
-| C2 | Show whether I already sent a card - i.e. whether this card **needs a reply**. | partial: `/receive` shows Clublog's raw QSL_SENT per QSO only; cards sent in qslotter but not pushed, cards waiting on the Desk, the station's other QSOs and a "reply due" verdict are missing (data exists: `EffectiveSent`, `CallHistory`) |
-| C3 | **Answer** or **don't answer**. Answering shows the same data as at the Desk (the QSO the card is about, date, time, QRZ data) with three ways: **written now** (route chosen, "Büro-Karte geschrieben, fertig"), **print** right there, or **later** (the reply goes to the Desk as "yes, card"). | missing |
+| C1 | Enter the DX callsign of a received card, pick the QSO(s) it confirms, book the card received - with as few key presses as possible. | done (2026-10-01): `/receive` - callsign, Enter; the station's QSOs base-call aware (portable calls found both ways), up to 50; tick the QSOs the card confirms (preselected: the requested ones, else the only open one), Enter books them all |
+| C2 | Show whether I already sent a card - i.e. whether this card **needs a reply**. | done (2026-10-01): per QSO "your card": sent (date, route; local state included), at the Desk, in the Inbox, no card decided, requested; after booking a verdict per QSO - reply due, or why not |
+| C3 | **Answer** or **don't answer**. Answering shows the same data as at the Desk (the QSO the card is about, date, time, QRZ data) with three ways: **written now** (route chosen, "Büro-Karte geschrieben, fertig"), **print** right there, or **later** (the reply goes to the Desk as "yes, card"). | done (2026-10-01): reply panel for the QSOs that need one (one card): one panel per worked callsign (a /P call is its own card), taking along that call's QSOs already at the Desk; the QSO data (RST, freq, notes), the research panel (refreshed live when QRZ data lands) and the manager's address; route b/d/m/v (QRZ suggestion preselected); written now (w), print (p), later via the Desk (l, as "yes, card"), no reply (x) - each pressed twice (or key, Enter), so typing the next callsign cannot answer; a reply overrules an earlier "no card" (also the backlog) and creates a queue item for a QSO that was never queued; a booked QSO with an open reply stays answerable from the lookup |
 | C4 | Or just record the card as received, so the status is known. | done |
-| C5 | Cards **requested** via OQRS (B4b) are listed as *expected*. Booking such a card shows "requested on ... via ..., no reply needed" instead of the reply question. Requests still open after **12 weeks** (configurable) are marked overdue there - a marker only, no mail. | missing |
+| C5 | Cards **requested** via OQRS (B4b) are listed as *expected*. Booking such a card shows "requested on ... via ..., no reply needed" instead of the reply question. Requests still open after **12 weeks** (configurable) are marked overdue there - a marker only, no mail. | done (2026-10-01): "Expected cards" on `/receive`, one row per request (not arrived; oldest first; refreshed with each booking), overdue after `receive.overdue_weeks` (default 12) - a marker only; booking such a card says "requested ... - no reply needed" for every QSO it confirms and pushes `QSL_RCVD=Y` |
 
 ### 2.4 Navigation
 
@@ -298,8 +298,6 @@ Open after the operator walkthrough of 2026-10-01 (section 2, status
   done 2026-10-01.)
 - A7: research panel limits (12 newest QSOs; own received state). (B3/B4/
   B4b/B6/B9, the Desk: done 2026-10-01.)
-- C1-C5: reply due? answer right there (written now / print / later); requested
-  cards as *expected*, overdue after 12 weeks; portable calls on `/receive`.
 - D1-D3: three-area top menu; `/` opens the Inbox; German/English UI.
 
 Remaining gaps (v2 / later):
@@ -353,7 +351,7 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
     station (B3, B4, B4b, B6, B9). **Done 2026-10-01.**
 12. Incoming QSLs: reply due? answer / don't answer - written now, print, or
     later via the Desk; requested cards listed as expected, overdue after 12
-    weeks (C2, C3, C5); portable calls (C1).
+    weeks (C2, C3, C5); portable calls (C1). **Done 2026-10-01.**
 13. Top menu = Eingang/Inbox, Schreibtisch/Desk, Posteingang/Incoming QSLs;
     `/` opens the Inbox; German and English UI (D1, D2, D3).
 14. QSO in progress from Log4OM's call broadcast (A1b).

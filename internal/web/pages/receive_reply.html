@@ -1,0 +1,46 @@
+{{define "receive_msg"}}<p class="banner{{if .Err}} errbanner{{end}}">{{.Msg}}</p>{{end}}
+
+{{define "receive_expected"}}<div id="expected"{{if .OOB}} hx-swap-oob="true"{{end}}>{{if .Expected}}
+  <h3 class="grouphead">Expected cards <small>(requested via OQRS &amp; co., not arrived yet)</small></h3>
+  <table class="expected">
+    <thead><tr><th>Requested</th><th>Call</th><th>QSOs</th><th>Via</th><th>Note</th></tr></thead>
+    <tbody>{{range .Expected}}<tr{{if .Overdue}} class="overdue"{{end}}>
+      <td class="c-date">{{.RequestedAt.Format "2006-01-02"}}{{if .Overdue}} <span class="chip warn">overdue</span>{{end}}</td>
+      <td><a class="call" href="/receive?call={{.Call}}">{{.Call}}</a></td>
+      <td class="c-bm">{{range $i, $q := .QSOs}}{{if $i}}, {{end}}{{fmtDate $q.QSODate}} {{$q.Band}} {{$q.Mode}}{{end}}</td>
+      <td>{{.Channel}}</td>
+      <td>{{.Note}}</td>
+    </tr>{{end}}</tbody>
+  </table>
+  <p class="muted legend">Overdue after {{.OverdueWeeks}} weeks (<code>receive.overdue_weeks</code>) - a marker only. Booking the card answers the request.</p>
+{{end}}</div>{{end}}
+
+{{define "receive_reply.html"}}<p class="banner">Booked: their card for {{len .Booked}} QSO(s) with <b>{{.Call}}</b> is on record.</p>
+<ul class="verdicts">{{range .Booked}}<li><span class="c-date">{{fmtDate .QSO.QSODate}} {{fmtTime .QSO.TimeOn}}</span> {{.QSO.Call}} {{.QSO.Band}} {{.QSO.Mode}}: {{if .Reply}}<span class="muted">{{.Reply}}</span>{{else if .AtDesk}}<b class="err">reply due</b> <span class="muted">(your card is at the Desk - it goes on the reply card)</span>{{else}}<b class="err">reply due</b>{{if .Yours}} <span class="muted">({{.Yours}})</span>{{end}}{{end}}</li>{{end}}</ul>
+{{range .Cards}}{{$n := .N}}
+<div id="reply-{{$n}}" class="reply" tabindex="-1" data-focus data-call="{{.Call}}">
+  <h3>Answer {{.Call}}{{if .Row.QSO.Name}} <span class="muted">{{.Row.QSO.Name}}</span>{{end}} - one card for {{len .Lines}} QSO(s)</h3>
+  <table class="cardqsos">
+    <thead><tr><th>Date</th><th>UTC</th><th>Band</th><th>Mode</th><th>RST sent</th><th>RST rcvd</th><th>Freq</th><th>Notes</th><th></th></tr></thead>
+    <tbody>{{range .Lines}}<tr><td><input type="hidden" name="key" value="{{.QSO.QSLKey}}">{{fmtDate .QSO.QSODate}}</td><td>{{fmtTime .QSO.TimeOn}}</td><td>{{.QSO.Band}}</td><td>{{.QSO.Mode}}</td><td>{{.QSO.RSTSent}}</td><td>{{.QSO.RSTRcvd}}</td><td>{{.QSO.Freq}}</td><td>{{.QSO.Notes}}</td><td class="muted">{{if .AtDesk}}at the Desk{{end}}</td></tr>{{end}}</tbody>
+  </table>
+  <div class="routes" role="radiogroup" aria-label="Route">
+    <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq .Route "B"}} checked{{end}}> Bureau <kbd>b</kbd></label>
+    <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq .Route "D"}} checked{{end}}> Direct <kbd>d</kbd></label>
+    <label class="stamp m"><input type="radio" name="route" value="MD" data-key="m"{{if eq .Route "MD"}} checked{{end}}> Via manager, direct <kbd>m</kbd></label>
+    <label class="stamp m"><input type="radio" name="route" value="MB" data-key="v"{{if eq .Route "MB"}} checked{{end}}> Via manager, bureau <kbd>v</kbd></label>
+    <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="manager" value="{{.Manager}}" aria-label="Manager callsign"
+           hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr-{{$n}}" hx-swap="innerHTML" onkeydown="if(event.key==='Escape'){this.blur()}">
+  </div>
+  <p class="decide-actions">
+    <button type="button" class="stamp d" data-key="w" title="Card written now with the route above - done  (w twice, or w Enter)" hx-post="/receive/reply?how=written" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">Written now</button>
+    <button type="button" class="stamp b" data-key="p" title="Print the card now with the route above - done  (p twice, or p Enter)" hx-post="/receive/reply?how=print" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">Print</button>
+    <button type="button" class="mini" data-key="l" title="Later: the reply goes to the Desk as yes, card  (l twice, or l Enter)" hx-post="/receive/reply?how=later" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">Later via the Desk</button>
+    <button type="button" class="mini" data-key="x" title="No reply - their card stays booked; the line keeps showing reply due  (x twice, or x Enter)" onclick="var p=this.closest('.reply');var m=document.createElement('p');m.className='banner';m.textContent='No reply to '+p.dataset.call+'.';p.replaceWith(m);document.dispatchEvent(new CustomEvent('qslReplyClosed'))">No reply</button>
+  </p>
+  <p class="muted legend">Keys: route <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>w</kbd> written now &middot; <kbd>p</kbd> print &middot; <kbd>l</kbd> later via the Desk &middot; <kbd>x</kbd> no reply - press the key twice (or the key, then Enter)</p>
+  <div class="pref"><h4>Manager</h4><div id="mgr-addr-{{$n}}">{{template "mgr_block" .Mgr}}</div></div>
+  <div class="reply-research" data-call="{{.Call}}" data-url="/receive/research?{{range $i, $k := .Keys}}{{if $i}}&amp;{{end}}key={{q $k}}{{end}}">{{template "research_panel" .Row}}</div>
+</div>{{end}}
+{{if not .Cards}}<p class="muted">No reply needed. Next card: type its callsign.</p>{{end}}
+{{template "receive_expected" .}}{{end}}

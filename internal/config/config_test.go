@@ -71,7 +71,25 @@ func TestWriteDefaultLoadsAndNeverOverwrites(t *testing.T) {
 
 // The shipped example must load as-is.
 func TestExampleConfigLoads(t *testing.T) {
-	if _, err := Load(filepath.Join("..", "..", "config.example.yaml")); err != nil {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
 		t.Fatalf("config.example.yaml: %v", err)
+	}
+	if cfg.Receive.OverdueWeeks != 12 {
+		t.Fatalf("receive.overdue_weeks = %d, want 12", cfg.Receive.OverdueWeeks)
+	}
+}
+
+func TestReceiveOverdueDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	if err := os.WriteFile(path, []byte("store:\n  path: x.db\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Receive.OverdueWeeks != 12 {
+		t.Fatalf("default overdue weeks = %d, want 12", cfg.Receive.OverdueWeeks)
 	}
 }

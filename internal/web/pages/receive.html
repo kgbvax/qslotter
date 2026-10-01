@@ -1,21 +1,84 @@
 {{define "receive.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Receive</title>
+<html><head><meta charset="utf-8"><title>qslotter - Incoming QSLs</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/keys.js"></script>
 </head><body>
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Receive QSL</h2>
-  <p>Enter DX callsign, pick the matching QSO(s), mark received.</p>
-  <form hx-post="/receive/lookup" hx-target="#results" hx-swap="innerHTML">
-    <input type="text" name="call" placeholder="Callsign" autofocus
-           style="text-transform:uppercase; font-size:18px; width:120px">
+  <h2>Incoming QSLs</h2>
+  <form id="rcv-find" hx-post="/receive/lookup" hx-target="#results" hx-swap="innerHTML" class="rcv-find">
+    <input type="text" id="rcv-call" name="call" placeholder="Callsign on the card" value="{{.Call}}" autofocus autocomplete="off"
+           aria-label="Callsign on the card">
     <button type="submit">Find</button>
+    <span class="muted">Enter: find &middot; tick the QSO(s) the card confirms &middot; Enter: book &middot; then answer it or not. Portable calls of the station are found too.</span>
   </form>
-  <div id="results"></div>
+  <div id="results">{{if .Call}}{{template "receive_results.html" .}}{{end}}</div>
+
+  {{template "receive_expected" .}}
 </main>
+<script>
+// After a lookup the Book button has focus (Enter books); after booking the
+// first reply panel, or - when no reply is due - the callsign field for the
+// next card. Reply panel keys act on the panel with focus (else the first):
+// b/d/m/v pick the route; w/p/l/x arm "written now / print / later / no
+// reply" and fire on the same key again or Enter - so typing the next
+// callsign over an open panel cannot answer it.
+(function () {
+  var call = document.getElementById('rcv-call');
+  function next() {
+    var f = document.querySelector('#results [data-focus]');
+    if (f) { f.focus(); return; }
+    call.focus(); call.select();
+  }
+  document.body.addEventListener('htmx:afterSwap', function (ev) {
+    if (ev.target.id === 'results' || (ev.target.closest && ev.target.closest('#results')) || !ev.target.isConnected) next();
+  });
+  document.addEventListener('qslReplyClosed', next);
+  if (document.querySelector('#results [data-focus]')) next();
+
+  var armed = null;
+  function arm(btn) {
+    if (armed) armed.classList.remove('armed');
+    armed = btn;
+    if (btn) btn.classList.add('armed');
+  }
+  document.body.addEventListener('htmx:afterSwap', function () { arm(null); });
+  function panel() {
+    var a = document.activeElement;
+    return (a && a.closest && a.closest('.reply')) || document.querySelector('#results .reply');
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat || qslKeys.editing(ev.target)) return;
+    var p = panel();
+    if (!p) return;
+    var k = ev.key.toLowerCase();
+    if (armed && (k === 'enter' || armed.dataset.key === k)) { ev.preventDefault(); var b = armed; arm(null); b.click(); return; }
+    var r = p.querySelector('input[name="route"][data-key="' + k + '"]');
+    if (r) {
+      ev.preventDefault(); arm(null); r.checked = true;
+      if (r.value.charAt(0) === 'M') { var m = p.querySelector('.mgr-in'); if (m && !m.value.trim()) m.focus(); }
+      return;
+    }
+    var btn = p.querySelector('button[data-key="' + k + '"]');
+    if (btn) { ev.preventDefault(); arm(btn); return; }
+    arm(null);
+  });
+
+  // The station's QRZ data landed: refresh the research of its reply panel.
+  if (window.EventSource) {
+    var es = new EventSource('/events');
+    es.addEventListener('station_updated', function (e) {
+      var c = e.data.toUpperCase();
+      document.querySelectorAll('#results .reply-research').forEach(function (el) {
+        if ((el.dataset.call || '').toUpperCase() === c) htmx.ajax('GET', el.dataset.url, { source: el, target: el, swap: 'innerHTML' });
+      });
+    });
+  }
+})();
+</script>
 </body></html>{{end}}

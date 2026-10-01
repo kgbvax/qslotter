@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type Store interface {
 	QueueDecline(keys ...string) error
 	QueueDeskDecline(keys ...string) error
 	QueueBack(keys ...string) error
+	QueueReply(keys []string) error
 	QueueReopen(qslKey string) (inClublog string, err error)
 	QueueCloseSentElsewhere(qslKey string) error
 	QueueDiscardBacklog(before string) (int, error)
@@ -470,13 +472,18 @@ func (q *QSO) EffectiveRcvd() (rcvd bool, date string) {
 	return false, ""
 }
 
+// callLikeRe matches a part that looks like a callsign (ends in letters after
+// a digit: DL1ABC, K1A, VK9X) rather than a bare prefix (KH6, EA8, 3D2).
+var callLikeRe = regexp.MustCompile(`^[A-Z0-9]*[0-9][A-Z]+$`)
+
 // BaseCall reduces a callsign with prefix/suffix to the operator's base call:
-// "EA8/DL1ABC/P" -> "DL1ABC", "W1AW/1" -> "W1AW". Suffix parts (P, M, MM, AM,
-// QRP, a single letter/digit) are dropped; of the remaining parts the longest
-// is the base.
+// "EA8/DL1ABC/P" -> "DL1ABC", "W1AW/1" -> "W1AW", "KH6/K1A" -> "K1A".
+// Suffix parts (P, M, MM, AM, QRP, a single letter/digit) are dropped; of the
+// remaining parts one that looks like a callsign beats a bare prefix, then the
+// longer wins, then the later one (ITU form PREFIX/CALL: VP2V/W1AW -> W1AW).
 func BaseCall(call string) string {
 	call = strings.ToUpper(strings.TrimSpace(call))
-	best := ""
+	best, bestScore := "", -1
 	for _, p := range strings.Split(call, "/") {
 		switch p {
 		case "", "P", "M", "MM", "AM", "QRP", "QRPP", "LH":
@@ -485,8 +492,12 @@ func BaseCall(call string) string {
 		if len(p) <= 1 {
 			continue
 		}
-		if len(p) > len(best) {
-			best = p
+		score := len(p)
+		if callLikeRe.MatchString(p) {
+			score += 100
+		}
+		if score >= bestScore {
+			best, bestScore = p, score
 		}
 	}
 	if best == "" {
@@ -993,6 +1004,58 @@ func (s *SQLiteStore) QueueBack(keys ...string) error {
 		}
 		return appendEventTx(tx, &Event{QSLKey: cur.QSLKey, Direction: "decision", Note: "back to decision"})
 	})
+}
+
+// QueueReply puts the QSOs of a received card that need an answer onto the
+// Desk ("yes, card", route open), whatever the Inbox said about them: a QSO
+// never queued (digital mode, before the cutoff) gets a queue item, one in
+// the Inbox is accepted, a "no card" decision (also the backlog) is
+// overruled by their card. A QSO whose card went out or was requested, or
+// that is already at the Desk, needs no move: sent/requested is a conflict
+// (stale page), decided is left as it is.
+func (s *SQLiteStore) QueueReply(keys []string) error {
+	if len(keys) == 0 {
+		return ErrConflict
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, key := range keys {
+		var status sql.NullString
+		err := tx.QueryRow(`SELECT status FROM qsl_work_queue WHERE qsl_key=?`, key).Scan(&status)
+		switch {
+		case err == sql.ErrNoRows:
+			var n int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qsl_key=?`, key).Scan(&n); err != nil {
+				return err
+			}
+			if n == 0 {
+				return ErrConflict
+			}
+			if _, err := tx.Exec(`INSERT INTO qsl_work_queue(qsl_key, desired_method, manager, status, override_reason, added_at)
+				VALUES(?, '', '', 'decided', 'reply to their card', ?)`, key, now); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case status.String == "queued" || status.String == "skipped":
+			if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='decided', desired_method='', manager='', send_via='',
+				channel='', note='' WHERE qsl_key=?`, key); err != nil {
+				return err
+			}
+		case status.String == "decided":
+			continue
+		default:
+			return ErrConflict
+		}
+		if err := appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Method: "Y", Note: "reply to their card"}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // QueueReopen puts a finished card (sent, declined or requested) back into
