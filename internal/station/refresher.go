@@ -119,6 +119,12 @@ func (r *Refresher) recentlyFailed(callsign string) bool {
 	return ok && time.Since(t) < failCooldown
 }
 
+// RecentlyFailed reports a lookup for the call that failed within the
+// cooldown (no new attempt is made until it passes).
+func (r *Refresher) RecentlyFailed(callsign string) bool {
+	return r.recentlyFailed(strings.ToUpper(callsign))
+}
+
 // Configured reports whether a QRZ client is set, i.e. lookups can happen.
 func (r *Refresher) Configured() bool {
 	r.mu.Lock()

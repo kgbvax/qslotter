@@ -169,7 +169,7 @@ func (r *Rules) EnqueueAllKeys(st store.Store) ([]string, error) {
 	}
 	// Every QSO that already has a queue item (any status) is left alone.
 	existingKeys := make(map[string]struct{})
-	for _, status := range []string{"queued", "decided", "printed", "sent", "skipped"} {
+	for _, status := range []string{"queued", "decided", "printed", "sent", "skipped", "requested"} {
 		items, err := st.QueueByStatus(status)
 		if err != nil {
 			return nil, err

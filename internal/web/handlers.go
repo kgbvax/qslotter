@@ -7,19 +7,17 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/events"
-	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
-	"github.com/dl9et/qslotter/internal/template"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -65,11 +63,6 @@ type QueueRow struct {
 	Chosen       string // the operator's recorded decision (empty while undecided)
 	MgrPrefill   string // manager callsign for the manager routes (recorded, else a valid suggested route)
 	ShowCheckbox bool   // batch-selection checkbox (queue/work list pages only)
-
-	// Desk only: the route offered first (B, D, MD = via manager direct, MB =
-	// via manager bureau, "" = none) and where it comes from.
-	Route     string
-	RouteFrom string
 
 	// Research, filled by researchFor for the card views only (lists stay light).
 	Research *Research
@@ -143,9 +136,6 @@ func (s *Server) buildRow(key string, refresh bool) *QueueRow {
 	if row.MgrPrefill == "" && row.Suggested == "M" && info != nil && qsldetermine.LooksLikeCallsign(info.QSLRoute) {
 		row.MgrPrefill = strings.ToUpper(info.QSLRoute)
 	}
-	if item != nil && item.Status == "decided" {
-		row.Route, row.RouteFrom = preselectRoute(row)
-	}
 	return row
 }
 
@@ -162,26 +152,6 @@ func routeCode(method, via string) string {
 		return "MD"
 	}
 	return ""
-}
-
-// preselectRoute picks the route the Desk offers first: one recorded earlier
-// (cards decided before the Inbox stopped asking for routes carry one), else
-// the QRZ suggestion. The operator confirms it by printing or writing.
-func preselectRoute(row *QueueRow) (code, from string) {
-	if row.Item != nil {
-		if c := routeCode(row.Item.DesiredMethod, row.Item.SendVia); c != "" {
-			return c, "chosen earlier"
-		}
-	}
-	switch row.Suggested {
-	case "B", "D":
-		return row.Suggested, "QRZ suggestion"
-	case "M":
-		if row.MgrPrefill != "" {
-			return "MD", "QRZ suggestion"
-		}
-	}
-	return "", ""
 }
 
 // routeName spells out a route code.
@@ -259,6 +229,8 @@ func queueStateText(status, method, manager string) string {
 		return "at the Desk"
 	case "skipped":
 		return "no card"
+	case "requested":
+		return "their card requested"
 	case "sent":
 		return ""
 	}
@@ -268,9 +240,13 @@ func queueStateText(status, method, manager string) string {
 // researchFor gathers the research panel for one card: what QRZ says about the
 // station's QSL habits (already on the row), and what happened between the
 // operator and this station so far (earlier QSOs, cards sent/received).
-func (s *Server) researchFor(row *QueueRow) {
+func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	if row == nil || row.QSO == nil {
 		return
+	}
+	onCard := map[string]bool{row.QSO.QSLKey: true}
+	for _, k := range sameCard {
+		onCard[k] = true
 	}
 	res := &Research{}
 	row.Research = res
@@ -299,13 +275,15 @@ func (s *Server) researchFor(row *QueueRow) {
 		return
 	}
 	var (
-		prior              int
-		sentBadge, rcvdBad *Badge
-		lotw               bool
+		prior                            int
+		sentBadge, rcvdBad               *Badge
+		lotw                             bool
+		sameDesk, sameInbox, otherCallOp int
+		otherCalls                       []string
 	)
 	for _, h := range hist {
 		q := h.QSO
-		if q.QSLKey == row.QSO.QSLKey {
+		if onCard[q.QSLKey] { // the card's own QSOs are shown on the card
 			continue
 		}
 		prior++
@@ -339,8 +317,19 @@ func (s *Server) researchFor(row *QueueRow) {
 		if len(res.History) < 8 {
 			res.History = append(res.History, line)
 		}
-		if (h.QueueStatus == "queued" || h.QueueStatus == "decided") && h.QSO.QSLKey != row.QSO.QSLKey {
+		if h.QueueStatus == "queued" || h.QueueStatus == "decided" {
 			res.Others++
+			switch {
+			case !strings.EqualFold(q.Call, row.QSO.Call):
+				otherCallOp++
+				if !slices.Contains(otherCalls, q.Call) {
+					otherCalls = append(otherCalls, q.Call)
+				}
+			case h.QueueStatus == "decided":
+				sameDesk++
+			default:
+				sameInbox++
+			}
 		}
 	}
 	if prior == 0 {
@@ -357,8 +346,16 @@ func (s *Server) researchFor(row *QueueRow) {
 	if lotw {
 		res.Badges = append(res.Badges, Badge{Kind: "info", Text: "LoTW confirmed"})
 	}
-	if res.Others > 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d other card(s) for this station still pending - one card could cover them", res.Others)})
+	// One card covers the open QSOs with the same call at the Desk (B9); a
+	// /P or prefixed call is a separate card.
+	if sameDesk > 0 {
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d QSO(s) with %s already at the Desk - a yes puts this one on the same card", sameDesk, row.QSO.Call)})
+	}
+	if sameInbox > 0 {
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: fmt.Sprintf("%d more QSO(s) with %s wait in the Inbox - with a yes they share one card", sameInbox, row.QSO.Call)})
+	}
+	if otherCallOp > 0 {
+		res.Badges = append(res.Badges, Badge{Kind: "info", Text: fmt.Sprintf("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
 	}
 }
 
@@ -470,102 +467,6 @@ func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPa
 	s.render(w, "decide_content.html", data)
 }
 
-// --- (b) work queue ---
-
-// WorkGroup is one slice of the Desk list, by the route offered first.
-type WorkGroup struct {
-	Method string // filter value: O (route open), D, M, B
-	Title  string
-	Rows   []*QueueRow
-}
-
-var workGroupOrder = []WorkGroup{
-	{Method: "O", Title: "Route open"},
-	{Method: "D", Title: "Direct"},
-	{Method: "M", Title: "Via manager"},
-	{Method: "B", Title: "Bureau"},
-}
-
-// routeGroup maps a route code to its Desk group / filter value.
-func routeGroup(code string) string {
-	if code == "" {
-		return "O"
-	}
-	return code[:1]
-}
-
-// pageWork lists the Desk cards awaiting production, grouped by the route
-// offered first (recorded earlier, else the QRZ suggestion).
-func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.QueueList("decided")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	rows := withCheckbox(s.rowsFor(items))
-	var groups []WorkGroup
-	for _, g := range workGroupOrder {
-		for _, row := range rows {
-			if routeGroup(row.Route) == g.Method {
-				g.Rows = append(g.Rows, row)
-			}
-		}
-		if g.Method == "B" { // bureau cards are sorted for the parcel: by call
-			sort.SliceStable(g.Rows, func(i, j int) bool { return g.Rows[i].QSO.Call < g.Rows[j].QSO.Call })
-		}
-		if len(g.Rows) > 0 {
-			groups = append(groups, g)
-		}
-	}
-	s.render(w, "worklist.html", map[string]any{
-		"Groups": groups, "Total": len(rows),
-		"Done": r.URL.Query().Get("done"), "Failed": r.URL.Query().Get("failed"),
-	})
-}
-
-// pageWorkCard shows one decided card at a time (?filter=B|D|M narrows it to
-// one route); Print/Written/Back answer with the next card.
-func (s *Server) pageWorkCard(w http.ResponseWriter, r *http.Request) {
-	s.renderWorkCard(w, r, !isFragmentRequest(r))
-}
-
-func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage bool) {
-	filter := strings.ToUpper(r.FormValue("filter"))
-	items, err := s.store.QueueList("decided")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if filter == "B" || filter == "D" || filter == "M" || filter == "O" {
-		var kept []*store.QueueItem
-		for _, it := range items {
-			if row := s.buildRow(it.QSLKey, false); routeGroup(row.Route) == filter {
-				kept = append(kept, it)
-			}
-		}
-		items = kept
-	} else {
-		filter = ""
-	}
-	data := map[string]any{"Total": len(items), "Filter": filter}
-	want := ""
-	if r.Method == http.MethodGet {
-		want = r.URL.Query().Get("key")
-	}
-	if cur, prev, next, pos := cardWindow(items, want); cur != nil {
-		if row := s.queueRowFor(cur.QSLKey); row.QSO != nil {
-			data["Row"] = row
-			data["Pos"] = fmt.Sprintf("card %d of %d", pos, len(items))
-			data["Prev"], data["Next"] = prev, next
-		}
-	}
-	if fullPage {
-		s.render(w, "workcard.html", data)
-		return
-	}
-	s.render(w, "workcard_content.html", data)
-}
-
 // --- done ---
 
 // DoneRow is one finished card with its outcome spelled out.
@@ -581,6 +482,12 @@ func outcomeOf(it *store.QueueItem) string {
 		return "no card (backlog)"
 	case it.Status == "skipped":
 		return "no card"
+	case it.Status == "requested":
+		out := "their card requested via " + it.Channel
+		if it.Note != "" {
+			out += ": " + it.Note
+		}
+		return out
 	case it.Note == "sent elsewhere":
 		return "sent elsewhere (per Clublog)"
 	case it.DesiredMethod == "W":
@@ -613,7 +520,7 @@ func outcomeOf(it *store.QueueItem) string {
 
 // pageDone lists recently finished cards (sent, declined) with Reopen.
 func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.QueueList("sent", "skipped")
+	items, err := s.store.QueueList("sent", "skipped", "requested")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -899,7 +806,7 @@ func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.store.QueueWritten(key, rt); err != nil {
+	if err := s.store.QueueWrittenNow([]string{key}, rt); err != nil {
 		s.queueErr(w, err)
 		return
 	}
@@ -919,80 +826,18 @@ func (s *Server) htmxQueueBack(w http.ResponseWriter, r *http.Request) {
 // htmxQueueReopen puts a finished card back into the decision queue.
 func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
-	pushed, err := s.store.QueueReopen(key)
+	inClublog, err := s.store.QueueReopen(key)
 	if err != nil {
 		s.queueErr(w, err)
 		return
 	}
-	if pushed {
+	switch inClublog {
+	case "sent":
 		w.Header().Set("HX-Trigger", `{"qslNotice":"Reopened. Clublog already has this card as sent; reopening does not undo that there."}`)
+	case "requested":
+		w.Header().Set("HX-Trigger", `{"qslNotice":"Reopened. Clublog already has their card as requested (QSL_RCVD=R); reopening does not undo that there."}`)
 	}
 	s.afterTransition(w, r, key, "queued")
-}
-
-// htmxWorkPrint renders and prints a Desk card with its chosen route; only a
-// successful print completes it (a printer error leaves it on the Desk).
-func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	rt, err := routeFrom(r, key)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := s.printOne(key, rt); err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			s.queueErr(w, err)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.afterTransition(w, r, key, "sent")
-}
-
-// printOne prints the card for a Desk QSO and marks it sent with its route.
-func (s *Server) printOne(key string, rt store.Route) error {
-	item, err := s.store.QueueGet(key)
-	if err != nil {
-		return err
-	}
-	if item == nil || item.Status != "decided" {
-		return store.ErrConflict
-	}
-	qso, err := s.store.GetQSO(key)
-	if err != nil {
-		return err
-	}
-	if qso == nil {
-		return fmt.Errorf("QSO not found")
-	}
-	cfg := s.config()
-	tmpl := template.Default()
-	if cfg.Card.Template != "" {
-		if t, err := template.Load(cfg.Card.Template); err == nil {
-			tmpl = t
-		}
-	}
-	fields := printer.QSOFields{
-		Call: qso.Call, Name: qso.Name, QTH: qso.QTH,
-		QSODate: qso.QSODate, TimeOn: qso.TimeOn,
-		Band: qso.Band, Mode: qso.Mode,
-		RSTSent: qso.RSTSent, RSTRcvd: qso.RSTRcvd,
-		MyCall: cfg.Clublog.Call,
-		MyName: cfg.Station.Name,
-	}
-	pdfPath := printer.TempPDFPath()
-	if err := printer.RenderPDF(pdfPath, tmpl, fields); err != nil {
-		return err
-	}
-	if err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
-		PaperWMM: cfg.Printer.PaperSizeMM[0],
-		PaperHMM: cfg.Printer.PaperSizeMM[1],
-		Copies:   1,
-	}); err != nil {
-		return err
-	}
-	return s.store.QueuePrinted(key, rt)
 }
 
 // batchQueue applies one action to every checked row of a list page and
@@ -1003,25 +848,16 @@ func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 	list := r.FormValue("list")
 	keys := r.Form["keys"]
 
-	withRoute := func(k string, finish func(string, store.Route) error) error {
-		rt, err := routeFrom(r, k)
-		if err != nil {
-			return err
-		}
-		return finish(k, rt)
+	if list == "work" {
+		s.batchDesk(w, r, action, keys)
+		return
 	}
 	var apply func(key string) (to string, err error)
 	switch {
-	case list != "work" && action == "yes":
+	case action == "yes":
 		apply = func(k string) (string, error) { return "decided", s.store.QueueAccept(k) }
 	case action == "none":
 		apply = func(k string) (string, error) { return "skipped", s.store.QueueDecline(k) }
-	case list == "work" && action == "written":
-		apply = func(k string) (string, error) { return "sent", withRoute(k, s.store.QueueWritten) }
-	case list == "work" && action == "print":
-		apply = func(k string) (string, error) { return "sent", withRoute(k, s.printOne) }
-	case list == "work" && action == "back":
-		apply = func(k string) (string, error) { return "queued", s.store.QueueBack(k) }
 	default:
 		http.Error(w, "unknown batch action for this list", http.StatusBadRequest)
 		return
@@ -1039,9 +875,7 @@ func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 
 	target := "/queue"
 	q := url.Values{"done": {fmt.Sprint(done)}, "failed": {fmt.Sprint(failed)}}
-	if list == "work" {
-		target = "/work"
-	} else if r.FormValue("compact") == "1" {
+	if r.FormValue("compact") == "1" {
 		q.Set("compact", "1")
 	}
 	http.Redirect(w, r, target+"?"+q.Encode(), http.StatusSeeOther)

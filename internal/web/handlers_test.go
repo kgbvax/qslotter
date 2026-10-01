@@ -195,14 +195,14 @@ func TestDeskManagerRoute(t *testing.T) {
 		{"key": {key}, "route": {"X"}}, // unknown route
 		{"key": {key}, "route": {"M"}}, // manager without bureau/direct
 	} {
-		if r := postForm(t, h, "/queue/written", f); r.Code != http.StatusBadRequest {
+		if r := postForm(t, h, "/work/written", f); r.Code != http.StatusBadRequest {
 			t.Fatalf("written %v = %d, want 400", f, r.Code)
 		}
 	}
 	if it := status(t, st, key); it.Status != "decided" {
 		t.Fatalf("refused routes must not change the card: %+v", it)
 	}
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"MB"}, "manager": {" k2abc "}}); r.Code != 200 {
+	if r := postForm(t, h, "/work/written", url.Values{"key": {key}, "route": {"MB"}, "manager": {" k2abc "}}); r.Code != 200 {
 		t.Fatalf("written via manager = %d: %s", r.Code, r.Body)
 	}
 	if it := status(t, st, key); it.Status != "sent" || it.DesiredMethod != "M" || it.SendVia != "B" || it.Manager != "K2ABC" {
@@ -390,7 +390,7 @@ func TestWorkQueue(t *testing.T) {
 
 	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "preselected: QRZ suggestion", "/work/print?key=", `data-key="p"`} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "preselected: QRZ suggestion", "/work/print?view=work", `data-key="p"`, "What QRZ says"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -528,7 +528,7 @@ func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
 
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}}); r.Code != 200 {
+	if r := postForm(t, h, "/work/written", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}}); r.Code != 200 {
 		t.Fatalf("written in work view = %d: %s", r.Code, r.Body)
 	}
 	it := status(t, st, key)
@@ -840,7 +840,7 @@ func TestDecideCardShowsResearch(t *testing.T) {
 		"card already sent 2023-05-02",     // effective sent
 		"their card received 2023-06-10",   // received: reply is due
 		"LoTW confirmed",
-		"other card(s) for this station still pending",
+		"more QSO(s) with DL1ABC wait in the Inbox",
 		"EA8/DL1ABC",                // portable spelling in the history table
 		"a hint, not a decision",    // suggestion is tentative
 		"VIA BUREAU, DIRECT. LotW.", // raw qslmgr text shown verbatim

@@ -316,3 +316,15 @@ details.fullbio summary { font-size: 12px; color: var(--ink-soft); cursor: point
 table.hist { font-size: 12.5px; margin-top: 2px; }
 table.hist td, table.hist th { padding: 2px 10px 2px 0; }
 table.hist td { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+/* Desk card: the QSOs on the card, request panel, OQRS hint */
+table.cardqsos { margin: 10px 0 4px; font: 400 13px 'IBM Plex Mono', monospace; }
+table.cardqsos th { font-size: 11px; }
+table.cardqsos td { padding: 3px 12px 3px 0; }
+.oqrs-hint { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
+.request { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; padding: 8px 10px;
+           border: 1.5px dashed var(--ink-soft); border-radius: 3px; }
+.request[hidden] { display: none; }
+.request input[name=note] { padding: 4px 8px; }
+button.mini.suggested { outline: 1.5px dashed var(--ink-soft); outline-offset: 2px; }
+.pref.sendto { margin-bottom: 10px; }

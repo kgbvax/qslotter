@@ -418,16 +418,16 @@ func TestQueueWrittenNowRecordsBureauOrDirect(t *testing.T) {
 	st := openTemp(t)
 	key := seedQueued(t, st, "DL1ABC", "20240101")
 	// Written now needs a route, and never via a manager.
-	if err := st.QueueWritten(key, Route{}); !errors.Is(err, ErrBadRoute) {
+	if err := st.QueueWrittenNow([]string{key}, Route{}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("written without route = %v, want ErrBadRoute", err)
 	}
-	if err := st.QueueWritten(key, Route{Method: "M", Via: "D", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
+	if err := st.QueueWrittenNow([]string{key}, Route{Method: "M", Via: "D", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("written now via manager = %v, want ErrBadRoute", err)
 	}
 	if it := statusOf(t, st, key); it.Status != "queued" {
 		t.Fatalf("a rejected route must not move the card: %+v", it)
 	}
-	if err := st.QueueWritten(key, Route{Method: "b"}); err != nil {
+	if err := st.QueueWrittenNow([]string{key}, Route{Method: "b"}); err != nil {
 		t.Fatal(err)
 	}
 	it := statusOf(t, st, key)
@@ -441,7 +441,7 @@ func TestQueueWrittenNowRecordsBureauOrDirect(t *testing.T) {
 	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
 		t.Fatalf("pending push = %d, want 1", len(pend))
 	}
-	if err := st.QueueWritten(key, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
+	if err := st.QueueWrittenNow([]string{key}, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("written twice = %v, want ErrConflict", err)
 	}
 }
@@ -456,20 +456,20 @@ func TestQueueWrittenAndPrintedRecordDeskRoute(t *testing.T) {
 		}
 	}
 	// Printing needs a Desk card.
-	if err := st.QueuePrinted(seedQueued(t, st, "DL3YYY", "20240103"), Route{Method: "D"}); !errors.Is(err, ErrConflict) {
+	if err := st.QueuePrinted([]string{seedQueued(t, st, "DL3YYY", "20240103")}, Route{Method: "D"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("print of an Inbox card = %v, want ErrConflict", err)
 	}
 	// A manager route needs the manager and how the card travels.
-	if err := st.QueuePrinted(kp, Route{Method: "M", Via: "B"}); !errors.Is(err, ErrBadRoute) {
+	if err := st.QueuePrinted([]string{kp}, Route{Method: "M", Via: "B"}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("manager route without call = %v, want ErrBadRoute", err)
 	}
-	if err := st.QueuePrinted(kp, Route{Method: "M", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
+	if err := st.QueuePrinted([]string{kp}, Route{Method: "M", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("manager route without bureau/direct = %v, want ErrBadRoute", err)
 	}
-	if err := st.QueueWritten(kw, Route{Method: "D"}); err != nil {
+	if err := st.QueueWritten([]string{kw}, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(kp, Route{Method: "m", Via: "b", Manager: " k2abc "}); err != nil {
+	if err := st.QueuePrinted([]string{kp}, Route{Method: "m", Via: "b", Manager: " k2abc "}); err != nil {
 		t.Fatal(err)
 	}
 	if it := statusOf(t, st, kw); it.Status != "sent" || it.DesiredMethod != "D" || it.SendVia != "D" || it.Note != "" || it.PrintedAt.Valid {
@@ -548,19 +548,19 @@ func TestQueueDeclineBackAndReopen(t *testing.T) {
 	if it := statusOf(t, st, key); it.Status != "skipped" || it.DesiredMethod != "N" {
 		t.Fatalf("after decline: %+v", it)
 	}
-	if pushed, err := st.QueueReopen(key); err != nil || pushed {
-		t.Fatalf("reopen declined = %v, %v", pushed, err)
+	if in, err := st.QueueReopen(key); err != nil || in != "" {
+		t.Fatalf("reopen declined = %q, %v", in, err)
 	}
 	if it := statusOf(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
 		t.Fatalf("after reopen: %+v", it)
 	}
 
 	// Reopening a sent card clears the unpushed local sent state.
-	if err := st.QueueWritten(key, Route{Method: "D"}); err != nil {
+	if err := st.QueueWrittenNow([]string{key}, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
-	if pushed, err := st.QueueReopen(key); err != nil || pushed {
-		t.Fatalf("reopen sent = %v, %v", pushed, err)
+	if in, err := st.QueueReopen(key); err != nil || in != "" {
+		t.Fatalf("reopen sent = %q, %v", in, err)
 	}
 	q, _ := st.GetQSO(key)
 	if q.QSLSentLocal.Valid || q.QSLSentMethodLocal.Valid || q.QSLSDateLocal.Valid {
@@ -580,15 +580,15 @@ func TestQueueReopenReportsAlreadyPushed(t *testing.T) {
 	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(key, Route{Method: "B"}); err != nil {
+	if err := st.QueuePrinted([]string{key}, Route{Method: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	pend, _ := st.PendingPushBack()
 	if err := st.MarkPushed(pend[0]); err != nil {
 		t.Fatal(err)
 	}
-	if pushed, err := st.QueueReopen(key); err != nil || !pushed {
-		t.Fatalf("reopen after push = %v, %v; want pushed=true", pushed, err)
+	if in, err := st.QueueReopen(key); err != nil || in != "sent" {
+		t.Fatalf("reopen after push = %q, %v; want sent", in, err)
 	}
 }
 
@@ -607,7 +607,7 @@ func TestQueueListNewestFirstAndCounts(t *testing.T) {
 	if q, d, p, err := st.QueueCounts(); err != nil || q != 2 || d != 1 || p != 0 {
 		t.Fatalf("counts = %d/%d/%d, %v", q, d, p, err)
 	}
-	if err := st.QueueWritten(old, Route{Method: "B"}); err != nil {
+	if err := st.QueueWrittenNow([]string{old}, Route{Method: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	if q, d, p, _ := st.QueueCounts(); q != 1 || d != 1 || p != 1 {
@@ -688,7 +688,7 @@ func TestCallHistoryBaseCallAndQueueState(t *testing.T) {
 	if err := st.QueueAccept(k1); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(k1, Route{Method: "M", Via: "D", Manager: "k2abc"}); err != nil {
+	if err := st.QueuePrinted([]string{k1}, Route{Method: "M", Via: "D", Manager: "k2abc"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -755,5 +755,180 @@ func TestStationInfoNameAttnNotFound(t *testing.T) {
 	}
 	if si, _ := st.GetStation("XX1XX"); si == nil || !si.NotFound {
 		t.Fatalf("negative cache entry = %+v", si)
+	}
+}
+
+func TestQueueRequested(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueRequested([]string{key}, Request{Channel: "OQRS"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("request from the Inbox = %v, want ErrConflict", err)
+	}
+	if err := st.QueueAccept(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{key}, Request{Channel: "carrier pigeon"}); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("unknown channel = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueueRequested([]string{key}, Request{Channel: "paypal", Note: " 3 EUR "}); err != nil {
+		t.Fatal(err)
+	}
+	it := statusOf(t, st, key)
+	if it.Status != "requested" || it.DesiredMethod != "R" || it.Channel != "PayPal" || it.Note != "3 EUR" || !it.SentAt.Valid {
+		t.Fatalf("after requested: %+v", it)
+	}
+	q, _ := st.GetQSO(key)
+	if q.QSLRcvdLocal.String != "R" || q.QSLSentLocal.Valid {
+		t.Fatalf("local state: rcvd %v sent %v", q.QSLRcvdLocal, q.QSLSentLocal)
+	}
+	if qd, d, _, _ := st.QueueCounts(); qd != 0 || d != 0 {
+		t.Fatalf("a requested card is neither in the Inbox nor at the Desk: %d/%d", qd, d)
+	}
+	// After the push Clublog has R: reopening reports it.
+	pend, _ := st.PendingPushBack()
+	if len(pend) != 1 {
+		t.Fatalf("pending = %d", len(pend))
+	}
+	if err := st.MarkPushed(pend[0]); err != nil {
+		t.Fatal(err)
+	}
+	if in, err := st.QueueReopen(key); err != nil || in != "requested" {
+		t.Fatalf("reopen requested after push = %q, %v; want requested", in, err)
+	}
+}
+
+// TestQueueRequestedKeepsReceivedCard: a card already received stays Y.
+func TestQueueRequestedKeepsReceivedCard(t *testing.T) {
+	st := openTemp(t)
+	key := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.SetQSLRcvdLocal(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueAccept(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{key}, Request{Channel: "OQRS"}); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := st.GetQSO(key); q.QSLRcvdLocal.String != "Y" {
+		t.Fatalf("received card overwritten by the request: %v", q.QSLRcvdLocal)
+	}
+}
+
+// TestQueueManyIsAtomic: a card covering several QSOs moves all or nothing.
+func TestQueueManyIsAtomic(t *testing.T) {
+	st := openTemp(t)
+	k1 := seedQueued(t, st, "DL1ABC", "20240101")
+	k2 := seedQueued(t, st, "DL1ABC", "20240102")
+	if err := st.QueueAccept(k1); err != nil {
+		t.Fatal(err)
+	}
+	// k2 is still in the Inbox: printing both must fail and change nothing.
+	if err := st.QueuePrinted([]string{k1, k2}, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("mixed print = %v, want ErrConflict", err)
+	}
+	if it := statusOf(t, st, k1); it.Status != "decided" {
+		t.Fatalf("k1 changed by a failed card move: %+v", it)
+	}
+	if err := st.QueueAccept(k2); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueuePrinted([]string{k1, k2, k1}, Route{Method: "D"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{k1, k2} {
+		if it := statusOf(t, st, k); it.Status != "sent" || it.DesiredMethod != "D" {
+			t.Fatalf("%s: %+v", k, it)
+		}
+	}
+	if err := st.QueueBack(); !errors.Is(err, ErrConflict) {
+		t.Fatalf("no keys = %v, want ErrConflict", err)
+	}
+}
+
+func TestQueueCountsDeskCards(t *testing.T) {
+	st := openTemp(t)
+	for _, k := range []string{seedQueued(t, st, "DL1ABC", "20240101"), seedQueued(t, st, "DL1ABC", "20240102"), seedQueued(t, st, "DL2ZZZ", "20240103")} {
+		if err := st.QueueAccept(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedQueued(t, st, "DL3YYY", "20240104")
+	if q, d, _, err := st.QueueCounts(); err != nil || q != 1 || d != 2 {
+		t.Fatalf("counts = %d/%d, %v; want 1 Inbox QSO, 2 Desk cards", q, d, err)
+	}
+}
+
+// TestRequestNeverDowngradesReceived: a request (R) must never be pushed over
+// a card Clublog reports as received (Y) - neither when the pull with Y
+// arrives before the push, nor when Clublog already had the request.
+func TestRequestNeverDowngradesReceived(t *testing.T) {
+	st := openTemp(t)
+	pull := func(key, rcvd, hash string) {
+		t.Helper()
+		q, _ := st.GetQSO(key)
+		q.QSLRcvd, q.Hash = rcvd, hash
+		if _, _, err := st.UpsertQSO(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// (b) request recorded, not pushed, then their card arrives (pull Y).
+	k1 := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueAccept(k1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{k1}, Request{Channel: "OQRS"}); err != nil {
+		t.Fatal(err)
+	}
+	pull(k1, "Y", "h-y1")
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("R would be pushed over Y: %d pending", len(pend))
+	}
+	if q, _ := st.GetQSO(k1); q.QSLRcvdLocal.Valid {
+		t.Fatalf("stale local R kept: %v", q.QSLRcvdLocal)
+	} else if r, _ := q.EffectiveRcvd(); !r {
+		t.Fatal("the received card must count as received")
+	}
+	// (a) Clublog already has R when the request is recorded.
+	k2 := seedQueued(t, st, "DL2ZZZ", "20240102")
+	pull(k2, "R", "h-r2")
+	if err := st.QueueAccept(k2); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{k2}, Request{Channel: "OQRS"}); err != nil {
+		t.Fatal(err)
+	}
+	if q, _ := st.GetQSO(k2); q.QSLRcvdLocal.Valid {
+		t.Fatalf("no local R when Clublog already has it: %v", q.QSLRcvdLocal)
+	}
+	pull(k2, "Y", "h-y2")
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("after Y arrived nothing may be pending: %d", len(pend))
+	}
+}
+
+// TestInboxAndDeskTransitionsStartFromTheirOwnStatus: a stale Inbox page
+// cannot act on a Desk card and vice versa (409, nothing changes).
+func TestInboxAndDeskTransitionsStartFromTheirOwnStatus(t *testing.T) {
+	st := openTemp(t)
+	inbox := seedQueued(t, st, "DL1ABC", "20240101")
+	desk := seedQueued(t, st, "DL2ZZZ", "20240102")
+	if err := st.QueueAccept(desk); err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"written (Desk) on an Inbox QSO": st.QueueWritten([]string{inbox}, Route{Method: "B"}),
+		"written now on a Desk QSO":      st.QueueWrittenNow([]string{desk}, Route{Method: "B"}),
+		"no card (Inbox) on a Desk QSO":  st.QueueDecline(desk),
+		"no card (Desk) on an Inbox QSO": st.QueueDeskDecline(inbox),
+		"requested on an Inbox QSO":      st.QueueRequested([]string{inbox}, Request{Channel: "OQRS"}),
+		"printed on an Inbox QSO":        st.QueuePrinted([]string{inbox}, Route{Method: "B"}),
+	} {
+		if !errors.Is(err, ErrConflict) {
+			t.Errorf("%s = %v, want ErrConflict", name, err)
+		}
+	}
+	if statusOf(t, st, inbox).Status != "queued" || statusOf(t, st, desk).Status != "decided" {
+		t.Fatal("a refused transition changed a card")
 	}
 }

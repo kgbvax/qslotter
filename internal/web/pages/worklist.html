@@ -1,24 +1,24 @@
-{{define "route_select"}}<select name="route:{{.Item.QSLKey}}" form="batch" class="route-sel" aria-label="Route for {{.QSO.Call}}" title="{{if .RouteFrom}}preselected: {{.RouteFrom}}{{else}}choose a route{{end}}">
+{{define "route_select"}}<select name="route:{{.Lead.Item.QSLKey}}" form="batch" class="route-sel" aria-label="Route for {{.Call}}" title="{{if .RouteFrom}}preselected: {{.RouteFrom}}{{else}}choose a route{{end}}">
       <option value=""{{if not .Route}} selected{{end}}>route?</option>
       <option value="B"{{if eq .Route "B"}} selected{{end}}>Bureau</option>
       <option value="D"{{if eq .Route "D"}} selected{{end}}>Direct</option>
       <option value="MD"{{if eq .Route "MD"}} selected{{end}}>Mgr, direct</option>
       <option value="MB"{{if eq .Route "MB"}} selected{{end}}>Mgr, bureau</option>
-    </select><input type="text" class="mgr-in" name="manager:{{.Item.QSLKey}}" form="batch" size="7" maxlength="14" placeholder="mgr" value="{{.MgrPrefill}}" aria-label="Manager callsign" title="Manager callsign (manager routes only)">{{end}}
+    </select><input type="text" class="mgr-in" name="manager:{{.Lead.Item.QSLKey}}" form="batch" size="7" maxlength="14" placeholder="mgr" value="{{.MgrPrefill}}" aria-label="Manager callsign" title="Manager callsign (manager routes only)">{{end}}
 
-{{define "work_row.html"}}<tr id="row-{{.Item.QSLKey}}">
-  <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Item.QSLKey}}" title="Select for batch action"></td>
-  <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
-  <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
-  <td class="c-bm">{{.QSO.Band}}</td>
-  <td class="c-bm">{{.QSO.Mode}}</td>
-  <td>{{.QSO.Name}}</td>
-  <td>{{if .Info}}{{.Info.Country}}{{end}}</td>
+{{define "work_row.html"}}<tr id="row-{{.Lead.Item.QSLKey}}">
+  <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Lead.Item.QSLKey}}" title="Select for batch action"></td>
+  <td class="c-date">{{fmtDate .Lead.QSO.QSODate}}</td>
+  <td><a class="call" href="/station/{{.Call}}">{{.Call}}</a>{{if .OQRS}} <span class="badge" title="QRZ mentions OQRS">OQRS</span>{{end}}</td>
+  <td class="c-bm">{{range $i, $r := .Rows}}{{if $i}}, {{end}}{{$r.QSO.Band}} {{$r.QSO.Mode}}{{end}}{{if .Extra}} <span class="muted">({{len .Rows}} QSOs, {{if gt .Prints 1}}prints as {{.Prints}} cards{{else}}one card{{end}})</span>{{end}}</td>
+  <td>{{.Name}}</td>
+  <td>{{if .Lead.Info}}{{.Lead.Info.Country}}{{end}}</td>
   <td class="route-cell">{{template "route_select" .}}</td>
-  <td class="actions">
-    <button type="button" class="mini" title="Render the card and send it to the printer - sent with the chosen route" hx-post="/work/print?key={{q .Item.QSLKey}}" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Print</button>
-    <button type="button" class="mini" title="Card written by hand - sent with the chosen route" hx-post="/queue/written?key={{q .Item.QSLKey}}" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Written</button>
-    <button type="button" class="mini" title="Take back to the Inbox" hx-post="/queue/back?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Back</button>
+  <td class="actions">{{$lead := .Lead.Item.QSLKey}}{{range .Rows}}<input type="hidden" name="key" value="{{.Item.QSLKey}}"><input type="hidden" name="card:{{$lead}}" form="batch" value="{{.Item.QSLKey}}">{{end}}
+    <button type="button" class="mini" title="Render the card and send it to the printer - sent with the chosen route" hx-post="/work/print" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Print</button>
+    <button type="button" class="mini" title="Card written by hand - sent with the chosen route" hx-post="/work/written" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Written</button>
+    <button type="button" class="mini" title="No card after all" hx-post="/work/none" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">No card</button>
+    <button type="button" class="mini" title="Take back to the Inbox" hx-post="/work/back" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Back</button>
   </td>
 </tr>{{end}}
 
@@ -36,7 +36,7 @@
 <main>
   <h2>Desk <small>({{.Total}} card(s) to write or print)</small></h2>
   {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} failed</span> (no route chosen, manager call missing, already handled, or the printer refused){{end}}.</p>{{end}}
-  <p><a href="/work/card">Card by card &rarr;</a> <span class="muted">Choose the route per card (preselected from QRZ where it says something), then print or write it; it is marked sent and goes to Clublog with the next push.</span></p>
+  <p><a href="/work/card">Card by card &rarr;</a> <span class="muted">One card per station (several QSOs with the same call share a card). Choose the route (preselected from QRZ where it says something), then print or write it; it is marked sent and goes to Clublog with the next push. "Requested (OQRS)" is on the card view.</span></p>
   {{if not .Groups}}<div class="empty"><p class="big">Nothing to write or print.</p><p>Cards you answer "yes" in the Inbox show up here. <a href="/queue">Go to the Inbox</a>.</p></div>{{else}}
   <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="list" value="work">
@@ -49,10 +49,10 @@
     <button type="submit">Apply to selected</button>
   </form>
   {{range .Groups}}
-  <h3 class="grouphead">{{.Title}} <small>({{len .Rows}})</small> <a class="mini" href="/work/card?filter={{.Method}}">card by card &rarr;</a></h3>
+  <h3 class="grouphead">{{.Title}} <small>({{len .Cards}})</small> <a class="mini" href="/work/card?filter={{.Method}}">card by card &rarr;</a></h3>
   <table class="worktable">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>Name</th><th>Country</th><th>Route</th><th>Produce</th></tr></thead>
-    <tbody>{{range .Rows}}{{template "work_row.html" .}}{{end}}</tbody>
+    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>QSOs</th><th>Name</th><th>Country</th><th>Route</th><th>Produce</th></tr></thead>
+    <tbody>{{range .Cards}}{{template "work_row.html" .}}{{end}}</tbody>
   </table>
   {{end}}{{end}}
 </main>

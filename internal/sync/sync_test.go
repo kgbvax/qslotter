@@ -212,7 +212,7 @@ func TestPushBackManagerAndWritten(t *testing.T) {
 	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(key, store.Route{Method: "M", Via: "B", Manager: "K2ABC"}); err != nil {
+	if err := st.QueuePrinted([]string{key}, store.Route{Method: "M", Via: "B", Manager: "K2ABC"}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := o.PushBack(); err != nil || n != 1 {
@@ -228,7 +228,7 @@ func TestPushBackManagerAndWritten(t *testing.T) {
 	if err := st.Enqueue(&store.QueueItem{QSLKey: other, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueWritten(other, store.Route{Method: "D"}); err != nil {
+	if err := st.QueueWrittenNow([]string{other}, store.Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := o.PushBack(); err != nil || n != 1 {
@@ -237,6 +237,32 @@ func TestPushBackManagerAndWritten(t *testing.T) {
 	if !strings.Contains(*captured, "<QSL_SENT_VIA:1>D") || strings.Contains(*captured, "QSL_VIA:") ||
 		!strings.Contains(*captured, "<QSL_SENT:1>Y") {
 		t.Fatalf("written-now card must push QSL_SENT=Y + QSL_SENT_VIA=D only: %q", *captured)
+	}
+}
+
+// TestPushBackRequested: a requested card pushes QSL_RCVD=R and no QSL_SENT.
+func TestPushBackRequested(t *testing.T) {
+	cl, captured := pushCapture(t)
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	o := &Orchestrator{Store: st, Clublog: cl}
+	_, _, _ = o.PullAndUpsert()
+	qsos, _ := st.RecentQSOsByCall("DL1AB", 10)
+	key := qsos[0].QSLKey
+	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueAccept(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{key}, store.Request{Channel: "OQRS"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := o.PushBack(); err != nil || n != 1 {
+		t.Fatalf("push back: %d %v", n, err)
+	}
+	if !strings.Contains(*captured, "<QSL_RCVD:1>R") || strings.Contains(*captured, "<QSL_SENT:1>Y") || strings.Contains(*captured, "QSL_SENT_VIA") {
+		t.Fatalf("requested card must push QSL_RCVD=R only: %q", *captured)
 	}
 }
 
@@ -266,6 +292,7 @@ func TestNameQTHRoundTrip(t *testing.T) {
 		t.Fatalf("fromQSO NAME=%q QTH=%q", back.Get("NAME"), back.Get("QTH"))
 	}
 }
+
 // TestPullClosesItemSentElsewhere: an open queue item whose QSO Clublog now
 // reports as sent (the card went out through another tool) is closed instead
 // of producing a duplicate card, and open windows are told.

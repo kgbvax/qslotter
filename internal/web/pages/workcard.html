@@ -15,8 +15,9 @@
 </main>
 <script>
 // Keyboard: b/d/m/v pick the route (bureau, direct, via manager direct or
-// bureau), p prints, w records a hand-written card, u sends the card back to
-// the Inbox, arrows browse. Each finishing action shows the next card.
+// bureau), p prints, w records a hand-written card, r opens "requested"
+// (Enter in its note records it), n no card, u back to the Inbox, arrows
+// browse. Each finishing action shows the next card.
 (function() {
   function pick(r) {
     r.checked = true;
@@ -26,24 +27,15 @@
       if (inp && !inp.value.trim()) inp.focus();
     }
   }
-  // The address shown follows the chosen route (and the typed manager call).
+  // The address shown follows the chosen route.
   document.addEventListener('change', function(ev) {
     var t = ev.target;
     if (t && t.name === 'route' && t.closest('#workcard')) t.closest('#workcard').dataset.route = t.value.charAt(0);
   });
-  document.addEventListener('input', function(ev) {
-    var t = ev.target, wc = t && t.closest && t.closest('#workcard');
-    if (!wc || !t.classList.contains('mgr-in')) return;
-    var call = t.value.trim().toUpperCase(), show = wc.querySelector('.mgr-show'), none = wc.querySelector('.mgr-none');
-    if (!show || !none) return;
-    show.querySelector('b').textContent = call;
-    show.querySelector('a').href = 'https://www.qrz.com/db/' + encodeURIComponent(call);
-    show.hidden = !call; none.hidden = !!call;
-  });
   document.addEventListener('keydown', function(ev) {
     if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
     var t = ev.target;
-    if (t && (t.tagName === 'INPUT' && t.type !== 'radio' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    if (t && (t.tagName === 'INPUT' && t.type !== 'radio' && t.type !== 'checkbox' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
     var k = ev.key.toLowerCase();
     var r = document.querySelector('#route-pick input[data-key="' + k + '"]');
     if (r) { ev.preventDefault(); pick(r); return; }

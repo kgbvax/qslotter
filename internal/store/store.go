@@ -41,11 +41,14 @@ type Store interface {
 	// when the item is not in a state the transition may start from.
 	QueueList(statuses ...string) ([]*QueueItem, error)
 	QueueAccept(qslKey string) error
-	QueueWritten(qslKey string, rt Route) error
-	QueuePrinted(qslKey string, rt Route) error
-	QueueDecline(qslKey string) error
-	QueueBack(qslKey string) error
-	QueueReopen(qslKey string) (pushed bool, err error)
+	QueueWrittenNow(keys []string, rt Route) error
+	QueueWritten(keys []string, rt Route) error
+	QueuePrinted(keys []string, rt Route) error
+	QueueRequested(keys []string, req Request) error
+	QueueDecline(keys ...string) error
+	QueueDeskDecline(keys ...string) error
+	QueueBack(keys ...string) error
+	QueueReopen(qslKey string) (inClublog string, err error)
 	QueueCloseSentElsewhere(qslKey string) error
 	QueueDiscardBacklog(before string) (int, error)
 	QueueCounts() (queued, decided, pendingPush int, err error)
@@ -104,6 +107,7 @@ func (s *SQLiteStore) ensureSchema() error {
 		{"station_info", "not_found", `ALTER TABLE station_info ADD COLUMN not_found INTEGER DEFAULT 0`},
 		{"qsl_work_queue", "send_via", `ALTER TABLE qsl_work_queue ADD COLUMN send_via TEXT DEFAULT ''`},
 		{"qsl_work_queue", "note", `ALTER TABLE qsl_work_queue ADD COLUMN note TEXT DEFAULT ''`},
+		{"qsl_work_queue", "channel", `ALTER TABLE qsl_work_queue ADD COLUMN channel TEXT DEFAULT ''`},
 	}
 	for _, m := range migrations {
 		if _, err := s.db.Exec(m.ddl); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -216,15 +220,16 @@ CREATE TABLE IF NOT EXISTS station_info (
 
 CREATE TABLE IF NOT EXISTS qsl_work_queue (
   qsl_key        TEXT PRIMARY KEY REFERENCES qsos(qsl_key),
-  desired_method TEXT,                  -- route B/D/M ('' = yes, route open), N no card, W legacy written
+  desired_method TEXT,                  -- route B/D/M ('' = yes, route open), N no card, R requested, W legacy written
   manager        TEXT,
-  status         TEXT NOT NULL,          -- queued/decided/sent/skipped
+  status         TEXT NOT NULL,          -- queued/decided/sent/skipped/requested
   override_reason TEXT,
   added_at       TEXT NOT NULL,
   printed_at     TEXT,
   sent_at        TEXT,
   send_via       TEXT DEFAULT '',        -- how the card travelled: B/D (manager cards too)
-  note           TEXT DEFAULT ''         -- e.g. "written now", "backlog"
+  note           TEXT DEFAULT '',        -- e.g. "written now", "backlog", a request's note
+  channel        TEXT DEFAULT ''         -- requested cards: OQRS / PayPal / e-mail / other
 );
 CREATE INDEX IF NOT EXISTS queue_status_idx ON qsl_work_queue(status);
 
@@ -328,7 +333,8 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		prop_mode=excluded.prop_mode, gridsquare=excluded.gridsquare,
 		operator=excluded.operator, notes=excluded.notes,
 		name=excluded.name, qth=excluded.qth,
-		hash=excluded.hash, updated_at=excluded.updated_at
+		hash=excluded.hash, updated_at=excluded.updated_at,
+		qsl_rcvd_local=CASE WHEN excluded.qsl_rcvd='Y' AND qsos.qsl_rcvd_local='R' THEN NULL ELSE qsos.qsl_rcvd_local END
 	WHERE qsos.hash <> excluded.hash`,
 		q.QSLKey, q.Call, q.QSODate, q.TimeOn, q.Band, q.Mode, q.Freq,
 		q.RSTSent, q.RSTRcvd, q.QSLSent, q.QSLRcvd, q.QSLSDate, q.QSLRDate,
@@ -555,7 +561,8 @@ func (s *SQLiteStore) SetQSLRcvdLocal(qslKey string) error {
 // Clublog last reported.
 const pendingPushWhere = `(qsl_sent_local IS NOT NULL AND (qsl_sent IS NULL OR qsl_sent <> qsl_sent_local))
 	   OR (qsl_sent_method_local IS NOT NULL AND (qsl_sent_as IS NULL OR qsl_sent_as <> qsl_sent_method_local))
-	   OR (qsl_rcvd_local IS NOT NULL AND (qsl_rcvd IS NULL OR qsl_rcvd <> qsl_rcvd_local))`
+	   OR (qsl_rcvd_local IS NOT NULL AND (qsl_rcvd IS NULL OR qsl_rcvd <> qsl_rcvd_local)
+	       AND NOT (qsl_rcvd_local = 'R' AND COALESCE(qsl_rcvd,'') = 'Y'))`
 
 // PendingPushBack returns all QSOs whose local QSL state diverges from the
 // Clublog-sourced state (i.e. we have a local change not yet pushed). A QSO
@@ -615,18 +622,19 @@ type QueueItem struct {
 	PrintedAt      sql.NullString
 	SentAt         sql.NullString
 	SendVia        string // how a sent card travelled: B or D ("" for legacy cards)
-	Note           string // "written now", "backlog", ...
+	Note           string // "written now", "backlog", a request's note, ...
+	Channel        string // requested cards: OQRS / PayPal / e-mail / other
 }
 
 // queueItemColumns is the column list scanQueueItem expects.
 const queueItemColumns = `q.qsl_key, COALESCE(q.desired_method,''), COALESCE(q.manager,''), q.status,
 	COALESCE(q.override_reason,''), q.added_at, q.printed_at, q.sent_at,
-	COALESCE(q.send_via,''), COALESCE(q.note,'')`
+	COALESCE(q.send_via,''), COALESCE(q.note,''), COALESCE(q.channel,'')`
 
 func scanQueueItem(sc interface{ Scan(dest ...any) error }) (*QueueItem, error) {
 	qi := &QueueItem{}
 	err := sc.Scan(&qi.QSLKey, &qi.DesiredMethod, &qi.Manager, &qi.Status, &qi.OverrideReason,
-		&qi.AddedAt, &qi.PrintedAt, &qi.SentAt, &qi.SendVia, &qi.Note)
+		&qi.AddedAt, &qi.PrintedAt, &qi.SentAt, &qi.SendVia, &qi.Note, &qi.Channel)
 	return qi, err
 }
 
@@ -712,34 +720,55 @@ var ErrConflict = errors.New("card was already handled (stale page?)")
 // status is one of from. Only tx may be used inside fn (in-memory databases
 // give every extra connection its own empty schema).
 func (s *SQLiteStore) queueTx(key string, from []string, fn func(tx *sql.Tx, cur *QueueItem) error) error {
+	return s.queueTxMany([]string{key}, from, fn)
+}
+
+// queueTxMany is queueTx for several items moved together (one card covering
+// several QSOs): every item must be in one of from, else nothing changes and
+// the answer is ErrConflict; fn runs once per item, all in one transaction.
+func (s *SQLiteStore) queueTxMany(keys []string, from []string, fn func(tx *sql.Tx, cur *QueueItem) error) error {
+	if len(keys) == 0 {
+		return ErrConflict
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	cur := &QueueItem{QSLKey: key}
-	var method, manager sql.NullString
-	err = tx.QueryRow(`SELECT status, desired_method, manager FROM qsl_work_queue WHERE qsl_key=?`, key).
-		Scan(&cur.Status, &method, &manager)
-	if err == sql.ErrNoRows {
-		return ErrConflict
-	}
-	if err != nil {
-		return err
-	}
-	cur.DesiredMethod, cur.Manager = method.String, manager.String
-	allowed := false
-	for _, f := range from {
-		if cur.Status == f {
-			allowed = true
-			break
+	seen := map[string]bool{}
+	var items []*QueueItem
+	for _, key := range keys {
+		if seen[key] {
+			continue
 		}
+		seen[key] = true
+		cur := &QueueItem{QSLKey: key}
+		var method, manager sql.NullString
+		err = tx.QueryRow(`SELECT status, desired_method, manager FROM qsl_work_queue WHERE qsl_key=?`, key).
+			Scan(&cur.Status, &method, &manager)
+		if err == sql.ErrNoRows {
+			return ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		cur.DesiredMethod, cur.Manager = method.String, manager.String
+		allowed := false
+		for _, f := range from {
+			if cur.Status == f {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return ErrConflict
+		}
+		items = append(items, cur)
 	}
-	if !allowed {
-		return ErrConflict
-	}
-	if err := fn(tx, cur); err != nil {
-		return err
+	for _, cur := range items {
+		if err := fn(tx, cur); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -851,67 +880,142 @@ func finishSent(tx *sql.Tx, key string, rt Route, how, note string) error {
 	return appendEventTx(tx, &Event{QSLKey: key, Direction: "sent", Method: rt.Method, Via: rt.Manager, Note: how + " via " + rt.Via})
 }
 
-// QueueWritten marks a card written by hand with its route: from the Desk
-// (decided), or "written now" straight from the Inbox (queued) - a card filled
-// in during the QSO, which goes bureau or direct, never via a manager.
-func (s *SQLiteStore) QueueWritten(key string, rt Route) error {
+// QueueWrittenNow records "written now" straight from the Inbox (queued): a
+// card filled in during the QSO, which goes bureau or direct, never via a
+// manager.
+func (s *SQLiteStore) QueueWrittenNow(keys []string, rt Route) error {
 	rt, err := rt.normalize()
 	if err != nil {
 		return err
 	}
-	return s.queueTx(key, []string{"queued", "decided"}, func(tx *sql.Tx, cur *QueueItem) error {
-		note := ""
-		if cur.Status == "queued" {
-			if rt.Method == "M" {
-				return fmt.Errorf("%w: a card written now goes bureau or direct", ErrBadRoute)
-			}
-			note = "written now"
+	if rt.Method == "M" {
+		return fmt.Errorf("%w: a card written now goes bureau or direct", ErrBadRoute)
+	}
+	return s.queueTxMany(keys, []string{"queued"}, func(tx *sql.Tx, cur *QueueItem) error {
+		return finishSent(tx, cur.QSLKey, rt, "written", "written now")
+	})
+}
+
+// QueueWritten marks a Desk card (decided) written by hand with its route;
+// keys are the QSOs the card covers.
+func (s *SQLiteStore) QueueWritten(keys []string, rt Route) error {
+	rt, err := rt.normalize()
+	if err != nil {
+		return err
+	}
+	return s.queueTxMany(keys, []string{"decided"}, func(tx *sql.Tx, cur *QueueItem) error {
+		return finishSent(tx, cur.QSLKey, rt, "written", "")
+	})
+}
+
+// QueuePrinted marks a Desk card printed (and therefore sent) with its route;
+// keys are the QSOs the card covers.
+func (s *SQLiteStore) QueuePrinted(keys []string, rt Route) error {
+	rt, err := rt.normalize()
+	if err != nil {
+		return err
+	}
+	return s.queueTxMany(keys, []string{"decided"}, func(tx *sql.Tx, cur *QueueItem) error {
+		return finishSent(tx, cur.QSLKey, rt, "printed", "")
+	})
+}
+
+// Request is how the station's card was requested instead of sending one
+// (VISION B4b): the channel and a free-text note (amount, date, reference).
+type Request struct {
+	Channel string // OQRS, PayPal, e-mail, other
+	Note    string
+}
+
+// RequestChannels are the accepted request channels, in display order.
+var RequestChannels = []string{"OQRS", "PayPal", "e-mail", "other"}
+
+// QueueRequested records "requested (OQRS)" for a Desk card: no own card goes
+// out, the station's card is requested. Status requested, the channel and
+// note on the queue row, sent_at = when it was requested; the QSO gets
+// QSL_RCVD=R for push-back (QSL_SENT stays as it is).
+func (s *SQLiteStore) QueueRequested(keys []string, req Request) error {
+	channel := ""
+	for _, c := range RequestChannels {
+		if strings.EqualFold(strings.TrimSpace(req.Channel), c) {
+			channel = c
 		}
-		return finishSent(tx, key, rt, "written", note)
-	})
-}
-
-// QueuePrinted marks a Desk card printed (and therefore sent) with its route.
-func (s *SQLiteStore) QueuePrinted(key string, rt Route) error {
-	rt, err := rt.normalize()
-	if err != nil {
-		return err
 	}
-	return s.queueTx(key, []string{"decided"}, func(tx *sql.Tx, _ *QueueItem) error {
-		return finishSent(tx, key, rt, "printed", "")
+	if channel == "" {
+		return fmt.Errorf("%w: request channel must be one of %s", ErrBadRoute, strings.Join(RequestChannels, ", "))
+	}
+	note := strings.TrimSpace(req.Note)
+	now := time.Now().UTC()
+	return s.queueTxMany(keys, []string{"decided"}, func(tx *sql.Tx, cur *QueueItem) error {
+		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='requested', desired_method='R', manager='', send_via='',
+			channel=?, note=?, sent_at=? WHERE qsl_key=?`, channel, note, now.Format(time.RFC3339), cur.QSLKey); err != nil {
+			return err
+		}
+		// Only where it changes something: never over a received card (Y), and
+		// not when Clublog already has the request (R) - a stale local R would
+		// later be pushed over the Y that arrives with their card.
+		if _, err := tx.Exec(`UPDATE qsos SET qsl_rcvd_local='R' WHERE qsl_key=?
+			AND COALESCE(qsl_rcvd_local,'') NOT IN ('Y','R') AND COALESCE(qsl_rcvd,'') NOT IN ('Y','R')`, cur.QSLKey); err != nil {
+			return err
+		}
+		return appendEventTx(tx, &Event{QSLKey: cur.QSLKey, Direction: "rcvd", Method: "R", Via: channel,
+			Note: strings.TrimSpace("requested via " + channel + " " + note)})
 	})
 }
 
-// QueueDecline records the "no paper card" decision: queued/decided -> skipped.
-func (s *SQLiteStore) QueueDecline(key string) error {
-	return s.queueTx(key, []string{"queued", "decided"}, func(tx *sql.Tx, _ *QueueItem) error {
+// QueueDecline records the Inbox decision "no card": queued -> skipped.
+func (s *SQLiteStore) QueueDecline(keys ...string) error {
+	return s.decline([]string{"queued"}, keys)
+}
+
+// QueueDeskDecline is "no card after all" at the Desk (B6): decided ->
+// skipped, for the QSOs of the card.
+func (s *SQLiteStore) QueueDeskDecline(keys ...string) error {
+	return s.decline([]string{"decided"}, keys)
+}
+
+func (s *SQLiteStore) decline(from, keys []string) error {
+	return s.queueTxMany(keys, from, func(tx *sql.Tx, cur *QueueItem) error {
 		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='skipped', desired_method='N', manager='', send_via='', note=''
-			WHERE qsl_key=?`, key); err != nil {
+			WHERE qsl_key=?`, cur.QSLKey); err != nil {
 			return err
 		}
-		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Method: "N", Note: "decision: no paper QSL"})
+		return appendEventTx(tx, &Event{QSLKey: cur.QSLKey, Direction: "decision", Method: "N", Note: "decision: no paper QSL"})
 	})
 }
 
-// QueueBack takes a decided card back to the decision queue (decided -> queued).
-func (s *SQLiteStore) QueueBack(key string) error {
-	return s.queueTx(key, []string{"decided"}, func(tx *sql.Tx, _ *QueueItem) error {
+// QueueBack takes Desk cards back to the Inbox (decided -> queued).
+func (s *SQLiteStore) QueueBack(keys ...string) error {
+	return s.queueTxMany(keys, []string{"decided"}, func(tx *sql.Tx, cur *QueueItem) error {
 		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='queued', desired_method='', manager='', send_via='', note=''
-			WHERE qsl_key=?`, key); err != nil {
+			WHERE qsl_key=?`, cur.QSLKey); err != nil {
 			return err
 		}
-		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Note: "back to decision"})
+		return appendEventTx(tx, &Event{QSLKey: cur.QSLKey, Direction: "decision", Note: "back to decision"})
 	})
 }
 
-// QueueReopen puts a finished card (sent or declined) back into the decision
-// queue and clears its unpushed local sent state. pushed reports that Clublog
-// already has QSL_SENT=Y for the QSO: reopening cannot undo that there.
-func (s *SQLiteStore) QueueReopen(key string) (pushed bool, err error) {
-	err = s.queueTx(key, []string{"sent", "skipped"}, func(tx *sql.Tx, cur *QueueItem) error {
+// QueueReopen puts a finished card (sent, declined or requested) back into
+// the Inbox and clears its unpushed local state. inClublog reports what
+// Clublog already holds and reopening cannot undo there: "sent" (QSL_SENT=Y)
+// or "requested" (QSL_RCVD=R); "" when nothing.
+func (s *SQLiteStore) QueueReopen(key string) (inClublog string, err error) {
+	err = s.queueTx(key, []string{"sent", "skipped", "requested"}, func(tx *sql.Tx, cur *QueueItem) error {
 		if _, err := tx.Exec(`UPDATE qsl_work_queue SET status='queued', desired_method='', manager='',
-			send_via='', note='', sent_at=NULL, printed_at=NULL WHERE qsl_key=?`, key); err != nil {
+			send_via='', channel='', note='', sent_at=NULL, printed_at=NULL WHERE qsl_key=?`, key); err != nil {
 			return err
+		}
+		if cur.Status == "requested" {
+			if _, err := tx.Exec(`UPDATE qsos SET qsl_rcvd_local=NULL WHERE qsl_key=? AND qsl_rcvd_local='R'`, key); err != nil {
+				return err
+			}
+			var rcvd sql.NullString
+			if err := tx.QueryRow(`SELECT qsl_rcvd FROM qsos WHERE qsl_key=?`, key).Scan(&rcvd); err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			if rcvd.String == "R" {
+				inClublog = "requested"
+			}
 		}
 		if cur.Status == "sent" {
 			if _, err := tx.Exec(`UPDATE qsos SET qsl_sent_local=NULL, qsl_sent_method_local=NULL, qslsdate_local=NULL
@@ -922,11 +1026,13 @@ func (s *SQLiteStore) QueueReopen(key string) (pushed bool, err error) {
 			if err := tx.QueryRow(`SELECT qsl_sent FROM qsos WHERE qsl_key=?`, key).Scan(&sent); err != nil && err != sql.ErrNoRows {
 				return err
 			}
-			pushed = sent.String == "Y"
+			if sent.String == "Y" {
+				inClublog = "sent"
+			}
 		}
 		return appendEventTx(tx, &Event{QSLKey: key, Direction: "decision", Note: "reopened"})
 	})
-	return pushed, err
+	return inClublog, err
 }
 
 // QueueCloseSentElsewhere closes a card that is still open (queued/decided)
@@ -974,11 +1080,14 @@ func (s *SQLiteStore) QueueDiscardBacklog(before string) (int, error) {
 	return int(n), tx.Commit()
 }
 
-// QueueCounts feeds the nav badges: cards awaiting a decision, cards awaiting
-// production, and QSOs with local QSL state not yet pushed to Clublog.
+// QueueCounts feeds the nav badges: QSOs awaiting a decision, Desk cards
+// (distinct calls) awaiting production, and QSOs with local QSL state not yet
+// pushed to Clublog.
 func (s *SQLiteStore) QueueCounts() (queued, decided, pendingPush int, err error) {
-	rows, err := s.db.Query(`SELECT status, COUNT(*) FROM qsl_work_queue
-		WHERE status IN ('queued','decided') GROUP BY status`)
+	// The Desk counts cards: QSOs with the same call share one.
+	rows, err := s.db.Query(`SELECT status, CASE WHEN status='decided'
+			THEN COUNT(DISTINCT upper(substr(qsl_key, 1, instr(qsl_key, '|') - 1))) ELSE COUNT(*) END
+		FROM qsl_work_queue WHERE status IN ('queued','decided') GROUP BY status`)
 	if err != nil {
 		return 0, 0, 0, err
 	}

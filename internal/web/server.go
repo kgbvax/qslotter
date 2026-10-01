@@ -152,8 +152,13 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/back", s.htmxQueueBack)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
 	r.Post("/queue/batch", s.batchQueue)
-	r.Post("/work/print", s.htmxWorkPrint)
-	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
+	r.Post("/work/print", s.htmxWorkPrint) // Desk card actions take key=... once per QSO on the card
+	r.Post("/work/written", s.htmxWorkWritten)
+	r.Post("/work/requested", s.htmxWorkRequested)
+	r.Post("/work/none", s.htmxWorkNone)
+	r.Post("/work/back", s.htmxWorkBack)
+	r.Get("/work/manager", s.htmxWorkManager) // ?manager=CALL: who a manager card goes to
+	r.Get("/nav", s.htmxNav)                  // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
 	r.Post("/api/quit", s.apiQuit)
 	r.Post("/sync/pull", s.htmxSyncPull)

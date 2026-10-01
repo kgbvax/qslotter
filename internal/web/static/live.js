@@ -76,14 +76,44 @@
   }
 
   if (mode === 'worklist') {
+    // Unsaved choices on the list (route, manager, batch ticks) survive a
+    // reload: only fields the operator changed are carried over, by name.
+    var snapshot = function (root) {
+      var st = {};
+      root.querySelectorAll('select.route-sel, input.mgr-in, input[type="checkbox"][name="keys"]').forEach(function (f) {
+        if (f.type === 'checkbox') { if (f.checked !== f.defaultChecked) st['c:' + f.value] = f.checked; return; }
+        var changed = f.tagName === 'SELECT'
+          ? !(f.selectedOptions[0] && f.selectedOptions[0].defaultSelected)
+          : f.value !== f.defaultValue;
+        if (changed) st['v:' + f.name] = f.value;
+      });
+      return st;
+    };
+    var restore = function (root, st) {
+      root.querySelectorAll('select.route-sel, input.mgr-in, input[type="checkbox"][name="keys"]').forEach(function (f) {
+        if (f.type === 'checkbox') { if (('c:' + f.value) in st) f.checked = st['c:' + f.value]; return; }
+        if (('v:' + f.name) in st) f.value = st['v:' + f.name];
+      });
+    };
+    var busy = function () { return document.querySelector('main select:focus, main input:focus:not([type="checkbox"])'); };
     var reload = function () {
+      if (busy()) { settled(reload); return; } // not while a field is being edited
       fetch(location.pathname).then(function (r) { return r.text(); }).then(function (html) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
         var fresh = doc.querySelector('main'), cur = document.querySelector('main');
-        if (fresh && cur) { cur.innerHTML = fresh.innerHTML; if (window.htmx) htmx.process(cur); }
+        if (!fresh || !cur) return;
+        var st = snapshot(cur);
+        cur.innerHTML = fresh.innerHTML;
+        restore(cur, st);
+        if (window.htmx) htmx.process(cur);
       });
     };
-    es.addEventListener('queue_changed', function () { settled(reload); });
+    es.addEventListener('queue_changed', function (e) {
+      var d = parse(e);
+      // A QSO entering the Inbox does not touch the Desk unless it was on it.
+      if (d && d.to === 'queued' && !document.querySelector('input[name="key"][value="' + CSS.escape(d.key) + '"]')) return;
+      settled(reload);
+    });
     return;
   }
 
@@ -91,14 +121,34 @@
   var cfg = mode === 'decide'
     ? { id: 'decide', base: '/decide', enters: 'queued' }
     : { id: 'workcard', base: '/work/card', enters: 'decided' };
-  function reloadCard(key) {
+  // reloadCard shows the card with key (or the first one). keep=true carries
+  // the operator's unsaved choices on a Desk card (route, manager, unticked
+  // QSOs) through the reload.
+  function reloadCard(key, keep) {
     var el = byId(cfg.id);
     var q = [];
     if (key) q.push('key=' + encodeURIComponent(key));
     if (el && el.dataset.filter) q.push('filter=' + encodeURIComponent(el.dataset.filter));
+    if (keep && el && mode === 'workcard') {
+      // Only what the operator changed; untouched fields take the server's
+      // (possibly fresher) preselection.
+      var r = el.querySelector('#route-pick input[name="route"]:checked');
+      if (r && !r.defaultChecked) q.push('route=' + encodeURIComponent(r.value));
+      var m = el.querySelector('#route-pick .mgr-in');
+      if (m && m.value !== m.defaultValue) q.push('manager=' + encodeURIComponent(m.value));
+      var skip = [];
+      el.querySelectorAll('input[type="checkbox"][name="key"]').forEach(function (c) { if (!c.checked) skip.push(c.value); });
+      if (skip.length) q.push('skip=' + encodeURIComponent(skip.join(',')));
+    }
     htmx.ajax('GET', cfg.base + (q.length ? '?' + q.join('&') : ''), { target: '#' + cfg.id, swap: 'outerHTML' });
   }
-  function typing(el) { return el && el.querySelector('input:focus'); }
+  function typing(el) {
+    if (!el) return false;
+    if (el.querySelector('input:focus:not([type="radio"]):not([type="checkbox"]), select:focus, textarea:focus')) return true;
+    var req = el.querySelector('#req');
+    return !!(req && !req.hidden); // filling in a request: do not throw it away
+  }
+  function keysOf(el) { return (el.dataset.keys || el.dataset.qslkey || '').split(' ').filter(Boolean); }
   es.addEventListener('queue_changed', function (e) {
     var d = parse(e);
     if (!d) return;
@@ -106,16 +156,30 @@
       var el = byId(cfg.id); // look up again: our own action may have replaced it
       if (!el || typing(el)) return;
       var shown = el.dataset.qslkey;
-      if (!shown) { if (d.to === cfg.enters) reloadCard(); }          // idle: a card arrived
-      else if (d.key === shown && d.to !== cfg.enters) reloadCard();  // handled in another window
-    });
-  });
-  if (mode === 'decide') {
-    es.addEventListener('station_updated', function (e) {
-      var el = byId(cfg.id);
-      if (el && !typing(el) && el.dataset.call && el.dataset.call.toUpperCase() === e.data.toUpperCase()) {
-        reloadCard(el.dataset.qslkey);
+      if (!shown) { if (d.to === cfg.enters) reloadCard(); return; } // idle: a card arrived
+      var keys = keysOf(el);
+      if (keys.indexOf(d.key) >= 0 && d.to !== cfg.enters) {
+        // handled in another window: what is left of this card, else the next
+        var rest = keys.filter(function (k) { return k !== d.key; });
+        reloadCard(rest[0], rest.length > 0);
+      } else if (mode === 'workcard' && d.to === cfg.enters && el.dataset.call &&
+                 d.key.split('|')[0].toUpperCase() === el.dataset.call.toUpperCase()) {
+        reloadCard(shown, true); // another QSO with this station joined the card
       }
     });
-  }
+  });
+  es.addEventListener('station_updated', function (e) {
+    var el = byId(cfg.id);
+    if (!el || !el.dataset.qslkey) return;
+    var call = e.data.toUpperCase();
+    // The manager's address landed: refresh just that block (keeps focus).
+    if (mode === 'workcard' && (el.dataset.mgr || '').toUpperCase() === call && (el.dataset.call || '').toUpperCase() !== call) {
+      if (byId('mgr-addr')) htmx.ajax('GET', '/work/manager?manager=' + encodeURIComponent(call), { target: '#mgr-addr', swap: 'innerHTML' });
+      return;
+    }
+    if (typing(el)) return;
+    if ((el.dataset.call || '').toUpperCase() === call) {
+      reloadCard(el.dataset.qslkey, mode === 'workcard');
+    }
+  });
 })();

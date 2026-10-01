@@ -104,13 +104,13 @@ radio. Here the route is chosen.
 |---|---|---|
 | B1 | Work through card by card; when one is done the next appears without paging. | done (`/work/card`) |
 | B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | partial: card-by-card view done (`/work/card`); no master-detail (`/work` list is a separate page) |
-| B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | partial: address only for Direct (via manager: manager call + QRZ link, no address); no freq / RST rcvd / notes; no research panel (history, QRZ indicators); no live refresh when a QRZ lookup finishes |
-| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | partial (2026-10-01): bureau / direct / via manager direct / via manager bureau chosen at the Desk (card view radios `b d m v`, list: a route field per row, also used by batch Print/Written), preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it. Open: OQRS hint, the manager's address |
-| B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | missing |
+| B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | done (2026-10-01): the work card shows every QSO on the card (freq, RST sent/rcvd, notes), the research panel (QRZ, indicators, history without the card's own QSOs), the station address for direct and the manager's QRZ address for the manager routes (refreshed as the call is typed; live update when the lookup lands) |
+| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | done (2026-10-01): bureau / direct / via manager direct / via manager bureau, preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it; manager cards print "via <manager>" |
+| B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | done (2026-10-01): "Requested..." (`r`) with channel OQRS / PayPal / e-mail / other and a note; status `requested`, `QSL_RCVD=R` pushed, `QSL_SENT` untouched; QRZ mentioning OQRS (manager field or bio) marks the button and the list row. Listing as *expected* on Incoming QSLs comes with C5 |
 | B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. | done: card by card (`p` on `/work/card`) or batch Print of ticked rows on `/work`; one print job per card, no select-all |
-| B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | partial: store and `/queue/none` (and batch `none`) accept decided cards, but there is no button on the work card or the `/work` list |
+| B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | done (2026-10-01): "No card" (`n`) on the work card and the list, for the whole card |
 | B7 | A finished card leaves the queue for good. Written or printed means **sent** - no separate "mailed" step (confirms 2026-09-30). | done |
-| B9 | **One card for several QSOs** with the same station (e.g. different bands): open QSOs of that call are combined into one card - printed with one row per QSO, up to what the template holds; "written"/"printed" finishes them all. Proposal: "same station" = the same worked callsign (a `/P` operation is a separate card). | missing: one card per QSO; the research panel only shows "other cards pending" |
+| B9 | **One card for several QSOs** with the same station (e.g. different bands): open QSOs of that call are combined into one card - printed with one row per QSO, up to what the template holds; "written"/"printed" finishes them all. Proposal: "same station" = the same worked callsign (a `/P` operation is a separate card). | done (2026-10-01): a Desk card = all open QSOs with the same worked callsign (/P is a separate card); each QSO can be unticked (stays at the Desk); printed one row per QSO (default template: 3 rows, further cards when more); Print / Written / Requested / No card / Back move all ticked QSOs in one transaction; the Desk badge counts cards |
 
 ### 2.3 Incoming QSLs
 
@@ -297,11 +297,8 @@ Open after the operator walkthrough of 2026-10-01 (section 2, status
   `<lookupinfo>`). (A1 backlog discard, A2/A3/A5 Inbox yes / no / written now:
   done 2026-10-01.)
 - A6/B2: master-detail views for Inbox and Desk (list selects, detail decides).
-- A7/B3: research panel limits (12 newest QSOs; own received state) and the
-  panel on the work card; address for manager cards.
-- B4b/B6/B9: "requested (OQRS)" with channel and note; "no card" button on
-  the card view; one card for several QSOs with a station. (B4 route choice at
-  the Desk: done 2026-10-01, without the OQRS hint and the manager's address.)
+- A7: research panel limits (12 newest QSOs; own received state). (B3/B4/
+  B4b/B6/B9, the Desk: done 2026-10-01.)
 - C1-C5: reply due? answer right there (written now / print / later); requested
   cards as *expected*, overdue after 12 weeks; portable calls on `/receive`.
 - D1-D3: three-area top menu; `/` opens the Inbox; German/English UI.
@@ -354,7 +351,7 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
     bureau; QRZ suggestion preselected), Print and Written use it; "no card"
     button; "requested (OQRS)" with channel and note; full research panel and
     the address for the chosen route; one card for several QSOs with a
-    station (B3, B4, B4b, B6, B9).
+    station (B3, B4, B4b, B6, B9). **Done 2026-10-01.**
 12. Incoming QSLs: reply due? answer / don't answer - written now, print, or
     later via the Desk; requested cards listed as expected, overdue after 12
     weeks (C2, C3, C5); portable calls (C1).
@@ -445,6 +442,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-10-01 — Replying to an incoming card:** written now, print, or later
   via the Desk. OQRS requests are marked overdue after 12 weeks.
 - **2026-10-01 — Multilingual UI** (German and English, extensible).
+- **2026-10-01 — The Desk is card-centric.** A Desk card is every open QSO
+  with one worked callsign; actions take the card's keys and move them in one
+  transaction. "Requested" is its own status (`requested`, `desired_method=R`,
+  `channel`, `note`, `sent_at` = when requested) pushing `QSL_RCVD=R`.
+  The default card template holds 3 QSO rows; more continue on a second card.
 - **2026-10-01 — Route data model.** `desired_method` = B / D / M (empty while
   a "yes" card waits at the Desk), `send_via` = how the card travelled (B/D,
   also for manager cards), `manager`; `note` marks "written now", "backlog",
