@@ -86,6 +86,8 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		"q":          url.QueryEscape,
 		"counts":     srv.navCounts,
 		"methodName": methodName,
+		"routeName":  routeName,
+		"slice1":     func(s string) string { return s[:min(len(s), 1)] },
 		"yn":         yn,
 	}).ParseFS(pagesFS, "pages/*.html")
 	if err != nil {
@@ -144,7 +146,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/settings/save", s.saveSettings)
 	// Card actions take ?key=... (form/query value): keys contain "|" and
 	// portable calls contain "/", which would break {key} path segments.
-	r.Post("/queue/decide", s.htmxQueueDecide)
+	r.Post("/queue/yes", s.htmxQueueYes)
 	r.Post("/queue/none", s.htmxQueueNone)
 	r.Post("/queue/written", s.htmxQueueWritten)
 	r.Post("/queue/back", s.htmxQueueBack)

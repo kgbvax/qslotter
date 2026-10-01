@@ -1,5 +1,5 @@
 {{define "queue.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Queue</title>
+<html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
@@ -10,27 +10,25 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>New QSOs <small>(<span id="queue-count">{{len .Rows}}</span> awaiting a decision)</small></h2>
-  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span> (already handled or needs a manager callsign){{end}}.</p>{{end}}
+  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span> QSOs: card or not?)</small></h2>
+  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span> (already handled){{end}}.</p>{{end}}
   <div style="margin-bottom:8px">
     <a href="/decide">Decide card by card &rarr;</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">Recompute queue</button>
     <span id="recompute-msg"></span>
-    <span class="muted">Decide: B bureau · D direct · M via manager (type the call) · &ndash; no card · Written = card written on the spot. Decided cards move to <a href="/work">Work</a>.</span>
+    <span class="muted">Yes = a card goes out (to the <a href="/work">Desk</a>, where the route is chosen) · No = no card · written now = card filled in during the QSO, bureau or direct - done.</span>
   </div>
   <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged.</p>
   <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="compact" value="0">
     <select name="action" title="Batch action">
-      <option value="B">Bureau</option>
-      <option value="D">Direct</option>
-      <option value="written">Written</option>
+      <option value="yes">Yes, card</option>
       <option value="none">No card</option>
     </select>
     <button type="submit">Apply to selected</button>
   </form>
   <table id="queue-table">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Name</th><th title="QRZ suggestion - not a decision">Suggests</th><th>Manager</th><th>Decide</th></tr></thead>
+    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Name</th><th title="QRZ suggestion - not a decision">Suggests</th><th>Manager</th><th>Card?</th></tr></thead>
     <tbody id="queue-body">
     {{range .Rows}}{{template "queue_row_full.html" .}}{{end}}
     </tbody>

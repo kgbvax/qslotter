@@ -116,17 +116,19 @@ func (o *Orchestrator) PushBack() (pushed int, err error) {
 	for _, q := range pending {
 		rec := fromQSO(q)
 		// Override QSL_SENT/QSL_RCVD with the local value, set date. The send
-		// route uses the ADIF fields: QSL_SENT_VIA for bureau/direct (ADIF
-		// marks the M value import-only, so a manager card is expressed as
-		// QSL_VIA = the manager's callsign instead). A card written on the
-		// spot has no route: QSL_SENT=Y alone.
+		// route uses the ADIF fields: QSL_SENT_VIA = how the card travelled
+		// (bureau/direct), plus QSL_VIA = the manager's callsign for a manager
+		// card (ADIF marks QSL_SENT_VIA=M import-only). Cards from older
+		// builds may carry "M" (QSL_VIA alone) or no route (QSL_SENT=Y alone).
 		if q.QSLSentLocal.Valid && q.QSLSentLocal.String != "" {
 			rec.Set("QSL_SENT", q.QSLSentLocal.String)
-			switch method := strings.ToUpper(q.QSLSentMethodLocal.String); method {
+			method := strings.ToUpper(q.QSLSentMethodLocal.String)
+			switch method {
 			case "B", "D", "E":
 				rec.Set("QSL_SENT_VIA", method)
-			case "M":
-				if item, _ := o.Store.QueueGet(q.QSLKey); item != nil && item.Manager != "" {
+			}
+			if method == "B" || method == "D" || method == "M" {
+				if item, _ := o.Store.QueueGet(q.QSLKey); item != nil && item.DesiredMethod == "M" && item.Manager != "" {
 					rec.Set("QSL_VIA", item.Manager)
 				}
 			}

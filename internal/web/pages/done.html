@@ -10,7 +10,7 @@
 </header>
 <main>
   <h2>Done <small>({{len .Rows}} of {{.Total}} shown, newest QSO first)</small></h2>
-  <p class="muted">Finished cards. Reopen one to put it back into the decision queue (e.g. a misclick).</p>
+  <p class="muted">Finished cards. Reopen one to put it back into the Inbox (e.g. a misclick).</p>
   {{if not .Rows}}<p class="muted">Nothing finished yet.</p>{{else}}
   <table>
     <thead><tr><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>Outcome</th><th>When (UTC)</th><th></th></tr></thead>

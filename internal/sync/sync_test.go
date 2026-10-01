@@ -195,9 +195,9 @@ func TestPushBackUploadsSentVia(t *testing.T) {
 	}
 }
 
-// TestPushBackManagerAndWritten: a card via a manager is expressed as QSL_VIA
-// (ADIF's QSL_SENT_VIA=M is import-only); a card written on the spot has no
-// route at all.
+// TestPushBackManagerAndWritten: a manager card pushes how it travelled
+// (QSL_SENT_VIA) plus the manager (QSL_VIA; ADIF's QSL_SENT_VIA=M is
+// import-only); a card written now in the Inbox pushes its route.
 func TestPushBackManagerAndWritten(t *testing.T) {
 	cl, captured := pushCapture(t)
 	st, _ := store.Open(":memory:")
@@ -209,34 +209,34 @@ func TestPushBackManagerAndWritten(t *testing.T) {
 	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueDecide(key, "M", "K2ABC"); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(key); err != nil {
+	if err := st.QueuePrinted(key, store.Route{Method: "M", Via: "B", Manager: "K2ABC"}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := o.PushBack(); err != nil || n != 1 {
 		t.Fatalf("push back: %d %v", n, err)
 	}
-	if !strings.Contains(*captured, "<QSL_VIA:5>K2ABC") || strings.Contains(*captured, "QSL_SENT_VIA") ||
+	if !strings.Contains(*captured, "<QSL_VIA:5>K2ABC") || !strings.Contains(*captured, "<QSL_SENT_VIA:1>B") ||
 		!strings.Contains(*captured, "<QSL_SENT:1>Y") {
-		t.Fatalf("manager card must push QSL_SENT=Y + QSL_VIA=K2ABC and no QSL_SENT_VIA: %q", *captured)
+		t.Fatalf("manager card must push QSL_SENT=Y + QSL_SENT_VIA=B + QSL_VIA=K2ABC: %q", *captured)
 	}
 
-	// Written on the spot: QSL_SENT=Y and nothing about the route.
+	// Written now (Inbox): QSL_SENT=Y with its route, no manager.
 	other := qsos[1].QSLKey
 	if err := st.Enqueue(&store.QueueItem{QSLKey: other, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueWritten(other); err != nil {
+	if err := st.QueueWritten(other, store.Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := o.PushBack(); err != nil || n != 1 {
 		t.Fatalf("push back: %d %v", n, err)
 	}
-	if strings.Contains(*captured, "QSL_SENT_VIA") || strings.Contains(*captured, "QSL_VIA") ||
+	if !strings.Contains(*captured, "<QSL_SENT_VIA:1>D") || strings.Contains(*captured, "QSL_VIA:") ||
 		!strings.Contains(*captured, "<QSL_SENT:1>Y") {
-		t.Fatalf("written card must push QSL_SENT=Y only: %q", *captured)
+		t.Fatalf("written-now card must push QSL_SENT=Y + QSL_SENT_VIA=D only: %q", *captured)
 	}
 }
 
@@ -292,7 +292,7 @@ func TestPullClosesItemSentElsewhere(t *testing.T) {
 	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueDecide(key, "D", ""); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
 

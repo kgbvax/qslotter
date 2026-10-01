@@ -3,7 +3,7 @@
 <td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
 <td class="c-name">{{.QSO.Name}}</td>
 <td class="c-method" title="{{if .Info}}{{.Info.QSLConfidence}} confidence: {{.Info.QSLReason}}{{end}} | RST {{.QSO.RSTSent}}">{{template "row_suggestion" .}}</td>
-{{template "row_actions" .}}{{end}}
+<td class="actions">{{template "row_yesno" .}}</td>{{end}}
 
 {{define "queue_row_compact.html"}}<tr id="row-{{.Item.QSLKey}}">
   {{template "row_cells_compact" .}}

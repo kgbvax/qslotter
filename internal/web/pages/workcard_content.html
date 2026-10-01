@@ -1,20 +1,28 @@
-{{define "workcard_content.html"}}<div class="decide-wrap" id="workcard" data-filter="{{.Filter}}"{{if .Row}} data-qslkey="{{.Row.Item.QSLKey}}"{{end}}>
+{{define "workcard_content.html"}}<div class="decide-wrap" id="workcard" data-filter="{{.Filter}}"{{if .Row}} data-qslkey="{{.Row.Item.QSLKey}}" data-route="{{slice1 .Row.Route}}"{{end}}>
 <p class="filters">Show: <a href="/work/card" class="{{if not .Filter}}on{{end}}" hx-get="/work/card" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">all</a>
+  <a href="/work/card?filter=O" class="{{if eq .Filter "O"}}on{{end}}" hx-get="/work/card?filter=O" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">route open</a>
   <a href="/work/card?filter=D" class="{{if eq .Filter "D"}}on{{end}}" hx-get="/work/card?filter=D" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">direct</a>
   <a href="/work/card?filter=M" class="{{if eq .Filter "M"}}on{{end}}" hx-get="/work/card?filter=M" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">via manager</a>
   <a href="/work/card?filter=B" class="{{if eq .Filter "B"}}on{{end}}" hx-get="/work/card?filter=B" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">bureau</a></p>
 {{if not .Row}}
   <div class="empty">
-    <p class="big">Nothing to produce{{if .Filter}} for this route{{end}}.</p>
-    <p>Cards you decide as Bureau, Direct or Via manager appear here.</p>
-    <p><a href="/decide">Go to the decision queue &rarr;</a></p>
+    <p class="big">Nothing to write or print{{if .Filter}} in this group{{end}}.</p>
+    <p>Cards you answer "yes" in the Inbox appear here.</p>
+    <p><a href="/decide">Go to the Inbox &rarr;</a></p>
   </div>
 {{else}}
   {{$k := q .Row.Item.QSLKey}}
   <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a>
     {{if .Prev}}<button type="button" class="mini" data-key="arrowleft" title="Previous card  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; prev</button>
     <button type="button" class="mini" data-key="arrowright" title="Next card  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">next &rsaquo;</button>{{end}}</p>
-  <p class="route r-{{.Row.Item.DesiredMethod}}"><span class="routename">{{methodName .Row.Item.DesiredMethod}}</span>{{if .Row.Item.Manager}} <b>{{.Row.Item.Manager}}</b>{{end}}</p>
+  <div class="routes" id="route-pick" role="radiogroup" aria-label="Route">
+    <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq .Row.Route "B"}} checked{{end}}> Bureau <kbd>b</kbd></label>
+    <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq .Row.Route "D"}} checked{{end}}> Direct <kbd>d</kbd></label>
+    <label class="stamp m"><input type="radio" name="route" value="MD" data-key="m"{{if eq .Row.Route "MD"}} checked{{end}}> Via manager, direct <kbd>m</kbd></label>
+    <label class="stamp m"><input type="radio" name="route" value="MB" data-key="v"{{if eq .Row.Route "MB"}} checked{{end}}> Via manager, bureau <kbd>v</kbd></label>
+    <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="manager" value="{{.Row.MgrPrefill}}" aria-label="Manager callsign" onkeydown="if(event.key==='Escape'){this.blur()}">
+    <span class="muted">{{if .Row.RouteFrom}}preselected: {{.Row.RouteFrom}}{{else}}<span class="route-hint">choose a route</span>{{end}}</span>
+  </div>
   <article class="qslcard">
     <div class="airmail"></div>
     <p class="confirm">Confirming two-way QSO with</p>
@@ -27,29 +35,33 @@
       <div><span class="lbl">RST</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
     <div class="pref">
-      {{if eq .Row.Item.DesiredMethod "D"}}
+      <div class="for-none"><p class="why">Choose the route above: the address to write follows it.</p></div>
+      <div class="for-D">
         <h4>Send direct to</h4>
         {{if .Row.Info}}
         <address id="addr">{{if .Row.Info.Name}}{{.Row.Info.Name}}<br>{{else if .Row.QSO.Name}}{{.Row.QSO.Name}}<br>{{end}}{{if .Row.Info.Attn}}{{.Row.Info.Attn}}<br>{{end}}{{if .Row.Info.Addr1}}{{.Row.Info.Addr1}}<br>{{end}}{{if .Row.Info.Addr2}}{{.Row.Info.Addr2}}<br>{{end}}{{if or .Row.Info.Zip .Row.Info.State}}{{.Row.Info.State}} {{.Row.Info.Zip}}<br>{{end}}{{.Row.Info.Country}}</address>
         <p><button type="button" class="mini" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('addr').innerText)">Copy address</button>
            {{if .Row.Info.Email}}<span class="flags">mail: {{.Row.Info.Email}}</span>{{end}}</p>
         {{else}}<p class="why">No address on file - open the <a href="/station/{{.Row.QSO.Call}}">station page</a> and refresh from QRZ.</p>{{end}}
-      {{else if eq .Row.Item.DesiredMethod "M"}}
+      </div>
+      <div class="for-M">
         <h4>Send via manager</h4>
-        <p><b>{{.Row.Item.Manager}}</b> <a href="https://www.qrz.com/db/{{.Row.Item.Manager}}" target="_blank" rel="noopener">look up on QRZ</a></p>
-      {{else}}
+        <p class="mgr-show"{{if not .Row.MgrPrefill}} hidden{{end}}><b>{{.Row.MgrPrefill}}</b> <a href="https://www.qrz.com/db/{{.Row.MgrPrefill}}" target="_blank" rel="noopener">look up on QRZ</a></p>
+        <p class="why mgr-none"{{if .Row.MgrPrefill}} hidden{{end}}>Type the manager's callsign above.</p>
+      </div>
+      <div class="for-B">
         <h4>Into the bureau parcel</h4>
-        <p class="why">Sorted by call in the work list; no address needed.</p>
-      {{end}}
+        <p class="why">No address needed.</p>
+      </div>
     </div>
   </article>
   <div class="decide-actions">
     <span class="fulfil">
-      <button type="button" class="stamp b" data-key="p" title="Print the card, mark it sent, next card  (p)" hx-post="/work/print?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">Print</button>
-      <button type="button" class="stamp d" data-key="w" title="Written by hand, mark it sent, next card  (w)" hx-post="/queue/written?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">Written</button>
-      <button type="button" class="mini" data-key="u" title="Take it back to the decision queue  (u)" hx-post="/queue/back?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">Back to decision</button>
+      <button type="button" class="stamp b" data-key="p" title="Print the card, mark it sent with the chosen route, next card  (p)" hx-post="/work/print?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-include="#route-pick" hx-target="#workcard" hx-swap="outerHTML">Print</button>
+      <button type="button" class="stamp d" data-key="w" title="Written by hand, mark it sent with the chosen route, next card  (w)" hx-post="/queue/written?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-include="#route-pick" hx-target="#workcard" hx-swap="outerHTML">Written</button>
+      <button type="button" class="mini" data-key="u" title="Take it back to the Inbox  (u)" hx-post="/queue/back?key={{$k}}&amp;view=work&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">Back to the Inbox</button>
     </span>
   </div>
-  <p class="muted legend">Keys: <kbd>p</kbd> print &middot; <kbd>w</kbd> written &middot; <kbd>u</kbd> back to decision &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; done cards are marked sent and go to Clublog with the next push.</p>
+  <p class="muted legend">Keys: route <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> print &middot; <kbd>w</kbd> written &middot; <kbd>u</kbd> back to the Inbox &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; done cards are marked sent with their route and go to Clublog with the next push.</p>
 {{end}}
 </div>{{end}}

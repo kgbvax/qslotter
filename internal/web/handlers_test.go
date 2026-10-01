@@ -117,28 +117,32 @@ func TestQueuePagesRender(t *testing.T) {
 	if full.Code != 200 {
 		t.Fatalf("/queue = %d: %s", full.Code, full.Body)
 	}
-	for _, want := range []string{"DL1ABC", "Alice", "Written", "/queue/none", "/queue/decide?method=B", "/queue/decide?method=M", key, `class="cnt"`} {
+	for _, want := range []string{"DL1ABC", "Alice", "/queue/yes?key=", "/queue/none", "/queue/written?route=B&amp;key=", "/queue/written?route=D&amp;key=", key, `class="cnt"`} {
 		if !strings.Contains(full.Body.String(), want) {
 			t.Fatalf("/queue missing %q; body:\n%s", want, full.Body)
 		}
 	}
-	// The decision queue offers decisions only; producing a card is the work queue's job.
-	for _, gone := range []string{"/queue/print", "/queue/send", "/queue/skip", "/queue/handwrite", "/work/print"} {
+	// The Inbox decides whether; routes for the other cards are the Desk's job.
+	for _, gone := range []string{"/queue/decide", "/work/print", "route=MD", "route=MB"} {
 		if strings.Contains(full.Body.String(), gone) {
 			t.Fatalf("/queue still offers %q", gone)
 		}
 	}
 
+	// Compact: yes / no only.
 	compact := get(t, h, "/queue?compact=1")
 	if compact.Code != 200 || !strings.Contains(compact.Body.String(), "row-"+key) {
 		t.Fatalf("/queue?compact=1 = %d, missing row for %s:\n%s", compact.Code, key, compact.Body)
+	}
+	if b := compact.Body.String(); !strings.Contains(b, "/queue/yes?key=") || strings.Contains(b, "/queue/written") {
+		t.Fatalf("compact rows must offer yes/no only:\n%s", b)
 	}
 
 	// SSE-driven row fetch, both variants.
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)); r.Code != 200 {
 		t.Fatalf("/queue/row = %d", r.Code)
 	}
-	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)+"&compact=1"); r.Code != 200 {
+	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)+"&compact=1"); r.Code != 200 || strings.Contains(r.Body.String(), "/queue/written") {
 		t.Fatalf("/queue/row compact = %d: %s", r.Code, r.Body)
 	}
 	if r := get(t, h, "/station/DL1ABC"); r.Code != 200 || !strings.Contains(r.Body.String(), "DL1ABC") {
@@ -151,95 +155,93 @@ func TestQueuePagesRender(t *testing.T) {
 	}
 }
 
-// TestListDecideLeavesQueue: deciding from the list removes the card from the
-// decision queue (row, card view, count) and puts it into the work queue.
-func TestListDecideLeavesQueue(t *testing.T) {
+// TestListYesLeavesInbox: "yes" from the list removes the card from the Inbox
+// (row, card view, count) and puts it on the Desk with the route still open.
+func TestListYesLeavesInbox(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	other := addQueued(t, st, "DL2ZZZ", "20240103")
 
-	r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
+	r := postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	if r.Code != 200 || strings.TrimSpace(r.Body.String()) != "" {
-		t.Fatalf("list decide = %d, want 200 with an empty body (row removed): %q", r.Code, r.Body)
+		t.Fatalf("list yes = %d, want 200 with an empty body (row removed): %q", r.Code, r.Body)
 	}
-	if it := status(t, st, key); it.Status != "decided" || it.DesiredMethod != "D" {
-		t.Fatalf("after decide: %+v", it)
+	if it := status(t, st, key); it.Status != "decided" || it.DesiredMethod != "" {
+		t.Fatalf("after yes: %+v", it)
 	}
 
 	if body := get(t, h, "/queue").Body.String(); strings.Contains(body, "row-"+key) || !strings.Contains(body, "row-"+other) {
-		t.Fatalf("/queue after decide must list only the undecided card:\n%s", body)
+		t.Fatalf("/queue after yes must list only the undecided card:\n%s", body)
 	}
 	if body := get(t, h, "/decide").Body.String(); strings.Contains(body, "DL1ABC") || !strings.Contains(body, "DL2ZZZ") {
-		t.Fatalf("/decide after decide must show only the undecided card:\n%s", body)
+		t.Fatalf("/decide after yes must show only the undecided card:\n%s", body)
 	}
-	if body := get(t, h, "/work").Body.String(); !strings.Contains(body, "row-"+key) || !strings.Contains(body, "Direct") {
-		t.Fatalf("/work must list the decided card under Direct:\n%s", body)
-	}
-}
-
-func TestDecideViaManager(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-
-	// No manager, nothing to prefill from: refused.
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"M"}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("M without manager = %d, want 400", r.Code)
-	}
-	// Free text is not a manager.
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"M"}, "manager": {"VIA BUREAU"}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("M with junk manager = %d, want 400", r.Code)
-	}
-	if it := status(t, st, key); it.Status != "queued" {
-		t.Fatalf("refused decisions must not change the card: %+v", it)
-	}
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"M"}, "manager": {" dl2xyz "}}); r.Code != 200 {
-		t.Fatalf("M with manager = %d: %s", r.Code, r.Body)
-	}
-	if it := status(t, st, key); it.Status != "decided" || it.DesiredMethod != "M" || it.Manager != "DL2XYZ" {
-		t.Fatalf("after M: %+v", it)
-	}
-
-	// A valid suggested route is used when no manager is typed.
-	k2 := addQueued(t, st, "DL3YYY", "20240104")
-	if err := st.PutStation(&store.StationInfo{Callsign: "DL3YYY", QSLMethod: "M", QSLRoute: "K2ABC"}); err != nil {
-		t.Fatal(err)
-	}
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {k2}, "method": {"M"}}); r.Code != 200 {
-		t.Fatalf("M with suggested route = %d: %s", r.Code, r.Body)
-	}
-	if it := status(t, st, k2); it.Manager != "K2ABC" {
-		t.Fatalf("suggested manager not used: %+v", it)
+	if body := get(t, h, "/work").Body.String(); !strings.Contains(body, "row-"+key) || !strings.Contains(body, "Route open <small>") {
+		t.Fatalf("/work must list the card under Route open:\n%s", body)
 	}
 }
 
-func TestDecideRejectsOtherMethods(t *testing.T) {
+// TestDeskManagerRoute: a manager route needs the manager's callsign; it is
+// recorded with how the card travels.
+func TestDeskManagerRoute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	for _, m := range []string{"", "N", "E", "X", "W"} { // None and Written have their own actions
-		if r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {m}}); r.Code != http.StatusBadRequest {
-			t.Fatalf("decide method %q = %d, want 400", m, r.Code)
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+
+	for _, f := range []url.Values{
+		{"key": {key}, "route": {"MD"}},                            // no manager
+		{"key": {key}, "route": {"MB"}, "manager": {"VIA BUREAU"}}, // free text is not a manager
+		{"key": {key}},                 // no route at all
+		{"key": {key}, "route": {"X"}}, // unknown route
+		{"key": {key}, "route": {"M"}}, // manager without bureau/direct
+	} {
+		if r := postForm(t, h, "/queue/written", f); r.Code != http.StatusBadRequest {
+			t.Fatalf("written %v = %d, want 400", f, r.Code)
 		}
 	}
-	if it := status(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
-		t.Fatalf("rejected methods changed the card: %+v", it)
+	if it := status(t, st, key); it.Status != "decided" {
+		t.Fatalf("refused routes must not change the card: %+v", it)
+	}
+	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"MB"}, "manager": {" k2abc "}}); r.Code != 200 {
+		t.Fatalf("written via manager = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, key); it.Status != "sent" || it.DesiredMethod != "M" || it.SendVia != "B" || it.Manager != "K2ABC" {
+		t.Fatalf("after manager route: %+v", it)
+	}
+	if q, _ := st.GetQSO(key); q.QSLSentMethodLocal.String != "B" {
+		t.Fatalf("a manager card via the bureau goes as QSL_SENT_VIA=B: %v", q.QSLSentMethodLocal)
+	}
+	if body := get(t, h, "/done").Body.String(); !strings.Contains(body, "via manager K2ABC (bureau), written") {
+		t.Fatalf("/done must spell out the manager route:\n%s", body)
 	}
 }
 
-// TestWrittenOnTheSpot: "Written" from the decision queue is its own outcome:
-// done, no route, pushed as sent without a send method.
-func TestWrittenOnTheSpot(t *testing.T) {
+// TestWrittenNow: written now in the Inbox records bureau or direct - never a
+// manager, never no route.
+func TestWrittenNow(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}}); r.Code != 200 {
-		t.Fatalf("written = %d: %s", r.Code, r.Body)
+	for _, f := range []url.Values{
+		{"key": {key}},
+		{"key": {key}, "route": {"MD"}, "manager": {"K2ABC"}},
+	} {
+		if r := postForm(t, h, "/queue/written", f); r.Code != http.StatusBadRequest {
+			t.Fatalf("written now %v = %d, want 400", f, r.Code)
+		}
+	}
+	if it := status(t, st, key); it.Status != "queued" {
+		t.Fatalf("refused written-now changed the card: %+v", it)
+	}
+	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"D"}}); r.Code != 200 {
+		t.Fatalf("written now = %d: %s", r.Code, r.Body)
 	}
 	it := status(t, st, key)
-	if it.Status != "sent" || it.DesiredMethod != "W" {
-		t.Fatalf("after written: %+v", it)
+	if it.Status != "sent" || it.DesiredMethod != "D" || it.Note != "written now" {
+		t.Fatalf("after written now: %+v", it)
 	}
 	q, _ := st.GetQSO(key)
-	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "" {
-		t.Fatalf("local sent state = %v / method %v, want Y / none", q.QSLSentLocal, q.QSLSentMethodLocal)
+	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
+		t.Fatalf("local sent state = %v / method %v, want Y / D", q.QSLSentLocal, q.QSLSentMethodLocal)
 	}
 	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
 		t.Fatalf("written card not pending push-back: %d", len(pend))
@@ -268,21 +270,18 @@ func TestNoneDeclinesAndSurvivesRecompute(t *testing.T) {
 func TestStaleActionsConflict(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}}); r.Code != 200 {
+	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
 		t.Fatalf("written = %d", r.Code)
 	}
-	for _, p := range []string{"/queue/none", "/queue/written", "/queue/back", "/work/print"} {
-		if r := postForm(t, h, p, url.Values{"key": {key}}); r.Code != http.StatusConflict {
+	for _, p := range []string{"/queue/yes", "/queue/none", "/queue/written", "/queue/back", "/work/print"} {
+		if r := postForm(t, h, p, url.Values{"key": {key}, "route": {"D"}}); r.Code != http.StatusConflict {
 			t.Fatalf("%s on a sent card = %d, want 409", p, r.Code)
 		}
-	}
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"B"}}); r.Code != http.StatusConflict {
-		t.Fatalf("decide on a sent card = %d, want 409", r.Code)
 	}
 	if r := postForm(t, h, "/queue/none", url.Values{"key": {"NOPE|20240101|000000|20m"}}); r.Code != http.StatusConflict {
 		t.Fatalf("unknown key = %d, want 409", r.Code)
 	}
-	if it := status(t, st, key); it.Status != "sent" || it.DesiredMethod != "W" {
+	if it := status(t, st, key); it.Status != "sent" || it.DesiredMethod != "B" {
 		t.Fatalf("stale actions changed the card: %+v", it)
 	}
 	if len(srv.printer.(*fakePrinter).printed) != 0 {
@@ -298,7 +297,7 @@ func TestDecideFlow(t *testing.T) {
 	newer := addQueued(t, st, "DL2ZZZ", "20240103")
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "Confirming two-way QSO with", "DL2ZZZ", "card 1 of 2", "data-key=\"b\"", "method=D&amp;key=", "work=1"} {
+	for _, want := range []string{"<!DOCTYPE html>", "Confirming two-way QSO with", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q; body:\n%s", want, body)
 		}
@@ -307,15 +306,15 @@ func TestDecideFlow(t *testing.T) {
 		t.Fatalf("newest QSO must be the displayed card:\n%s", body)
 	}
 
-	// Deciding the newest card shows the next one, as a bare fragment.
-	r := postForm(t, h, "/queue/decide", url.Values{"key": {newer}, "method": {"D"}, "work": {"1"}})
+	// "Yes" on the newest card shows the next one, as a bare fragment.
+	r := postForm(t, h, "/queue/yes", url.Values{"key": {newer}, "work": {"1"}})
 	if r.Code != 200 || strings.Contains(r.Body.String(), "<!DOCTYPE") {
-		t.Fatalf("decide in card view = %d:\n%s", r.Code, r.Body)
+		t.Fatalf("yes in card view = %d:\n%s", r.Code, r.Body)
 	}
 	if !strings.Contains(r.Body.String(), "DL1ABC") || strings.Contains(r.Body.String(), "DL2ZZZ") {
 		t.Fatalf("card view did not advance:\n%s", r.Body)
 	}
-	if it := status(t, st, newer); it.Status != "decided" || it.DesiredMethod != "D" {
+	if it := status(t, st, newer); it.Status != "decided" {
 		t.Fatalf("decision not recorded: %+v", it)
 	}
 
@@ -325,7 +324,7 @@ func TestDecideFlow(t *testing.T) {
 		t.Fatalf("empty state = %d:\n%s", r.Code, r.Body)
 	}
 	if !strings.Contains(r.Body.String(), "/work/card") {
-		t.Fatalf("empty state should point at the waiting work cards:\n%s", r.Body)
+		t.Fatalf("empty state should point at the waiting Desk cards:\n%s", r.Body)
 	}
 }
 
@@ -346,7 +345,7 @@ func TestDecideBrowse(t *testing.T) {
 func TestBackReturnsToQueue(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"B"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	if r := postForm(t, h, "/queue/back", url.Values{"key": {key}}); r.Code != 200 {
 		t.Fatalf("back = %d: %s", r.Code, r.Body)
 	}
@@ -354,60 +353,74 @@ func TestBackReturnsToQueue(t *testing.T) {
 		t.Fatalf("after back: %+v", it)
 	}
 	if !strings.Contains(get(t, h, "/queue").Body.String(), "row-"+key) {
-		t.Fatal("card missing from the decision queue after back")
+		t.Fatal("card missing from the Inbox after back")
 	}
 }
 
-// TestWorkQueue: decided cards are grouped by route, one card at a time with
-// an optional route filter.
+// TestWorkQueue: Desk cards are grouped by the route offered first (recorded,
+// else the QRZ suggestion); one card at a time with an optional filter.
 func TestWorkQueue(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	kd := addQueued(t, st, "DL2ZZZ", "20240103")
 	km := addQueued(t, st, "DL3YYY", "20240104")
-	for _, c := range []struct{ k, m, mgr string }{{key, "B", ""}, {kd, "D", ""}, {km, "M", "K2ABC"}} {
-		if r := postForm(t, h, "/queue/decide", url.Values{"key": {c.k}, "method": {c.m}, "manager": {c.mgr}}); r.Code != 200 {
-			t.Fatalf("decide %s = %d: %s", c.m, r.Code, r.Body)
+	kb := addQueued(t, st, "DL4WWW", "20240105")
+	for call, info := range map[string]*store.StationInfo{
+		"DL2ZZZ": {QSLMethod: "D"}, "DL3YYY": {QSLMethod: "M", QSLRoute: "K2ABC"}, "DL4WWW": {QSLMethod: "B"},
+	} {
+		info.Callsign = call
+		if err := st.PutStation(info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, k := range []string{key, kd, km, kb} {
+		if r := postForm(t, h, "/queue/yes", url.Values{"key": {k}}); r.Code != 200 {
+			t.Fatalf("yes %s = %d: %s", k, r.Code, r.Body)
 		}
 	}
 
 	list := get(t, h, "/work").Body.String()
-	iD, iM, iB := strings.Index(list, "Direct <small>"), strings.Index(list, "Via manager <small>"), strings.Index(list, "Bureau <small>")
-	if iD < 0 || iM < iD || iB < iM {
-		t.Fatalf("/work groups must read Direct, Via manager, Bureau:\n%s", list)
+	iO, iD, iM, iB := strings.Index(list, "Route open <small>"), strings.Index(list, "Direct <small>"), strings.Index(list, "Via manager <small>"), strings.Index(list, "Bureau <small>")
+	if iO < 0 || iD < iO || iM < iD || iB < iM {
+		t.Fatalf("/work groups must read Route open, Direct, Via manager, Bureau:\n%s", list)
 	}
-	if !strings.Contains(list, "K2ABC") {
-		t.Fatalf("/work must show the manager:\n%s", list)
+	if !strings.Contains(list, `value="K2ABC"`) || !strings.Contains(list, `<option value="MD" selected>`) {
+		t.Fatalf("/work must preselect the suggested manager route:\n%s", list)
 	}
 
-	// Card view: full page, newest decided card first; the route is spelled out.
+	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL3YYY", "K2ABC", "card 1 of 3", `id="workcard"`, "/work/print?key=", "data-key=\"p\""} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "preselected: QRZ suggestion", "/work/print?key=", `data-key="p"`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
 	}
-	// The route filter narrows the stack; other routes are not shown.
-	frag := getHX(t, h, "/work/card?filter=B").Body.String()
-	if !strings.Contains(frag, "DL1ABC") || strings.Contains(frag, "DL3YYY") || !strings.Contains(frag, "card 1 of 1") || strings.Contains(frag, "<!DOCTYPE") {
-		t.Fatalf("/work/card?filter=B (fragment):\n%s", frag)
+	// The filter narrows the stack; other groups are not shown.
+	frag := getHX(t, h, "/work/card?filter=M").Body.String()
+	if !strings.Contains(frag, "DL3YYY") || !strings.Contains(frag, `value="MD" data-key="m" checked`) || !strings.Contains(frag, `value="K2ABC"`) ||
+		strings.Contains(frag, "DL4WWW") || !strings.Contains(frag, "card 1 of 1") || strings.Contains(frag, "<!DOCTYPE") {
+		t.Fatalf("/work/card?filter=M (fragment):\n%s", frag)
+	}
+	if b := getHX(t, h, "/work/card?filter=O").Body.String(); !strings.Contains(b, "DL1ABC") || !strings.Contains(b, `data-route=""`) || strings.Contains(b, " checked") {
+		t.Fatalf("filter=O must show the card without a route, nothing preselected:\n%s", b)
 	}
 	if !strings.Contains(getHX(t, h, "/work/card?filter=D").Body.String(), "DL2ZZZ") {
 		t.Fatal("filter=D lost the direct card")
 	}
 }
 
-// TestWorkPrintMarksSentAndPending: printing a decided card completes it: it
-// is marked sent with its route, waits for push-back, and the next card shows.
+// TestWorkPrintMarksSentAndPending: printing a Desk card completes it: it is
+// marked sent with the chosen route, waits for push-back, and the next card
+// shows.
 func TestWorkPrintMarksSentAndPending(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	fp := srv.printer.(*fakePrinter)
 	h := srv.Routes()
 	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
-	postForm(t, h, "/queue/decide", url.Values{"key": {k2}, "method": {"B"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
 
-	r := postForm(t, h, "/work/print", url.Values{"key": {k2}, "view": {"work"}})
+	r := postForm(t, h, "/work/print", url.Values{"key": {k2}, "route": {"B"}, "view": {"work"}})
 	if r.Code != 200 || strings.Contains(r.Body.String(), "<!DOCTYPE") {
 		t.Fatalf("print = %d:\n%s", r.Code, r.Body)
 	}
@@ -430,21 +443,21 @@ func TestWorkPrintMarksSentAndPending(t *testing.T) {
 	}
 
 	// The last card lands on the empty state.
-	r = postForm(t, h, "/work/print", url.Values{"key": {key}, "view": {"work"}})
-	if !strings.Contains(r.Body.String(), "Nothing to produce") {
-		t.Fatalf("empty work queue:\n%s", r.Body)
+	r = postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}})
+	if !strings.Contains(r.Body.String(), "Nothing to write or print") {
+		t.Fatalf("empty Desk:\n%s", r.Body)
 	}
 }
 
 // TestWorkPrintFailureKeepsCardDecided: a printer error must not complete the
-// card - it stays in the work queue.
+// card - it stays on the Desk.
 func TestWorkPrintFailureKeepsCardDecided(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	srv.printer = &fakePrinter{err: fmt.Errorf("lp: no default destination")}
 	h := srv.Routes()
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 
-	r := postForm(t, h, "/work/print", url.Values{"key": {key}, "view": {"work"}})
+	r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}})
 	if r.Code != http.StatusInternalServerError || !strings.Contains(r.Body.String(), "no default destination") {
 		t.Fatalf("failed print = %d: %s", r.Code, r.Body)
 	}
@@ -456,18 +469,22 @@ func TestWorkPrintFailureKeepsCardDecided(t *testing.T) {
 	}
 }
 
-// TestPrintNeedsADecision: nothing is printed for a card that was not decided
-// (no fallback route is invented).
-func TestPrintNeedsADecision(t *testing.T) {
+// TestPrintNeedsADecisionAndARoute: nothing is printed for an Inbox card, nor
+// for a Desk card without a chosen route (no fallback route is invented).
+func TestPrintNeedsADecisionAndARoute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}}); r.Code != http.StatusConflict {
-		t.Fatalf("print of undecided card = %d, want 409", r.Code)
+	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != http.StatusConflict {
+		t.Fatalf("print of an Inbox card = %d, want 409", r.Code)
+	}
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	if r := postForm(t, h, "/work/print", url.Values{"key": {key}}); r.Code != http.StatusBadRequest || !strings.Contains(r.Body.String(), "Choose a route") {
+		t.Fatalf("print without a route = %d: %s", r.Code, r.Body)
 	}
 	if n := len(srv.printer.(*fakePrinter).printed); n != 0 {
 		t.Fatalf("printer called %d times", n)
 	}
-	if it := status(t, st, key); it.Status != "queued" {
+	if it := status(t, st, key); it.Status != "decided" {
 		t.Fatalf("card changed: %+v", it)
 	}
 }
@@ -495,8 +512,8 @@ func TestPrintFindsOldQSO(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	postForm(t, h, "/queue/decide", url.Values{"key": {old.QSLKey}, "method": {"B"}})
-	if r := postForm(t, h, "/work/print", url.Values{"key": {old.QSLKey}}); r.Code != 200 {
+	postForm(t, h, "/queue/yes", url.Values{"key": {old.QSLKey}})
+	if r := postForm(t, h, "/work/print", url.Values{"key": {old.QSLKey}, "route": {"B"}}); r.Code != 200 {
 		t.Fatalf("print old QSO = %d: %s", r.Code, r.Body)
 	}
 	if len(fp.printed) != 1 {
@@ -504,20 +521,20 @@ func TestPrintFindsOldQSO(t *testing.T) {
 	}
 }
 
-func TestWorkWrittenKeepsRouteAndBack(t *testing.T) {
+func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
-	postForm(t, h, "/queue/decide", url.Values{"key": {k2}, "method": {"B"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
 
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "view": {"work"}}); r.Code != 200 {
+	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}}); r.Code != 200 {
 		t.Fatalf("written in work view = %d: %s", r.Code, r.Body)
 	}
 	it := status(t, st, key)
 	q, _ := st.GetQSO(key)
-	if it.Status != "sent" || it.DesiredMethod != "D" || q.QSLSentMethodLocal.String != "D" || it.PrintedAt.Valid {
-		t.Fatalf("written keeps the decided route: %+v / %v", it, q.QSLSentMethodLocal)
+	if it.Status != "sent" || it.DesiredMethod != "D" || q.QSLSentMethodLocal.String != "D" || it.PrintedAt.Valid || it.Note != "" {
+		t.Fatalf("written records the chosen route: %+v / %v", it, q.QSLSentMethodLocal)
 	}
 	if r := postForm(t, h, "/queue/back", url.Values{"key": {k2}, "view": {"work"}}); r.Code != 200 {
 		t.Fatalf("back in work view = %d", r.Code)
@@ -531,11 +548,11 @@ func TestDoneAndReopen(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	kn := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/written", url.Values{"key": {key}})
+	postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}})
 	postForm(t, h, "/queue/none", url.Values{"key": {kn}})
 
 	body := get(t, h, "/done").Body.String()
-	for _, want := range []string{"row-" + key, "written on the spot", "row-" + kn, "no card", "/queue/reopen?key="} {
+	for _, want := range []string{"row-" + key, "Bureau, written now", "row-" + kn, "no card", "/queue/reopen?key="} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/done missing %q:\n%s", want, body)
 		}
@@ -543,7 +560,7 @@ func TestDoneAndReopen(t *testing.T) {
 	if r := postForm(t, h, "/queue/reopen", url.Values{"key": {key}}); r.Code != 200 || r.Header().Get("HX-Trigger") != "" {
 		t.Fatalf("reopen = %d, trigger %q", r.Code, r.Header().Get("HX-Trigger"))
 	}
-	if it := status(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
+	if it := status(t, st, key); it.Status != "queued" || it.DesiredMethod != "" || it.Note != "" {
 		t.Fatalf("after reopen: %+v", it)
 	}
 	if q, _ := st.GetQSO(key); q.QSLSentLocal.Valid {
@@ -554,8 +571,8 @@ func TestDoneAndReopen(t *testing.T) {
 	}
 
 	// Reopening a card Clublog already has as sent warns the operator.
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"B"}})
-	postForm(t, h, "/work/print", url.Values{"key": {key}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}})
 	pend, _ := st.PendingPushBack()
 	if err := st.MarkPushed(pend[0]); err != nil {
 		t.Fatal(err)
@@ -566,12 +583,24 @@ func TestDoneAndReopen(t *testing.T) {
 	}
 }
 
+// TestDoneShowsBacklog: backlog cards are told apart from a "no card" decision.
+func TestDoneShowsBacklog(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	if n, err := st.QueueDiscardBacklog("20990101"); err != nil || n != 1 {
+		t.Fatalf("discard = %d, %v", n, err)
+	}
+	body := get(t, srv.Routes(), "/done").Body.String()
+	if !strings.Contains(body, "row-"+key) || !strings.Contains(body, "no card (backlog)") {
+		t.Fatalf("/done must show the backlog card:\n%s", body)
+	}
+}
+
 // TestQueueChangedEvent: every move tells the other windows.
 func TestQueueChangedEvent(t *testing.T) {
 	srv, _, key := newTestServer(t)
 	ch, unsub := srv.broker.Subscribe()
 	defer unsub()
-	postForm(t, srv.Routes(), "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
+	postForm(t, srv.Routes(), "/queue/yes", url.Values{"key": {key}})
 	select {
 	case ev := <-ch:
 		if ev.Type != "queue_changed" || !strings.Contains(ev.Data, `"to":"decided"`) || !strings.Contains(ev.Data, key) {
@@ -587,13 +616,13 @@ func TestNavShowsCounts(t *testing.T) {
 	h := srv.Routes()
 	addQueued(t, st, "DL2ZZZ", "20240103")
 	nav := get(t, h, "/nav").Body.String()
-	if !strings.Contains(nav, `Queue <span class="cnt">2</span>`) || strings.Contains(nav, `Work <span`) {
+	if !strings.Contains(nav, `Inbox <span class="cnt">2</span>`) || strings.Contains(nav, `Desk <span`) {
 		t.Fatalf("nav = %s", nav)
 	}
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	nav = get(t, h, "/nav").Body.String()
-	if !strings.Contains(nav, `Queue <span class="cnt">1</span>`) || !strings.Contains(nav, `Work <span class="cnt">1</span>`) {
-		t.Fatalf("nav after decide = %s", nav)
+	if !strings.Contains(nav, `Inbox <span class="cnt">1</span>`) || !strings.Contains(nav, `Desk <span class="cnt">1</span>`) {
+		t.Fatalf("nav after yes = %s", nav)
 	}
 }
 
@@ -633,9 +662,9 @@ func TestQueueRowOnlyForUndecided(t *testing.T) {
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape(q.QSLKey)); r.Code != http.StatusNoContent {
 		t.Fatalf("/queue/row for non-queued QSO = %d, want 204", r.Code)
 	}
-	postForm(t, h, "/queue/decide", url.Values{"key": {key}, "method": {"D"}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)); r.Code != http.StatusNoContent {
-		t.Fatalf("/queue/row for a decided card = %d, want 204", r.Code)
+		t.Fatalf("/queue/row for a Desk card = %d, want 204", r.Code)
 	}
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape("GONE|20240101|000000|20m")); r.Code != http.StatusNotFound {
 		t.Fatalf("/queue/row for unknown QSO = %d, want 404", r.Code)
@@ -649,30 +678,29 @@ func TestBatchActions(t *testing.T) {
 	h := srv.Routes()
 	q2 := addQueued(t, st, "DL2ZZZ", "20240103")
 	q3 := addQueued(t, st, "DL3YYY", "20240104")
-	postForm(t, h, "/queue/written", url.Values{"key": {q3}}) // already handled
+	postForm(t, h, "/queue/written", url.Values{"key": {q3}, "route": {"B"}}) // already handled
 
-	r := postForm(t, h, "/queue/batch", url.Values{"action": {"D"}, "keys": {key, q2, q3}})
+	r := postForm(t, h, "/queue/batch", url.Values{"action": {"yes"}, "keys": {key, q2, q3}})
 	if r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/queue?done=2&failed=1" {
-		t.Fatalf("batch D = %d %q", r.Code, r.Header().Get("Location"))
+		t.Fatalf("batch yes = %d %q", r.Code, r.Header().Get("Location"))
 	}
 	for _, k := range []string{key, q2} {
-		if it := status(t, st, k); it.Status != "decided" || it.DesiredMethod != "D" {
-			t.Fatalf("%s after batch D: %+v", k, it)
+		if it := status(t, st, k); it.Status != "decided" || it.DesiredMethod != "" {
+			t.Fatalf("%s after batch yes: %+v", k, it)
 		}
 	}
-	if it := status(t, st, q3); it.Status != "sent" || it.DesiredMethod != "W" {
+	if it := status(t, st, q3); it.Status != "sent" || it.DesiredMethod != "B" {
 		t.Fatalf("batch touched an already handled card: %+v", it)
 	}
 	if body := get(t, h, "/queue?done=2&failed=1").Body.String(); !strings.Contains(body, "2 done") || !strings.Contains(body, "1 skipped") {
 		t.Fatalf("queue page must report the batch result:\n%s", body)
 	}
 
-	// No guessing: via-manager needs a callsign per card, so it is not a batch action.
-	if r := postForm(t, h, "/queue/batch", url.Values{"action": {"M"}, "keys": {key}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("batch M = %d, want 400", r.Code)
-	}
-	if r := postForm(t, h, "/queue/batch", url.Values{"action": {"print"}, "keys": {key}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("print is a work-queue batch action, got %d on the decision queue", r.Code)
+	// Routes are the Desk's: no route batch actions in the Inbox.
+	for _, a := range []string{"B", "D", "M", "print", "written"} {
+		if r := postForm(t, h, "/queue/batch", url.Values{"action": {a}, "keys": {key}}); r.Code != http.StatusBadRequest {
+			t.Fatalf("Inbox batch %q = %d, want 400", a, r.Code)
+		}
 	}
 
 	// Compact redirect lands back on the compact page.
@@ -685,14 +713,18 @@ func TestBatchActions(t *testing.T) {
 		t.Fatalf("batch none: %+v", it)
 	}
 
-	// Work-queue batches: print and back.
+	// Desk batches use each row's route field; a row without a route fails.
 	fp := srv.printer.(*fakePrinter)
-	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key}})
-	if r.Header().Get("Location") != "/work?done=1&failed=0" || len(fp.printed) != 1 {
+	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key, q2},
+		"route:" + key: {"MD"}, "manager:" + key: {"K2ABC"}})
+	if r.Header().Get("Location") != "/work?done=1&failed=1" || len(fp.printed) != 1 {
 		t.Fatalf("batch print = %q, printed %d", r.Header().Get("Location"), len(fp.printed))
 	}
-	if it := status(t, st, key); it.Status != "sent" || !it.PrintedAt.Valid {
+	if it := status(t, st, key); it.Status != "sent" || !it.PrintedAt.Valid || it.DesiredMethod != "M" || it.SendVia != "D" || it.Manager != "K2ABC" {
 		t.Fatalf("batch print: %+v", it)
+	}
+	if it := status(t, st, q2); it.Status != "decided" {
+		t.Fatalf("a card without a route must stay on the Desk: %+v", it)
 	}
 	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"back"}, "keys": {q2}})
 	if it := status(t, st, q2); it.Status != "queued" {
@@ -714,10 +746,10 @@ func TestPortableCallActions(t *testing.T) {
 	if err := st.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if r := postForm(t, h, "/queue/decide", url.Values{"key": {q.QSLKey}, "method": {"D"}}); r.Code != 200 {
-		t.Fatalf("decide for portable key = %d: %s", r.Code, r.Body)
+	if r := postForm(t, h, "/queue/yes", url.Values{"key": {q.QSLKey}}); r.Code != 200 {
+		t.Fatalf("yes for portable key = %d: %s", r.Code, r.Body)
 	}
-	if r := postForm(t, h, "/work/print", url.Values{"key": {q.QSLKey}}); r.Code != 200 {
+	if r := postForm(t, h, "/work/print", url.Values{"key": {q.QSLKey}, "route:" + q.QSLKey: {"D"}}); r.Code != 200 {
 		t.Fatalf("print for portable key = %d: %s", r.Code, r.Body)
 	}
 	if item, _ := st.QueueGet(q.QSLKey); item == nil || item.Status != "sent" {
@@ -745,27 +777,29 @@ func TestDecidePageIsFullDocument(t *testing.T) {
 }
 
 // TestKeyMapsMatchButtons: every key advertised in a card view's legend must
-// have a button (the keyboard handler clicks the button whose data-key matches).
+// have a control (the keyboard handler acts on the element whose data-key
+// matches; a two-key sequence like "w b" is data-key="wb").
 func TestKeyMapsMatchButtons(t *testing.T) {
-	srv, st, key := newTestServer(t)
+	srv, st, _ := newTestServer(t)
 	h := srv.Routes()
 	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/decide", url.Values{"key": {k2}, "method": {"D"}})
-	_ = key
+	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
 
 	for _, page := range []string{"/decide", "/work/card"} {
 		body := get(t, h, page).Body.String()
-		buttons := map[string]bool{}
-		for _, m := range regexp.MustCompile(`data-key="(\w)"`).FindAllStringSubmatch(body, -1) {
-			buttons[m[1]] = true
+		keys := map[string]bool{}
+		for _, m := range regexp.MustCompile(`data-key="(\w+)"`).FindAllStringSubmatch(body, -1) {
+			for _, c := range m[1] {
+				keys[string(c)] = true
+			}
 		}
 		legend := regexp.MustCompile(`<kbd>(\w)</kbd>`).FindAllStringSubmatch(body, -1)
-		if len(buttons) == 0 || len(legend) == 0 {
-			t.Fatalf("%s: %d buttons, %d legend keys", page, len(buttons), len(legend))
+		if len(keys) == 0 || len(legend) == 0 {
+			t.Fatalf("%s: %d keys, %d legend keys", page, len(keys), len(legend))
 		}
 		for _, m := range legend {
-			if !buttons[m[1]] {
-				t.Errorf("%s: legend advertises key %q but no button has data-key=%q", page, m[1], m[1])
+			if !keys[m[1]] {
+				t.Errorf("%s: legend advertises key %q but no control has it in data-key", page, m[1])
 			}
 		}
 		if !strings.Contains(body, "keydown") {

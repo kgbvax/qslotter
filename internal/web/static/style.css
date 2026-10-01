@@ -261,11 +261,34 @@ header.site nav .pending { margin-left: 8px; font-size: 12px; color: var(--ink-s
 .filters a { margin-right: 10px; }
 .filters a.on { color: var(--ink); font-weight: 700; text-decoration: none; border-bottom: 2px solid var(--ink); }
 
-.route { margin: 0 0 8px; font: 700 13px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; }
-.route .routename { display: inline-block; border: 2px solid currentColor; border-radius: 3px; padding: 1px 10px; transform: rotate(-1.4deg); }
-.route.r-B { color: var(--blue); }
-.route.r-D { color: var(--red); }
-.route.r-M { color: var(--ink); }
+/* Inbox: yes / no, written now (armed by the w key) */
+button.stamp.yes { color: var(--ok); }
+button.stamp.yes:hover, button.stamp.yes.stamped { background: var(--ok); color: var(--card); }
+.written-now .lbl { font-size: 12px; color: var(--ink-soft); align-self: center; }
+.written-now.armed { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+/* Desk: the route is chosen when the card is finished */
+.routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+.routes label.stamp {
+  font: 700 12px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 4px 10px; border: 2px solid currentColor; border-radius: 3px; cursor: pointer;
+}
+.routes label.stamp input { margin: 0 4px 0 0; vertical-align: -1px; }
+.routes label.stamp kbd { font-size: 10px; opacity: 0.7; }
+.routes label.stamp.b { color: var(--blue); }
+.routes label.stamp.d { color: var(--red); }
+.routes label.stamp.m { color: var(--ink); }
+.routes label.stamp.b:has(input:checked) { background: var(--blue); border-color: var(--blue); color: var(--card); }
+.routes label.stamp.d:has(input:checked) { background: var(--red); border-color: var(--red); color: var(--card); }
+.routes label.stamp.m:has(input:checked) { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.routes .mgr-in { width: 13ch; padding: 5px 8px; font: 500 13px 'IBM Plex Mono', monospace; text-transform: uppercase; }
+#workcard .pref > div { display: none; }
+#workcard[data-route="B"] .pref .for-B, #workcard[data-route="D"] .pref .for-D,
+#workcard[data-route="M"] .pref .for-M, #workcard[data-route=""] .pref .for-none { display: block; }
+#workcard:not([data-route=""]) .route-hint { display: none; }
+.route-cell { white-space: nowrap; }
+.route-cell .route-sel { font-size: 12.5px; }
+.route-cell .mgr-in { width: 7ch; margin-left: 3px; padding: 1px 4px; font: 500 12px 'IBM Plex Mono', monospace; text-transform: uppercase; }
 
 /* --- research panel on the decision card --- */
 

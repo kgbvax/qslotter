@@ -1,3 +1,11 @@
+{{define "route_select"}}<select name="route:{{.Item.QSLKey}}" form="batch" class="route-sel" aria-label="Route for {{.QSO.Call}}" title="{{if .RouteFrom}}preselected: {{.RouteFrom}}{{else}}choose a route{{end}}">
+      <option value=""{{if not .Route}} selected{{end}}>route?</option>
+      <option value="B"{{if eq .Route "B"}} selected{{end}}>Bureau</option>
+      <option value="D"{{if eq .Route "D"}} selected{{end}}>Direct</option>
+      <option value="MD"{{if eq .Route "MD"}} selected{{end}}>Mgr, direct</option>
+      <option value="MB"{{if eq .Route "MB"}} selected{{end}}>Mgr, bureau</option>
+    </select><input type="text" class="mgr-in" name="manager:{{.Item.QSLKey}}" form="batch" size="7" maxlength="14" placeholder="mgr" value="{{.MgrPrefill}}" aria-label="Manager callsign" title="Manager callsign (manager routes only)">{{end}}
+
 {{define "work_row.html"}}<tr id="row-{{.Item.QSLKey}}">
   <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Item.QSLKey}}" title="Select for batch action"></td>
   <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
@@ -5,16 +13,17 @@
   <td class="c-bm">{{.QSO.Band}}</td>
   <td class="c-bm">{{.QSO.Mode}}</td>
   <td>{{.QSO.Name}}</td>
-  <td>{{if eq .Item.DesiredMethod "M"}}{{.Item.Manager}}{{else if and .Info (eq .Item.DesiredMethod "D")}}{{.Info.Country}}{{end}}</td>
+  <td>{{if .Info}}{{.Info.Country}}{{end}}</td>
+  <td class="route-cell">{{template "route_select" .}}</td>
   <td class="actions">
-    <button type="button" class="mini" title="Render the card and send it to the printer" hx-post="/work/print?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Print</button>
-    <button type="button" class="mini" title="Card written by hand - done" hx-post="/queue/written?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Written</button>
-    <button type="button" class="mini" title="Take back to the decision queue" hx-post="/queue/back?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Back</button>
+    <button type="button" class="mini" title="Render the card and send it to the printer - sent with the chosen route" hx-post="/work/print?key={{q .Item.QSLKey}}" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Print</button>
+    <button type="button" class="mini" title="Card written by hand - sent with the chosen route" hx-post="/queue/written?key={{q .Item.QSLKey}}" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Written</button>
+    <button type="button" class="mini" title="Take back to the Inbox" hx-post="/queue/back?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Back</button>
   </td>
 </tr>{{end}}
 
 {{define "worklist.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Work queue</title>
+<html><head><meta charset="utf-8"><title>qslotter - Desk</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
@@ -25,23 +34,24 @@
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Work queue <small>({{.Total}} card(s) to produce)</small></h2>
-  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} failed</span> (already handled, or the printer refused){{end}}.</p>{{end}}
-  <p><a href="/work/card">Work card by card &rarr;</a> <span class="muted">Print or write each card; it is then marked sent and goes to Clublog with the next push.</span></p>
-  {{if not .Groups}}<div class="empty"><p class="big">Nothing to produce.</p><p>Cards you decide as Bureau, Direct or Via manager show up here. <a href="/queue">Go to the decision queue</a>.</p></div>{{else}}
+  <h2>Desk <small>({{.Total}} card(s) to write or print)</small></h2>
+  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} failed</span> (no route chosen, manager call missing, already handled, or the printer refused){{end}}.</p>{{end}}
+  <p><a href="/work/card">Card by card &rarr;</a> <span class="muted">Choose the route per card (preselected from QRZ where it says something), then print or write it; it is marked sent and goes to Clublog with the next push.</span></p>
+  {{if not .Groups}}<div class="empty"><p class="big">Nothing to write or print.</p><p>Cards you answer "yes" in the Inbox show up here. <a href="/queue">Go to the Inbox</a>.</p></div>{{else}}
   <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="list" value="work">
     <select name="action" title="Batch action">
       <option value="print">Print</option>
       <option value="written">Written</option>
-      <option value="back">Back to decision</option>
+      <option value="none">No card</option>
+      <option value="back">Back to the Inbox</option>
     </select>
     <button type="submit">Apply to selected</button>
   </form>
   {{range .Groups}}
   <h3 class="grouphead">{{.Title}} <small>({{len .Rows}})</small> <a class="mini" href="/work/card?filter={{.Method}}">card by card &rarr;</a></h3>
   <table class="worktable">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>Name</th><th>{{if eq .Method "M"}}Manager{{else if eq .Method "D"}}Country{{else}}&nbsp;{{end}}</th><th>Produce</th></tr></thead>
+    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>Name</th><th>Country</th><th>Route</th><th>Produce</th></tr></thead>
     <tbody>{{range .Rows}}{{template "work_row.html" .}}{{end}}</tbody>
   </table>
   {{end}}{{end}}

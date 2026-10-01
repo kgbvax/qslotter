@@ -3,7 +3,7 @@
   <div class="empty">
     <p class="big">No QSOs waiting for a decision.</p>
     <p>New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere.</p>
-    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{.Work}} decided card(s) are waiting to be produced &rarr;</a>{{else}}<a href="/queue">Back to the queue</a>{{end}}{{end}}</p>
+    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{.Work}} card(s) waiting at the Desk &rarr;</a>{{else}}<a href="/queue">Back to the Inbox list</a>{{end}}{{end}}</p>
   </div>
 {{else}}
   <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">station details</a>
@@ -24,16 +24,16 @@
     {{template "research_panel" .Row}}
   </article>
   <div class="decide-actions">
-    <span class="stamps" role="group" aria-label="Decision">
-      <button type="button" class="stamp b{{if eq .Row.Suggested "B"}} suggested{{end}}" data-key="b" title="Bureau  (b)" hx-post="/queue/decide?method=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">B&uuml;ro</button>
-      <button type="button" class="stamp d{{if eq .Row.Suggested "D"}} suggested{{end}}" data-key="d" title="Direct  (d)" hx-post="/queue/decide?method=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Direct</button>
-      <span class="mgr"><button type="button" class="stamp m{{if eq .Row.Suggested "M"}} suggested{{end}}" data-key="m" title="Via manager - type the callsign, Enter  (m)" hx-post="/queue/decide?method=M&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-include="closest .mgr" hx-target="#decide" hx-swap="outerHTML">Via</button><input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="manager call" value="{{.Row.MgrPrefill}}" aria-label="Manager callsign" onkeydown="if(event.key==='Enter'){event.preventDefault();this.previousElementSibling.click()}else if(event.key==='Escape'){this.blur()}"></span>
-      <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">None</button>
+    <span class="stamps" role="group" aria-label="Card?">
+      <button type="button" class="stamp yes{{if or (eq .Row.Suggested "B") (eq .Row.Suggested "D") (eq .Row.Suggested "M")}} suggested{{end}}" data-key="y" title="Yes, card - goes to the Desk, where the route is chosen  (y)" hx-post="/queue/yes?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Yes, card</button>
+      <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="No card  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">No card</button>
     </span>
-    <span class="fulfil">
-      <button type="button" class="mini" data-key="w" title="Card written by hand on the spot - done  (w)" hx-post="/queue/written?key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Written</button>
+    <span class="fulfil written-now" role="group" aria-label="Written now">
+      <span class="lbl" title="Card filled in during the QSO - done, never shown again">Written now:</span>
+      <button type="button" class="mini" data-key="wb" title="Written now, goes via the bureau - done  (w, then b)" hx-post="/queue/written?route=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Bureau</button>
+      <button type="button" class="mini" data-key="wd" title="Written now, goes direct - done  (w, then d)" hx-post="/queue/written?route=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1" hx-target="#decide" hx-swap="outerHTML">Direct</button>
     </span>
   </div>
-  <p class="muted legend">Keys: <kbd>b</kbd> bureau &middot; <kbd>d</kbd> direct &middot; <kbd>m</kbd> via manager (type call, Enter) &middot; <kbd>n</kbd> no card &middot; <kbd>w</kbd> written on the spot &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; a decision moves the card to the work queue and shows the next one.</p>
+  <p class="muted legend">Keys: <kbd>y</kbd> yes, card &middot; <kbd>n</kbd> no card &middot; <kbd>w</kbd> then <kbd>b</kbd> / <kbd>d</kbd> written now via bureau / direct &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; "yes" sends the card to the Desk, where its route is chosen; the next QSO follows.</p>
 {{end}}
 </div>{{end}}

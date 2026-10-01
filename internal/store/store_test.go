@@ -392,95 +392,137 @@ func statusOf(t *testing.T, st Store, key string) *QueueItem {
 	return it
 }
 
-func TestQueueDecideMovesToWorkQueue(t *testing.T) {
+func TestQueueAcceptMovesToDeskWithoutRoute(t *testing.T) {
 	st := openTemp(t)
 	key := seedQueued(t, st, "DL1ABC", "20240101")
 
-	if err := st.QueueDecide(key, "d", ""); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if it := statusOf(t, st, key); it.Status != "decided" || it.DesiredMethod != "D" {
-		t.Fatalf("after decide: %+v", it)
+	if it := statusOf(t, st, key); it.Status != "decided" || it.DesiredMethod != "" || it.Manager != "" {
+		t.Fatalf("after yes: %+v", it)
 	}
 	if q, _ := st.QueueList("queued"); len(q) != 0 {
-		t.Fatalf("decided item still listed as queued: %v", q)
+		t.Fatalf("accepted item still listed as queued: %v", q)
 	}
 	if d, _ := st.QueueList("decided"); len(d) != 1 {
-		t.Fatalf("decided item missing from decided list: %v", d)
+		t.Fatalf("accepted item missing from the Desk: %v", d)
 	}
-	// A stale second decision is a conflict, not a silent overwrite.
-	if err := st.QueueDecide(key, "B", ""); !errors.Is(err, ErrConflict) {
-		t.Fatalf("second decide = %v, want ErrConflict", err)
-	}
-	if it := statusOf(t, st, key); it.DesiredMethod != "D" {
-		t.Fatalf("conflicting decide changed the method: %+v", it)
-	}
-	// Manager only sticks to via-manager decisions.
-	k2 := seedQueued(t, st, "DL2ZZZ", "20240102")
-	if err := st.QueueDecide(k2, "M", "k2abc"); err != nil {
-		t.Fatal(err)
-	}
-	if it := statusOf(t, st, k2); it.Manager != "K2ABC" {
-		t.Fatalf("manager = %q", it.Manager)
-	}
-	if err := st.QueueDecide(seedQueued(t, st, "DL3YYY", "20240103"), "X", ""); err == nil {
-		t.Fatal("bogus method accepted")
+	// A stale second "yes" is a conflict, not a silent no-op.
+	if err := st.QueueAccept(key); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second yes = %v, want ErrConflict", err)
 	}
 }
 
-func TestQueueWrittenWithoutRoute(t *testing.T) {
+func TestQueueWrittenNowRecordsBureauOrDirect(t *testing.T) {
 	st := openTemp(t)
 	key := seedQueued(t, st, "DL1ABC", "20240101")
-	if err := st.QueueWritten(key); err != nil {
+	// Written now needs a route, and never via a manager.
+	if err := st.QueueWritten(key, Route{}); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("written without route = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueueWritten(key, Route{Method: "M", Via: "D", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("written now via manager = %v, want ErrBadRoute", err)
+	}
+	if it := statusOf(t, st, key); it.Status != "queued" {
+		t.Fatalf("a rejected route must not move the card: %+v", it)
+	}
+	if err := st.QueueWritten(key, Route{Method: "b"}); err != nil {
 		t.Fatal(err)
 	}
 	it := statusOf(t, st, key)
-	if it.Status != "sent" || it.DesiredMethod != "W" || !it.SentAt.Valid {
-		t.Fatalf("after written: %+v", it)
+	if it.Status != "sent" || it.DesiredMethod != "B" || it.SendVia != "B" || it.Note != "written now" || !it.SentAt.Valid {
+		t.Fatalf("after written now: %+v", it)
 	}
 	q, _ := st.GetQSO(key)
-	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "" || q.QSLSDateLocal.String == "" {
+	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "B" || q.QSLSDateLocal.String == "" {
 		t.Fatalf("local sent state: %+v", q)
 	}
 	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
 		t.Fatalf("pending push = %d, want 1", len(pend))
 	}
-	if err := st.QueueWritten(key); !errors.Is(err, ErrConflict) {
+	if err := st.QueueWritten(key, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("written twice = %v, want ErrConflict", err)
 	}
 }
 
-func TestQueueWrittenAndPrintedKeepDecidedRoute(t *testing.T) {
+func TestQueueWrittenAndPrintedRecordDeskRoute(t *testing.T) {
 	st := openTemp(t)
 	kw := seedQueued(t, st, "DL1ABC", "20240101")
 	kp := seedQueued(t, st, "DL2ZZZ", "20240102")
 	for _, k := range []string{kw, kp} {
-		if err := st.QueueDecide(k, "D", ""); err != nil {
+		if err := st.QueueAccept(k); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// Printing needs a decided card.
-	if err := st.QueuePrinted(seedQueued(t, st, "DL3YYY", "20240103")); !errors.Is(err, ErrConflict) {
-		t.Fatalf("print of undecided card = %v, want ErrConflict", err)
+	// Printing needs a Desk card.
+	if err := st.QueuePrinted(seedQueued(t, st, "DL3YYY", "20240103"), Route{Method: "D"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("print of an Inbox card = %v, want ErrConflict", err)
 	}
-	if err := st.QueueWritten(kw); err != nil {
+	// A manager route needs the manager and how the card travels.
+	if err := st.QueuePrinted(kp, Route{Method: "M", Via: "B"}); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("manager route without call = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueuePrinted(kp, Route{Method: "M", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("manager route without bureau/direct = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueueWritten(kw, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(kp); err != nil {
+	if err := st.QueuePrinted(kp, Route{Method: "m", Via: "b", Manager: " k2abc "}); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{kw, kp} {
-		it := statusOf(t, st, k)
-		if it.Status != "sent" || it.DesiredMethod != "D" {
-			t.Fatalf("%s: %+v", k, it)
-		}
-		q, _ := st.GetQSO(k)
-		if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
-			t.Fatalf("%s local sent state: %+v", k, q)
-		}
+	if it := statusOf(t, st, kw); it.Status != "sent" || it.DesiredMethod != "D" || it.SendVia != "D" || it.Note != "" || it.PrintedAt.Valid {
+		t.Fatalf("written at the Desk: %+v", it)
 	}
-	if !statusOf(t, st, kp).PrintedAt.Valid || statusOf(t, st, kw).PrintedAt.Valid {
-		t.Fatal("printed_at must be set for print only")
+	if it := statusOf(t, st, kp); it.Status != "sent" || it.DesiredMethod != "M" || it.SendVia != "B" || it.Manager != "K2ABC" || !it.PrintedAt.Valid {
+		t.Fatalf("printed via manager: %+v", it)
+	}
+	// The manager card travelled via the bureau: that is its QSL_SENT_VIA.
+	if q, _ := st.GetQSO(kp); q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "B" {
+		t.Fatalf("manager card local sent state: %+v", q)
+	}
+}
+
+func TestQueueDiscardBacklog(t *testing.T) {
+	st := openTemp(t)
+	old := seedQueued(t, st, "DL1ABC", "20240101")
+	forced := seedQueued(t, st, "DL2ZZZ", "20240102")
+	accepted := seedQueued(t, st, "DL3YYY", "20240103")
+	fresh := seedQueued(t, st, "DL4XXX", "20240301")
+	db := st.(*SQLiteStore).db
+	if _, err := db.Exec(`UPDATE qsl_work_queue SET override_reason='override: QSL! in notes' WHERE qsl_key=?`, forced); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueAccept(accepted); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.QueueDiscardBacklog("20240201")
+	if err != nil || n != 1 {
+		t.Fatalf("discard = %d, %v; want 1", n, err)
+	}
+	if it := statusOf(t, st, old); it.Status != "skipped" || it.DesiredMethod != "N" || it.Note != "backlog" {
+		t.Fatalf("backlog item: %+v", it)
+	}
+	if it := statusOf(t, st, forced); it.Status != "queued" {
+		t.Fatalf("an override QSO stays in the Inbox: %+v", it)
+	}
+	if it := statusOf(t, st, accepted); it.Status != "decided" {
+		t.Fatalf("a Desk card is not backlog: %+v", it)
+	}
+	if it := statusOf(t, st, fresh); it.Status != "queued" {
+		t.Fatalf("a QSO after the cutoff stays: %+v", it)
+	}
+	var events int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsl_events WHERE qsl_key=? AND note LIKE 'backlog%'`, old).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("backlog event = %d, %v", events, err)
+	}
+	// Reopenable like any decision.
+	if _, err := st.QueueReopen(old); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, old); it.Status != "queued" || it.Note != "" {
+		t.Fatalf("reopened backlog item: %+v", it)
 	}
 }
 
@@ -491,7 +533,7 @@ func TestQueueDeclineBackAndReopen(t *testing.T) {
 	if err := st.QueueBack(key); !errors.Is(err, ErrConflict) {
 		t.Fatalf("back from queued = %v, want ErrConflict", err)
 	}
-	if err := st.QueueDecide(key, "B", ""); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.QueueBack(key); err != nil {
@@ -514,7 +556,7 @@ func TestQueueDeclineBackAndReopen(t *testing.T) {
 	}
 
 	// Reopening a sent card clears the unpushed local sent state.
-	if err := st.QueueWritten(key); err != nil {
+	if err := st.QueueWritten(key, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
 	if pushed, err := st.QueueReopen(key); err != nil || pushed {
@@ -535,10 +577,10 @@ func TestQueueDeclineBackAndReopen(t *testing.T) {
 func TestQueueReopenReportsAlreadyPushed(t *testing.T) {
 	st := openTemp(t)
 	key := seedQueued(t, st, "DL1ABC", "20240101")
-	if err := st.QueueDecide(key, "B", ""); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted(key); err != nil {
+	if err := st.QueuePrinted(key, Route{Method: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	pend, _ := st.PendingPushBack()
@@ -555,7 +597,7 @@ func TestQueueListNewestFirstAndCounts(t *testing.T) {
 	old := seedQueued(t, st, "DL1ABC", "20240101")
 	mid := seedQueued(t, st, "DL2ZZZ", "20240201")
 	newest := seedQueued(t, st, "DL3YYY", "20240301")
-	if err := st.QueueDecide(mid, "D", ""); err != nil {
+	if err := st.QueueAccept(mid); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.QueueList("queued", "decided")
@@ -565,7 +607,7 @@ func TestQueueListNewestFirstAndCounts(t *testing.T) {
 	if q, d, p, err := st.QueueCounts(); err != nil || q != 2 || d != 1 || p != 0 {
 		t.Fatalf("counts = %d/%d/%d, %v", q, d, p, err)
 	}
-	if err := st.QueueWritten(old); err != nil {
+	if err := st.QueueWritten(old, Route{Method: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	if q, d, p, _ := st.QueueCounts(); q != 1 || d != 1 || p != 1 {
@@ -576,13 +618,13 @@ func TestQueueListNewestFirstAndCounts(t *testing.T) {
 func TestEnqueueDoesNotClobberDecision(t *testing.T) {
 	st := openTemp(t)
 	key := seedQueued(t, st, "DL1ABC", "20240101")
-	if err := st.QueueDecide(key, "D", ""); err != nil {
+	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Enqueue(&QueueItem{QSLKey: key, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if it := statusOf(t, st, key); it.Status != "decided" || it.DesiredMethod != "D" {
+	if it := statusOf(t, st, key); it.Status != "decided" {
 		t.Fatalf("re-enqueue reset the decision: %+v", it)
 	}
 }
@@ -643,7 +685,10 @@ func TestCallHistoryBaseCallAndQueueState(t *testing.T) {
 	if err := st.Enqueue(&QueueItem{QSLKey: k1, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueueDecide(k1, "M", "k2abc"); err != nil {
+	if err := st.QueueAccept(k1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueuePrinted(k1, Route{Method: "M", Via: "D", Manager: "k2abc"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -662,7 +707,7 @@ func TestCallHistoryBaseCallAndQueueState(t *testing.T) {
 		}
 	}
 	hist, _ := st.CallHistory("DL1ABC", 10)
-	if h := hist[2]; h.QueueStatus != "decided" || h.DesiredMethod != "M" || h.Manager != "K2ABC" {
+	if h := hist[2]; h.QueueStatus != "sent" || h.DesiredMethod != "M" || h.Manager != "K2ABC" {
 		t.Fatalf("queue state missing from history row: %+v", h)
 	}
 	if h := hist[0]; h.QueueStatus != "" {

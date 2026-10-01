@@ -25,11 +25,12 @@ import (
 
 // The card lifecycle (queue status):
 //
-//	queued   new QSO, no decision yet          -> decision queue (/queue, /decide)
-//	decided  Bureau/Direct/Manager chosen, card not produced yet
-//	                                           -> work queue (/work, /work/card)
-//	sent     card produced (printed or written) -> /done; pushed to Clublog
-//	skipped  "no card" decision                -> /done
+//	queued   new QSO, no decision yet          -> Inbox (/queue, /decide)
+//	decided  "yes, card"; the route is chosen when the card is finished
+//	                                           -> Desk (/work, /work/card)
+//	sent     card produced (printed or written, with its route; or written
+//	         now in the Inbox, bureau/direct) -> /done; pushed to Clublog
+//	skipped  "no card" decision (or backlog)   -> /done
 //
 // Every move goes through one guarded store transition (store.Queue*), which
 // answers ErrConflict (HTTP 409) when the card is no longer where the page
@@ -62,8 +63,13 @@ type QueueRow struct {
 	Info         *store.StationInfo
 	Suggested    string // method suggestion from qsldetermine ("N" when paper refused); never a decision
 	Chosen       string // the operator's recorded decision (empty while undecided)
-	MgrPrefill   string // manager callsign offered next to the M button (a valid suggested route)
+	MgrPrefill   string // manager callsign for the manager routes (recorded, else a valid suggested route)
 	ShowCheckbox bool   // batch-selection checkbox (queue/work list pages only)
+
+	// Desk only: the route offered first (B, D, MD = via manager direct, MB =
+	// via manager bureau, "" = none) and where it comes from.
+	Route     string
+	RouteFrom string
 
 	// Research, filled by researchFor for the card views only (lists stay light).
 	Research *Research
@@ -111,7 +117,11 @@ func suggestFor(info *store.StationInfo) string {
 // queueRowFor assembles the full row data for one QSO. Best-effort: missing
 // station info or queue item yields a row with empty suggestion. QSO is nil
 // when the QSO row is gone.
-func (s *Server) queueRowFor(key string) *QueueRow {
+func (s *Server) queueRowFor(key string) *QueueRow { return s.buildRow(key, true) }
+
+// buildRow is queueRowFor; refresh=false skips the background QRZ lookup (for
+// scans over many items that only need the cached suggestion).
+func (s *Server) buildRow(key string, refresh bool) *QueueRow {
 	item, _ := s.store.QueueGet(key)
 	qso, _ := s.store.GetQSO(key)
 	var info *store.StationInfo
@@ -120,7 +130,7 @@ func (s *Server) queueRowFor(key string) *QueueRow {
 		// Best-effort refresh: if the station info is missing or stale, look it
 		// up asynchronously (cache TTL, in-flight dedup and failure cooldown
 		// apply). The row is updated via the station_updated SSE event.
-		if s.refresher != nil && (info == nil || s.refresher.IsStale(info)) {
+		if refresh && s.refresher != nil && (info == nil || s.refresher.IsStale(info)) {
 			go s.refresher.Get(context.Background(), qso.Call)
 		}
 	}
@@ -133,7 +143,60 @@ func (s *Server) queueRowFor(key string) *QueueRow {
 	if row.MgrPrefill == "" && row.Suggested == "M" && info != nil && qsldetermine.LooksLikeCallsign(info.QSLRoute) {
 		row.MgrPrefill = strings.ToUpper(info.QSLRoute)
 	}
+	if item != nil && item.Status == "decided" {
+		row.Route, row.RouteFrom = preselectRoute(row)
+	}
 	return row
+}
+
+// routeCode is the form value of a route: B, D, MD (via manager, direct) or MB
+// (via manager, bureau); "" when there is none.
+func routeCode(method, via string) string {
+	switch strings.ToUpper(method) {
+	case "B", "D":
+		return strings.ToUpper(method)
+	case "M":
+		if strings.ToUpper(via) == "B" {
+			return "MB"
+		}
+		return "MD"
+	}
+	return ""
+}
+
+// preselectRoute picks the route the Desk offers first: one recorded earlier
+// (cards decided before the Inbox stopped asking for routes carry one), else
+// the QRZ suggestion. The operator confirms it by printing or writing.
+func preselectRoute(row *QueueRow) (code, from string) {
+	if row.Item != nil {
+		if c := routeCode(row.Item.DesiredMethod, row.Item.SendVia); c != "" {
+			return c, "chosen earlier"
+		}
+	}
+	switch row.Suggested {
+	case "B", "D":
+		return row.Suggested, "QRZ suggestion"
+	case "M":
+		if row.MgrPrefill != "" {
+			return "MD", "QRZ suggestion"
+		}
+	}
+	return "", ""
+}
+
+// routeName spells out a route code.
+func routeName(code string) string {
+	switch code {
+	case "B":
+		return "Bureau"
+	case "D":
+		return "Direct"
+	case "MD":
+		return "Via manager, direct"
+	case "MB":
+		return "Via manager, bureau"
+	}
+	return "Route open"
 }
 
 // rowsFor builds rows for the listed items, skipping those whose QSO is gone.
@@ -190,7 +253,10 @@ func queueStateText(status, method, manager string) string {
 	case "queued":
 		return "awaiting decision"
 	case "decided":
-		return "work queue: " + strings.ToLower(methodName(method))
+		if c := routeCode(method, ""); c != "" {
+			return "at the Desk: " + strings.ToLower(routeName(c))
+		}
+		return "at the Desk"
 	case "skipped":
 		return "no card"
 	case "sent":
@@ -252,6 +318,9 @@ func (s *Server) researchFor(row *QueueRow) {
 			}
 			if method != "" {
 				line.Sent += " via " + methodName(method)
+			}
+			if h.DesiredMethod == "M" && h.Manager != "" && method != "M" {
+				line.Sent += ", manager " + h.Manager
 			}
 			if sentBadge == nil {
 				sentBadge = &Badge{Kind: "sent", Text: "card already " + line.Sent}
@@ -403,20 +472,30 @@ func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPa
 
 // --- (b) work queue ---
 
-// WorkGroup is one route's slice of the work queue.
+// WorkGroup is one slice of the Desk list, by the route offered first.
 type WorkGroup struct {
-	Method string // B / D / M
+	Method string // filter value: O (route open), D, M, B
 	Title  string
 	Rows   []*QueueRow
 }
 
 var workGroupOrder = []WorkGroup{
+	{Method: "O", Title: "Route open"},
 	{Method: "D", Title: "Direct"},
 	{Method: "M", Title: "Via manager"},
 	{Method: "B", Title: "Bureau"},
 }
 
-// pageWork lists the decided cards awaiting production, grouped by route.
+// routeGroup maps a route code to its Desk group / filter value.
+func routeGroup(code string) string {
+	if code == "" {
+		return "O"
+	}
+	return code[:1]
+}
+
+// pageWork lists the Desk cards awaiting production, grouped by the route
+// offered first (recorded earlier, else the QRZ suggestion).
 func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.QueueList("decided")
 	if err != nil {
@@ -427,7 +506,7 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	var groups []WorkGroup
 	for _, g := range workGroupOrder {
 		for _, row := range rows {
-			if row.Item.DesiredMethod == g.Method {
+			if routeGroup(row.Route) == g.Method {
 				g.Rows = append(g.Rows, row)
 			}
 		}
@@ -457,10 +536,10 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if filter == "B" || filter == "D" || filter == "M" {
+	if filter == "B" || filter == "D" || filter == "M" || filter == "O" {
 		var kept []*store.QueueItem
 		for _, it := range items {
-			if it.DesiredMethod == filter {
+			if row := s.buildRow(it.QSLKey, false); routeGroup(row.Route) == filter {
 				kept = append(kept, it)
 			}
 		}
@@ -498,8 +577,12 @@ type DoneRow struct {
 
 func outcomeOf(it *store.QueueItem) string {
 	switch {
+	case it.Status == "skipped" && it.Note == "backlog":
+		return "no card (backlog)"
 	case it.Status == "skipped":
 		return "no card"
+	case it.Note == "sent elsewhere":
+		return "sent elsewhere (per Clublog)"
 	case it.DesiredMethod == "W":
 		return "written on the spot"
 	}
@@ -507,12 +590,23 @@ func outcomeOf(it *store.QueueItem) string {
 	if it.PrintedAt.Valid {
 		how = "printed"
 	}
+	if it.Note == "written now" {
+		how = "written now"
+	}
 	name := map[string]string{"B": "Bureau", "D": "Direct", "M": "via manager"}[it.DesiredMethod]
 	if name == "" {
 		name = "sent"
 	}
-	if it.DesiredMethod == "M" && it.Manager != "" {
-		name += " " + it.Manager
+	if it.DesiredMethod == "M" {
+		if it.Manager != "" {
+			name += " " + it.Manager
+		}
+		switch it.SendVia {
+		case "B":
+			name += " (bureau)"
+		case "D":
+			name += " (direct)"
+		}
 	}
 	return name + ", " + how
 }
@@ -729,44 +823,57 @@ func (s *Server) queueErr(w http.ResponseWriter, err error) {
 		http.Error(w, "This card was already handled (stale page?) - reload the list.", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, store.ErrBadRoute) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
-// decideOne records a Bureau/Direct/Via-manager decision. Via manager needs
-// the manager's callsign: the form value, else a valid suggested route.
-func (s *Server) decideOne(key, method, managerInput string) error {
-	method = strings.ToUpper(strings.TrimSpace(method))
-	manager := ""
-	switch method {
+// parseRoute turns a route code (B, D, MD, MB) and a manager callsign into a
+// store route.
+func parseRoute(code, manager string) (store.Route, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	switch code {
 	case "B", "D":
-	case "M":
-		manager = strings.ToUpper(strings.TrimSpace(managerInput))
-		if manager == "" {
-			manager = s.queueRowFor(key).MgrPrefill
-		}
+		return store.Route{Method: code}, nil
+	case "MD", "MB":
+		manager = strings.ToUpper(strings.TrimSpace(manager))
 		if !qsldetermine.LooksLikeCallsign(manager) {
-			return errNeedManager
+			return store.Route{}, errNeedManager
 		}
-	default:
-		return errBadMethod
+		return store.Route{Method: "M", Via: code[1:], Manager: manager}, nil
+	case "":
+		return store.Route{}, errNeedRoute
 	}
-	return s.store.QueueDecide(key, method, manager)
+	return store.Route{}, errBadRoute
+}
+
+// routeFrom reads one card's route from the form: the per-row fields
+// route:<key> / manager:<key> (Desk list, also posted with its batch form),
+// else route= / manager=.
+func routeFrom(r *http.Request, key string) (store.Route, error) {
+	code, mgr := r.FormValue("route:"+key), r.FormValue("manager:"+key)
+	if code == "" {
+		code = r.FormValue("route")
+	}
+	if mgr == "" {
+		mgr = r.FormValue("manager")
+	}
+	return parseRoute(code, mgr)
 }
 
 var (
-	errNeedManager = errors.New("Via manager needs the manager's callsign - type it next to the M button.")
-	errBadMethod   = errors.New("method must be B, D or M (None = no card, Written = card written by hand)")
+	errNeedManager = errors.New("Via manager needs the manager's callsign - type it in the manager field.")
+	errNeedRoute   = errors.New("Choose a route first: bureau, direct, or via manager (direct or bureau).")
+	errBadRoute    = errors.New("route must be B, D, MD or MB")
 )
 
-// htmxQueueDecide: Bureau / Direct / Via manager. The card leaves the decision
-// queue and enters the work queue.
-func (s *Server) htmxQueueDecide(w http.ResponseWriter, r *http.Request) {
+// htmxQueueYes: "yes, card". The card leaves the Inbox for the Desk, where
+// its route is chosen.
+func (s *Server) htmxQueueYes(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
-	if err := s.decideOne(key, r.FormValue("method"), r.FormValue("manager")); err != nil {
-		if errors.Is(err, errNeedManager) || errors.Is(err, errBadMethod) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	if err := s.store.QueueAccept(key); err != nil {
 		s.queueErr(w, err)
 		return
 	}
@@ -783,11 +890,16 @@ func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "skipped")
 }
 
-// htmxQueueWritten: the card was filled in by hand. From the decision queue
-// it is its own outcome (no route); from the work queue it keeps the route.
+// htmxQueueWritten: the card was filled in by hand, with its route - written
+// now in the Inbox (bureau or direct) or written at the Desk.
 func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
-	if err := s.store.QueueWritten(key); err != nil {
+	rt, err := routeFrom(r, key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.store.QueueWritten(key, rt); err != nil {
 		s.queueErr(w, err)
 		return
 	}
@@ -818,11 +930,16 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "queued")
 }
 
-// htmxWorkPrint renders and prints a decided card; only a successful print
-// completes it (a printer error leaves it in the work queue).
+// htmxWorkPrint renders and prints a Desk card with its chosen route; only a
+// successful print completes it (a printer error leaves it on the Desk).
 func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
-	if err := s.printOne(key); err != nil {
+	rt, err := routeFrom(r, key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.printOne(key, rt); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			s.queueErr(w, err)
 			return
@@ -833,8 +950,8 @@ func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "sent")
 }
 
-// printOne prints the card for a decided QSO and marks it sent.
-func (s *Server) printOne(key string) error {
+// printOne prints the card for a Desk QSO and marks it sent with its route.
+func (s *Server) printOne(key string, rt store.Route) error {
 	item, err := s.store.QueueGet(key)
 	if err != nil {
 		return err
@@ -875,27 +992,34 @@ func (s *Server) printOne(key string) error {
 	}); err != nil {
 		return err
 	}
-	return s.store.QueuePrinted(key)
+	return s.store.QueuePrinted(key, rt)
 }
 
 // batchQueue applies one action to every checked row of a list page and
-// redirects back with a done/failed count. list=work selects the work queue's
-// action set; the default is the decision queue's.
+// redirects back with a done/failed count. list=work selects the Desk's
+// action set (each row's own route field); the default is the Inbox's.
 func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("action")
 	list := r.FormValue("list")
 	keys := r.Form["keys"]
 
+	withRoute := func(k string, finish func(string, store.Route) error) error {
+		rt, err := routeFrom(r, k)
+		if err != nil {
+			return err
+		}
+		return finish(k, rt)
+	}
 	var apply func(key string) (to string, err error)
 	switch {
-	case list != "work" && (action == "B" || action == "D"):
-		apply = func(k string) (string, error) { return "decided", s.decideOne(k, action, "") }
+	case list != "work" && action == "yes":
+		apply = func(k string) (string, error) { return "decided", s.store.QueueAccept(k) }
 	case action == "none":
 		apply = func(k string) (string, error) { return "skipped", s.store.QueueDecline(k) }
-	case action == "written":
-		apply = func(k string) (string, error) { return "sent", s.store.QueueWritten(k) }
+	case list == "work" && action == "written":
+		apply = func(k string) (string, error) { return "sent", withRoute(k, s.store.QueueWritten) }
 	case list == "work" && action == "print":
-		apply = func(k string) (string, error) { return "sent", s.printOne(k) }
+		apply = func(k string) (string, error) { return "sent", withRoute(k, s.printOne) }
 	case list == "work" && action == "back":
 		apply = func(k string) (string, error) { return "queued", s.store.QueueBack(k) }
 	default:

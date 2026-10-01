@@ -280,3 +280,47 @@ func TestEnqueueAllKeysAndOverrideReason(t *testing.T) {
 		t.Fatalf("second scan enqueued %v", keys2)
 	}
 }
+
+// TestDiscardBacklogOncePerCutoff: the backlog is filed as "no card" once; a
+// card the operator reopens stays in the Inbox on the next start, and only a
+// later cutoff runs the discard again.
+func TestDiscardBacklogOncePerCutoff(t *testing.T) {
+	st := newStore(t)
+	add := func(call, date string) string {
+		q := qso(call, date, "120000", "20m", "SSB")
+		if _, _, err := st.UpsertQSO(q); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
+			t.Fatal(err)
+		}
+		return q.QSLKey
+	}
+	old := add("DL1ABC", "20240101")
+	mid := add("DL2ZZZ", "20240201")
+	add("DL3YYY", "20240301")
+
+	r := &Rules{Since: "20240115"}
+	if n, err := r.DiscardBacklog(st); err != nil || n != 1 {
+		t.Fatalf("first discard = %d, %v; want 1", n, err)
+	}
+	if _, err := st.QueueReopen(old); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := r.DiscardBacklog(st); err != nil || n != 0 {
+		t.Fatalf("second start = %d, %v; want 0 (reopened card stays)", n, err)
+	}
+	if it, _ := st.QueueGet(old); it.Status != "queued" {
+		t.Fatalf("reopened backlog card was discarded again: %+v", it)
+	}
+	later := &Rules{Since: "20240215"}
+	if n, err := later.DiscardBacklog(st); err != nil || n != 2 {
+		t.Fatalf("later cutoff = %d, %v; want 2", n, err)
+	}
+	if it, _ := st.QueueGet(mid); it.Status != "skipped" || it.Note != "backlog" {
+		t.Fatalf("mid after later cutoff: %+v", it)
+	}
+	if n, err := (&Rules{}).DiscardBacklog(st); err != nil || n != 0 {
+		t.Fatalf("no cutoff = %d, %v; want 0", n, err)
+	}
+}

@@ -103,6 +103,12 @@ func main() {
 	if rules.Since != "" {
 		log.Printf("qualify: queueing QSOs from %s on (qualify.since: all lifts the cutoff)", rules.Since)
 	}
+	// One-time backlog discard (VISION A1): only QSOs from the cutoff on count.
+	if n, err := rules.DiscardBacklog(st); err != nil {
+		log.Printf("qualify: backlog discard: %v", err)
+	} else if n > 0 {
+		log.Printf("qualify: %d QSO(s) before %s were still waiting for a decision - filed as \"no card\" (backlog, reopenable under Done)", n, rules.Since)
+	}
 
 	// Station-info refresher (QRZ lookup + cache), shared by the web UI and
 	// the UDP listener so credential changes in the settings UI apply to both.

@@ -1,13 +1,13 @@
 {{define "queue_compact.html"}}<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>qslotter - Queue</title>
+<html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/live.js" defer></script>
 </head><body class="compact" data-live="list">
 <main>
-  <h2>Queue <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
-    <a href="/decide">Decide</a> <a href="/work">Work</a>
+  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
+    <a href="/decide">Decide</a> <a href="/work">Desk</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">↻</button>
     <span id="recompute-msg"></span>
   </h2>
@@ -16,20 +16,18 @@
   <form id="batch" method="post" action="/queue/batch" class="batchbar">
     <input type="hidden" name="compact" value="1">
     <select name="action">
-      <option value="B">Bureau</option>
-      <option value="D">Direct</option>
-      <option value="written">Written</option>
-      <option value="none">None</option>
+      <option value="yes">Yes</option>
+      <option value="none">No</option>
     </select>
     <button type="submit" class="mini">Apply</button>
   </form>
   <table id="queue-table" class="compact">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band/Mode</th><th>Name</th><th title="QRZ suggestion">?</th><th>Decide</th></tr></thead>
+    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band/Mode</th><th>Name</th><th title="QRZ suggestion">?</th><th>Card?</th></tr></thead>
     <tbody id="queue-body">
     {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
     </tbody>
   </table>
-  <p class="muted legend">B bureau · D direct · M via manager · &ndash; no card · Written = done on the spot</p>
+  <p class="muted legend">Yes = card (route chosen at the Desk) · No = no card. Written now: in the full view.</p>
 </main>
 <script>
 // In an app-mode window (launched with --app=...) the page may resize its

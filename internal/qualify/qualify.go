@@ -201,6 +201,28 @@ func (r *Rules) EnqueueAllKeys(st store.Store) ([]string, error) {
 	return enqueued, nil
 }
 
+// DiscardBacklog files the Inbox backlog: QSOs dated before the cutoff
+// (r.Since) that still wait for a decision become "no card" (note "backlog",
+// reopenable from Done). It runs once per cutoff - again only when the cutoff
+// moves later - so a backlog card the operator reopened stays in the Inbox.
+func (r *Rules) DiscardBacklog(st store.Store) (int, error) {
+	if r.Since == "" {
+		return 0, nil // qualify.since: all - there is no backlog
+	}
+	done, err := st.MetaGet("backlog_discarded_before")
+	if err != nil {
+		return 0, err
+	}
+	if done != "" && done >= r.Since {
+		return 0, nil
+	}
+	n, err := st.QueueDiscardBacklog(r.Since)
+	if err != nil {
+		return 0, err
+	}
+	return n, st.MetaSet("backlog_discarded_before", r.Since)
+}
+
 // reasonFor returns the override reason if the QSO was force-included via the
 // override marker; otherwise empty (normal eligibility has no reason to log).
 func reasonFor(q *store.QSO, reason string) string {

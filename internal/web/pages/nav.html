@@ -1,9 +1,9 @@
 {{define "nav"}}{{$c := counts}}<nav>
   <a href="/log">Log</a>
-  <a href="/queue" title="Decision queue, list">Queue{{if $c.New}} <span class="cnt">{{$c.New}}</span>{{end}}</a>
-  <a href="/decide" title="Decision queue, card by card">Decide</a>
-  <a href="/work" title="Work queue: cards to print or write, list">Work{{if $c.Work}} <span class="cnt">{{$c.Work}}</span>{{end}}</a>
-  <a href="/work/card" title="Work queue, card by card">Cards</a>
+  <a href="/queue" title="Inbox: card or not? List">Inbox{{if $c.New}} <span class="cnt">{{$c.New}}</span>{{end}}</a>
+  <a href="/decide" title="Inbox, card by card">Decide</a>
+  <a href="/work" title="Desk: cards to write or print, list">Desk{{if $c.Work}} <span class="cnt">{{$c.Work}}</span>{{end}}</a>
+  <a href="/work/card" title="Desk, card by card">Cards</a>
   <a href="/done" title="Finished cards">Done</a>
   <a href="/receive">Receive</a>
   <a href="/settings">Settings</a>

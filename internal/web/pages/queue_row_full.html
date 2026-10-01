@@ -1,16 +1,16 @@
-{{define "row_actions"}}<td class="actions">
-  <span class="stamps" role="group" aria-label="Decide {{.QSO.Call}}">
-    <button type="button" class="stamp b{{if eq .Suggested "B"}} suggested{{end}}" title="Bureau" aria-label="Bureau"
-            hx-post="/queue/decide?method=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">B</button>
-    <button type="button" class="stamp d{{if eq .Suggested "D"}} suggested{{end}}" title="Direct" aria-label="Direct"
-            hx-post="/queue/decide?method=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">D</button>
-    <span class="mgr"><button type="button" class="stamp m{{if eq .Suggested "M"}} suggested{{end}}" title="Via manager - type the manager's callsign" aria-label="Via manager"
-            hx-post="/queue/decide?method=M&amp;key={{q .Item.QSLKey}}" hx-include="closest .mgr" hx-target="closest tr" hx-swap="outerHTML">M</button><input type="text" class="mgr-in" name="manager" size="7" maxlength="14" placeholder="mgr" value="{{.MgrPrefill}}" aria-label="Manager callsign" onkeydown="if(event.key==='Enter'){event.preventDefault();this.previousElementSibling.click()}"></span>
+{{define "row_yesno"}}<span class="stamps" role="group" aria-label="Card for {{.QSO.Call}}?">
+    <button type="button" class="stamp yes{{if or (eq .Suggested "B") (eq .Suggested "D") (eq .Suggested "M")}} suggested{{end}}" title="Yes, card - goes to the Desk, where the route is chosen" aria-label="Yes, card"
+            hx-post="/queue/yes?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Yes</button>
     <button type="button" class="stamp none{{if eq .Suggested "N"}} suggested{{end}}" title="No card" aria-label="No card"
-            hx-post="/queue/none?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">&ndash;</button>
-  </span>
-  <span class="fulfil">
-    <button type="button" class="mini" hx-post="/queue/written?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML" title="Card written by hand on the spot - done, nothing to send">Written</button>
+            hx-post="/queue/none?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">No</button>
+  </span>{{end}}
+
+{{define "row_actions"}}<td class="actions">
+  {{template "row_yesno" .}}
+  <span class="fulfil written-now" role="group" aria-label="Written now">
+    <span class="lbl" title="Card filled in during the QSO - done, never shown again">written now:</span>
+    <button type="button" class="mini" title="Written now, goes via the bureau - done" hx-post="/queue/written?route=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Bureau</button>
+    <button type="button" class="mini" title="Written now, goes direct - done" hx-post="/queue/written?route=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">Direct</button>
   </span>
 </td>{{end}}
 

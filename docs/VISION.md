@@ -86,12 +86,12 @@ down to it) it is a master-detail view.
 
 | # | Requirement | Status |
 |---|---|---|
-| A1 | Holds the QSOs not qualified yet, from the cutoff (`qualify.since`, default: the day qslotter first ran) on, live from Log4OM. Reverse chronological: newest on top, older below. The **backlog** before the cutoff is **discarded** once: every QSO before the cutoff still waiting for a decision is filed as "no card" (note "backlog", reopenable from Done); older QSOs never enter. Only new QSOs count. | partial: cutoff and newest-first done (rows re-entering live land on top until reload); the one-time backlog discard is missing - bwpc has 2249 waiting items from the 2026-09-29 build |
+| A1 | Holds the QSOs not qualified yet, from the cutoff (`qualify.since`, default: the day qslotter first ran) on, live from Log4OM. Reverse chronological: newest on top, older below. The **backlog** before the cutoff is **discarded** once: every QSO before the cutoff still waiting for a decision is filed as "no card" (note "backlog", reopenable from Done); older QSOs never enter. Only new QSOs count. | done (2026-10-01): cutoff, newest-first, and the one-time backlog discard at startup (`qualify.DiscardBacklog`: once per cutoff, override-marker QSOs stay, a reopened card is not discarded again); rows re-entering live land on top until reload |
 | A1b | Ideally also the QSO *in progress* ("eventuell", "idealerweise"), so a card filled in during a rag-chew can be booked at once. **Source: the logger's "current contact" broadcast over UDP**, in two accepted forms: (1) the **bare callsign** as plain text (Log4OM's CALLSIGN service, e.g. `VU2ATN`), (2) the **standard N1MM `<lookupinfo>` XML** (N1MM-family loggers). The UDP listener tells the datagrams apart: ADIF = QSO saved, plain callsign or `<lookupinfo>` = current contact; other N1MM XML is ignored. The Go decoder in `stationa/logger-spot-bridge` handles both forms and can be reused. Shape: the Inbox shows the current contact on top with the research panel (QRZ, history); "written now" is remembered for that call and applied to the next logged QSO with it (the QSL key - date, time, band - exists only once the QSO is saved). | missing (today the UDP listener expects ADIF, skips N1MM XML and logs a bare callsign as a parse error) |
-| A2 | Inbox decision: **yes, card** (goes to the Desk, no route yet), **no card**, or **written now**. | partial: today every "yes" must carry a route (B/D/M buttons); there is no route-less "yes" |
-| A3 | **Written now**: the card was filled in during a rag-chew QSO - "it's done, I never want to see it again". It records its route: **bureau** or **direct** (no manager, no "other"); supersedes the 2026-09-30 decision "Written is its own outcome". | partial: one route-less Written (stored as `W`, pushed as `QSL_SENT=Y` alone) |
+| A2 | Inbox decision: **yes, card** (goes to the Desk, no route yet), **no card**, or **written now**. | done (2026-10-01): `/queue/yes` -> Desk with the route open |
+| A3 | **Written now**: the card was filled in during a rag-chew QSO - "it's done, I never want to see it again". It records its route: **bureau** or **direct** (no manager, no "other"); supersedes the 2026-09-30 decision "Written is its own outcome". | done (2026-10-01): bureau or direct, `note=written now`; `w` then `b`/`d` on the card view (two keys, so a slip cannot mark a card sent) |
 | A4 | Whatever the decision, the QSO leaves the view at once and the next one is offered. | done |
-| A5 | **Compact list** for operating, e.g. mid-pileup, little screen space: **yes / no** only ("ja nein ja nein"). | partial: compact rows carry route buttons (B/D/M/-/Written) |
+| A5 | **Compact list** for operating, e.g. mid-pileup, little screen space: **yes / no** only ("ja nein ja nein"). | done (2026-10-01) |
 | A6 | **Master-detail** for deliberation: the list and the selected QSO's details *in one view*. The list only selects (arrow keys); decisions are made in the detail pane only (buttons/keys: yes / no / written now via bureau / direct), after which the selection moves to the next QSO below. | missing: list (`/queue`) and card view (`/decide`, prev/next; after a decision it shows the newest remaining card, not the next one down) are separate pages |
 | A7 | Detail content: QRZ data (preferred route - direct or bureau -, manager, address), the QSO data, the history: worked before? sent a card before? received one? | done on `/decide` (research panel), with limits: history covers the 12 newest QSOs with the station; the shown QSO's own received state is not displayed. Must move into the master-detail view |
 
@@ -105,7 +105,7 @@ radio. Here the route is chosen.
 | B1 | Work through card by card; when one is done the next appears without paging. | done (`/work/card`) |
 | B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | partial: card-by-card view done (`/work/card`); no master-detail (`/work` list is a separate page) |
 | B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | partial: address only for Direct (via manager: manager call + QRZ link, no address); no freq / RST rcvd / notes; no research panel (history, QRZ indicators); no live refresh when a QRZ lookup finishes |
-| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | partial: the route comes from the Inbox decision and cannot be chosen or changed at the Desk; no manager sub-route |
+| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | partial (2026-10-01): bureau / direct / via manager direct / via manager bureau chosen at the Desk (card view radios `b d m v`, list: a route field per row, also used by batch Print/Written), preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it. Open: OQRS hint, the manager's address |
 | B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | missing |
 | B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. | done: card by card (`p` on `/work/card`) or batch Print of ticked rows on `/work`; one print job per card, no select-all |
 | B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | partial: store and `/queue/none` (and batch `none`) accept decided cards, but there is no button on the work card or the `/work` list |
@@ -286,23 +286,22 @@ covered by tests; the browser flow was walked end to end.
 | Decision queue: a decided card leaves the queue at once | **done** (the 2026-09-30 route stamps B / D / M / Written in the queue were superseded 2026-10-01, see A2/A3/B4) | `QueueDecide/Written/Decline` transitions; `TestListDecideLeavesQueue` |
 | Work queue: decided cards, one at a time, Print or Written, next appears | **done** | `/work`, `/work/card`; `QueuePrinted` only after a successful print |
 | Done view + undo (Back, Reopen) | **done** | `/done`, `QueueBack`, `QueueReopen` (warns if Clublog already has it) |
-| Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done** for bureau/direct (manager cards push only `QSL_VIA` today; `QSL_SENT_VIA` B/D for them comes with B4) | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
+| Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done**: `QSL_SENT_VIA` = B/D for every card, plus `QSL_VIA` = the manager for manager routes (2026-10-01) | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
 | Suggestions that mislead less | **done** | `qsldetermine`: callsign-only manager, free-text keywords, QRZ 1/0 flags, negations |
 | Compact decision window, tray launcher, background loop | **done** (compact rows still carry B/D/M/-/Written; yes/no only is open, A5) | unchanged from 2026-09-29 |
 
 Open after the operator walkthrough of 2026-10-01 (section 2, status
 `partial`/`missing`):
 
-- A1/A1b: one-time backlog discard (2249 items on bwpc); the QSO in progress
-  (current contact: bare callsign or N1MM `<lookupinfo>`).
-- A2/A3/A5: Inbox decides only *whether* (yes / no / written now via bureau or
-  direct); compact rows yes/no only.
+- A1b: the QSO in progress (current contact: bare callsign or N1MM
+  `<lookupinfo>`). (A1 backlog discard, A2/A3/A5 Inbox yes / no / written now:
+  done 2026-10-01.)
 - A6/B2: master-detail views for Inbox and Desk (list selects, detail decides).
 - A7/B3: research panel limits (12 newest QSOs; own received state) and the
   panel on the work card; address for manager cards.
-- B4/B4b/B6/B9: route chosen at the Desk (incl. manager direct/bureau);
-  "requested (OQRS)" with channel and note; "no card" button; one card for
-  several QSOs with a station.
+- B4b/B6/B9: "requested (OQRS)" with channel and note; "no card" button on
+  the card view; one card for several QSOs with a station. (B4 route choice at
+  the Desk: done 2026-10-01, without the OQRS hint and the manager's address.)
 - C1-C5: reply due? answer right there (written now / print / later); requested
   cards as *expected*, overdue after 12 weeks; portable calls on `/receive`.
 - D1-D3: three-area top menu; `/` opens the Inbox; German/English UI.
@@ -347,7 +346,8 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 
 9. Inbox decides *whether*: yes (route-less, to the Desk) / no / written now
    via bureau or direct; compact rows yes/no; one-time backlog discard
-   (A1, A2, A3, A5).
+   (A1, A2, A3, A5). **Done 2026-10-01**, together with the route choice at
+   the Desk (B4 core) - without it a "yes" card could not get a route.
 10. Master-detail views for Inbox and Desk - the list selects, the detail
     decides; compact list stays for operating (A6, B2).
 11. Desk: route chosen when finishing (bureau, direct, manager direct, manager
@@ -445,6 +445,12 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-10-01 — Replying to an incoming card:** written now, print, or later
   via the Desk. OQRS requests are marked overdue after 12 weeks.
 - **2026-10-01 — Multilingual UI** (German and English, extensible).
+- **2026-10-01 — Route data model.** `desired_method` = B / D / M (empty while
+  a "yes" card waits at the Desk), `send_via` = how the card travelled (B/D,
+  also for manager cards), `manager`; `note` marks "written now", "backlog",
+  "sent elsewhere". `qsl_sent_method_local` holds B/D only (pushed as
+  `QSL_SENT_VIA`); cards from older builds keep `M`/`W`. Desk keys: `b d m v`
+  pick the route, `p`/`w` finish; Inbox "written now" is `w` then `b`/`d`.
 
 - **2026-10-01 — Desktop app: own window via glaze, one binary per OS.** The
   browser was the fiddly part (start, window size, lost among tabs). A native
