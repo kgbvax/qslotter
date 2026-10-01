@@ -123,16 +123,8 @@ func (p *windowsPrinter) PrintPDF(path, printerName string, opts Options) error 
 		}
 		printerName = d
 	}
-	settings := []string{"noscale", "disable-auto-rotation"}
-	if opts.PaperWMM > 0 && opts.PaperHMM > 0 {
-		// SumatraPDF uses "paper=Wmm x Hmm" (spaces around x are required).
-		settings = append(settings, fmt.Sprintf("paper=%.0fmm x %.0fmm", opts.PaperWMM, opts.PaperHMM))
-	}
-	if opts.Copies > 1 {
-		settings = append(settings, fmt.Sprintf("%dx", opts.Copies))
-	}
 	args := []string{"-print-to", printerName, "-silent", "-exit-when-done",
-		"-print-settings", strings.Join(settings, ","), path}
+		"-print-settings", sumatraSettings(opts), path}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
@@ -144,4 +136,19 @@ func (p *windowsPrinter) PrintPDF(path, printerName string, opts Options) error 
 		return fmt.Errorf("sumatra print: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// sumatraSettings returns the SumatraPDF -print-settings value for opts.
+func sumatraSettings(opts Options) string {
+	// One PDF page is one physical card: "simplex" keeps a duplex printer
+	// from putting the next card on the back of this one.
+	settings := []string{"noscale", "disable-auto-rotation", "simplex"}
+	if opts.PaperWMM > 0 && opts.PaperHMM > 0 {
+		// SumatraPDF uses "paper=Wmm x Hmm" (spaces around x are required).
+		settings = append(settings, fmt.Sprintf("paper=%.0fmm x %.0fmm", opts.PaperWMM, opts.PaperHMM))
+	}
+	if opts.Copies > 1 {
+		settings = append(settings, fmt.Sprintf("%dx", opts.Copies))
+	}
+	return strings.Join(settings, ",")
 }

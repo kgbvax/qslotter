@@ -56,12 +56,18 @@ func (p *unixPrinter) PrintPDF(path, printerName string, opts Options) error {
 		}
 		printerName = d
 	}
+	_, err := run(exec.Command("lp", lpArgs(path, printerName, opts)...))
+	return err
+}
+
+// lpArgs returns the lp arguments that print the PDF at path on printerName.
+func lpArgs(path, printerName string, opts Options) []string {
 	media := fmt.Sprintf("Custom.%.0fx%.0fmm", opts.PaperWMM, opts.PaperHMM)
-	args := []string{"-d", printerName, "-o", "media=" + media}
+	// One PDF page is one physical card: never let a duplex printer put the
+	// next card on the back of this one.
+	args := []string{"-d", printerName, "-o", "media=" + media, "-o", "sides=one-sided"}
 	if opts.Copies > 1 {
 		args = append(args, "-n", fmt.Sprintf("%d", opts.Copies))
 	}
-	args = append(args, path)
-	_, err := run(exec.Command("lp", args...))
-	return err
+	return append(args, path)
 }
