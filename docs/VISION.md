@@ -4,6 +4,12 @@ Consolidated product vision and requirements for qslotter. This reconciles the
 original v1 scope (see README.md) with the operator-workflow requirements added
 September 2026. Where README and this document disagree, this document wins.
 
+Big Idea:
+qslotter is scratching the itch of DL9ET. He likes paper QSLs bt found that the handling of paper QSL in his favorite logger is way to cumbersome for his needs. Other loggers may have better QSL handling but then they have other downsides. The realisation is that his dream log does not exist. The idea behind qslotter is to just do the QSL cards handling o in a very streamlined way. qslotter leaves all digital QSL handling to the log (or other solutions), it is only concerned with paper QSL handling.
+
+In order to perform this, qslotter needs to be aware of what is being logged.  This happens in two ways: Realtime through the logs broadcast and consolidation via clublog- Clublog because it is supported by most loggers.
+
+
 ## 1. Product thesis
 
 qslotter is a local QSL workbench. It mirrors the log in real time (Log4OM UDP
