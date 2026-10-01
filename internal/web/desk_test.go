@@ -48,7 +48,7 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 		}
 	}
 	list := get(t, h, "/work").Body.String()
-	if strings.Count(list, `<tr id="row-`) != 2 || !strings.Contains(list, "(2 QSOs, one card)") {
+	if strings.Count(list, `class="md-row"`) != 2 || !strings.Contains(list, "2 QSOs, one card") {
 		t.Fatalf("/work must list one row per card:\n%s", list)
 	}
 
@@ -315,7 +315,7 @@ func TestDeskNameNewestAndReopenNotice(t *testing.T) {
 	}
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	postForm(t, h, "/queue/yes", url.Values{"key": {q.QSLKey}})
-	if b := get(t, h, "/work").Body.String(); !strings.Contains(b, "<td>Alice B.</td>") {
+	if b := get(t, h, "/work").Body.String(); !strings.Contains(b, `<span class="muted">Alice B.`) {
 		t.Fatalf("the Desk must show the newest name:\n%s", b)
 	}
 	postForm(t, h, "/work/requested", url.Values{"key": {key, q.QSLKey}, "channel": {"OQRS"}})

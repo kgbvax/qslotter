@@ -1,59 +1,44 @@
-{{define "route_select"}}<select name="route:{{.Lead.Item.QSLKey}}" form="batch" class="route-sel" aria-label="Route for {{.Call}}" title="{{if .RouteFrom}}preselected: {{.RouteFrom}}{{else}}choose a route{{end}}">
-      <option value=""{{if not .Route}} selected{{end}}>route?</option>
-      <option value="B"{{if eq .Route "B"}} selected{{end}}>Bureau</option>
-      <option value="D"{{if eq .Route "D"}} selected{{end}}>Direct</option>
-      <option value="MD"{{if eq .Route "MD"}} selected{{end}}>Mgr, direct</option>
-      <option value="MB"{{if eq .Route "MB"}} selected{{end}}>Mgr, bureau</option>
-    </select><input type="text" class="mgr-in" name="manager:{{.Lead.Item.QSLKey}}" form="batch" size="7" maxlength="14" placeholder="mgr" value="{{.MgrPrefill}}" aria-label="Manager callsign" title="Manager callsign (manager routes only)">{{end}}
-
-{{define "work_row.html"}}<tr id="row-{{.Lead.Item.QSLKey}}">
-  <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Lead.Item.QSLKey}}" title="Select for batch action"></td>
+{{define "work_md_rows"}}{{range .Groups}}<tr class="md-group"><th colspan="4">{{.Title}} <small>({{len .Cards}})</small> <a class="mini" href="/work/card?filter={{.Method}}" title="This group card by card">cards &rarr;</a></th></tr>
+{{range .Cards}}{{$lead := .Lead.Item.QSLKey}}<tr class="md-row" id="row-{{$lead}}" data-key="{{$lead}}" data-keys="{{range .Keys}}{{.}} {{end}}" tabindex="-1">
+  <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{$lead}}" title="Select for a batch action (uses the route shown)">{{range .Rows}}<input type="hidden" name="key" value="{{.Item.QSLKey}}"><input type="hidden" name="card:{{$lead}}" form="batch" value="{{.Item.QSLKey}}">{{end}}<input type="hidden" name="route:{{$lead}}" form="batch" value="{{.Route}}"><input type="hidden" name="manager:{{$lead}}" form="batch" value="{{.MgrPrefill}}"></td>
   <td class="c-date">{{fmtDate .Lead.QSO.QSODate}}</td>
-  <td><a class="call" href="/station/{{.Call}}">{{.Call}}</a>{{if .OQRS}} <span class="badge" title="QRZ mentions OQRS">OQRS</span>{{end}}</td>
-  <td class="c-bm">{{range $i, $r := .Rows}}{{if $i}}, {{end}}{{$r.QSO.Band}} {{$r.QSO.Mode}}{{end}}{{if .Extra}} <span class="muted">({{len .Rows}} QSOs, {{if gt .Prints 1}}prints as {{.Prints}} cards{{else}}one card{{end}})</span>{{end}}</td>
-  <td>{{.Name}}</td>
-  <td>{{if .Lead.Info}}{{.Lead.Info.Country}}{{end}}</td>
-  <td class="route-cell">{{template "route_select" .}}</td>
-  <td class="actions">{{$lead := .Lead.Item.QSLKey}}{{range .Rows}}<input type="hidden" name="key" value="{{.Item.QSLKey}}"><input type="hidden" name="card:{{$lead}}" form="batch" value="{{.Item.QSLKey}}">{{end}}
-    <button type="button" class="mini" title="Render the card and send it to the printer - sent with the chosen route" hx-post="/work/print" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Print</button>
-    <button type="button" class="mini" title="Card written by hand - sent with the chosen route" hx-post="/work/written" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Written</button>
-    <button type="button" class="mini" title="No card after all" hx-post="/work/none" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">No card</button>
-    <button type="button" class="mini" title="Take back to the Inbox" hx-post="/work/back" hx-include="closest tr" hx-target="closest tr" hx-swap="outerHTML">Back</button>
-  </td>
-</tr>{{end}}
+  <td><span class="call">{{.Call}}</span>{{if .OQRS}} <span class="badge" title="QRZ mentions OQRS">OQRS</span>{{end}}<br><span class="muted">{{.Name}}{{if .Lead.Info}}{{if .Name}}, {{end}}{{.Lead.Info.Country}}{{end}}</span></td>
+  <td class="c-bm">{{range $i, $r := .Rows}}{{if $i}}, {{end}}{{$r.QSO.Band}} {{$r.QSO.Mode}}{{end}}{{if .Extra}}<br><span class="muted">{{len .Rows}} QSOs, {{if gt .Prints 1}}prints as {{.Prints}} cards{{else}}one card{{end}}</span>{{end}}<br><span class="routetag" title="{{if .RouteFrom}}preselected: {{.RouteFrom}}{{else}}choose the route on the card{{end}}">{{routeName .Route}}{{if and .MgrPrefill (eq (slice1 .Route) "M")}} {{.MgrPrefill}}{{end}}</span></td>
+</tr>
+{{end}}{{end}}{{if not .Groups}}<tr class="md-empty"><td colspan="4" class="muted">Nothing to write or print. Cards you answer "yes" in the Inbox show up here.</td></tr>{{end}}{{end}}
 
 {{define "worklist.html"}}<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>qslotter - Desk</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/keys.js"></script>
 <script src="/static/live.js" defer></script>
-</head><body data-live="worklist">
+</head><body data-live="md-desk">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Desk <small>({{.Total}} card(s) to write or print)</small></h2>
-  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} failed</span> (no route chosen, manager call missing, already handled, or the printer refused){{end}}.</p>{{end}}
-  <p><a href="/work/card">Card by card &rarr;</a> <span class="muted">One card per station (several QSOs with the same call share a card). Choose the route (preselected from QRZ where it says something), then print or write it; it is marked sent and goes to Clublog with the next push. "Requested (OQRS)" is on the card view.</span></p>
-  {{if not .Groups}}<div class="empty"><p class="big">Nothing to write or print.</p><p>Cards you answer "yes" in the Inbox show up here. <a href="/queue">Go to the Inbox</a>.</p></div>{{else}}
-  <form id="batch" method="post" action="/queue/batch" class="batchbar">
-    <input type="hidden" name="list" value="work">
-    <select name="action" title="Batch action">
-      <option value="print">Print</option>
-      <option value="written">Written</option>
-      <option value="none">No card</option>
-      <option value="back">Back to the Inbox</option>
-    </select>
-    <button type="submit">Apply to selected</button>
-  </form>
-  {{range .Groups}}
-  <h3 class="grouphead">{{.Title}} <small>({{len .Cards}})</small> <a class="mini" href="/work/card?filter={{.Method}}">card by card &rarr;</a></h3>
-  <table class="worktable">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>QSOs</th><th>Name</th><th>Country</th><th>Route</th><th>Produce</th></tr></thead>
-    <tbody>{{range .Cards}}{{template "work_row.html" .}}{{end}}</tbody>
-  </table>
-  {{end}}{{end}}
+  <h2>Desk <small>(<span id="queue-count">{{.Total}}</span> card(s) to write or print)</small> <a class="h2link" href="/work/card" title="One card at a time">card by card</a></h2>
+  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} failed</span> (no route preselected, manager call missing, already handled, or the printer refused){{end}}.</p>{{end}}
+  <div class="md">
+    <div class="md-list" aria-label="Cards to write or print">
+      <form id="batch" method="post" action="/queue/batch" class="batchbar">
+        <input type="hidden" name="list" value="work">
+        <select name="action" title="Batch action for the ticked cards">
+          <option value="print">Print</option>
+          <option value="written">Written</option>
+          <option value="none">No card</option>
+          <option value="back">Back to the Inbox</option>
+        </select>
+        <button type="submit" title="Each ticked card goes with the route shown in the list; cards without one are skipped">Apply to ticked</button>
+      </form>
+      <table class="md-table"><tbody id="md-list">{{template "work_md_rows" .}}</tbody></table>
+      <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or click: select &middot; finish the card on the right; the next card down follows. One card per station: QSOs with the same call share it.</p>
+    </div>
+    <div class="md-detail">{{template "workcard_content.html" .}}</div>
+  </div>
 </main>
+<script>qslKeys.desk()</script>
 </body></html>{{end}}

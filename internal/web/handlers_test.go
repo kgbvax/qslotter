@@ -384,7 +384,7 @@ func TestWorkQueue(t *testing.T) {
 	if iO < 0 || iD < iO || iM < iD || iB < iM {
 		t.Fatalf("/work groups must read Route open, Direct, Via manager, Bureau:\n%s", list)
 	}
-	if !strings.Contains(list, `value="K2ABC"`) || !strings.Contains(list, `<option value="MD" selected>`) {
+	if !strings.Contains(list, `form="batch" value="K2ABC"`) || !strings.Contains(list, `form="batch" value="MD"`) || !strings.Contains(list, "Via manager, direct K2ABC") {
 		t.Fatalf("/work must preselect the suggested manager route:\n%s", list)
 	}
 
@@ -765,7 +765,7 @@ func TestDecidePageIsFullDocument(t *testing.T) {
 	h := srv.Routes()
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "/static/htmx.min.js", "/static/style.css", "/static/live.js", "keydown", `id="decide"`, "DL1ABC"} {
+	for _, want := range []string{"<!DOCTYPE html>", "/static/htmx.min.js", "/static/style.css", "/static/live.js", "/static/keys.js", "qslKeys.inbox()", `id="decide"`, "DL1ABC"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q:\n%s", want, body)
 		}
@@ -802,7 +802,7 @@ func TestKeyMapsMatchButtons(t *testing.T) {
 				t.Errorf("%s: legend advertises key %q but no control has it in data-key", page, m[1])
 			}
 		}
-		if !strings.Contains(body, "keydown") {
+		if !strings.Contains(body, "/static/keys.js") || !strings.Contains(body, "qslKeys.") {
 			t.Errorf("%s: no keyboard handler in the page", page)
 		}
 	}

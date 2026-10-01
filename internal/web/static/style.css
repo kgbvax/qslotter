@@ -328,3 +328,23 @@ table.cardqsos td { padding: 3px 12px 3px 0; }
 .request input[name=note] { padding: 4px 8px; }
 button.mini.suggested { outline: 1.5px dashed var(--ink-soft); outline-offset: 2px; }
 .pref.sendto { margin-bottom: 10px; }
+
+/* Master-detail (Inbox, Desk): the list selects, the detail pane decides */
+.md { display: grid; grid-template-columns: minmax(300px, 36%) 1fr; gap: 18px; align-items: start; }
+.md-list { position: sticky; top: 8px; max-height: calc(100vh - 120px); overflow-y: auto; }
+.md-detail { min-width: 0; }
+table.md-table { width: 100%; margin-top: 0; }
+table.md-table td { padding: 5px 8px 5px 4px; vertical-align: top; }
+tr.md-row { cursor: pointer; }
+tr.md-row.sel > td { background: var(--card); box-shadow: inset 0 1.5px 0 var(--ink), inset 0 -1.5px 0 var(--ink); }
+tr.md-row.sel > td:first-child { box-shadow: inset 3px 0 0 var(--red), inset 0 1.5px 0 var(--ink), inset 0 -1.5px 0 var(--ink); }
+tr.md-group > th { padding-top: 12px; font-size: 13px; }
+tr.md-group:first-child > th { padding-top: 2px; }
+.md-list .call { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
+.md-list .routetag { font: 600 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+.md-list .batchbar { margin-top: 0; }
+@media (max-width: 900px) {
+  .md { grid-template-columns: 1fr; }
+  .md-list { position: static; max-height: 40vh; }
+}
+h2 .h2link { font: 400 13px 'Schibsted Grotesk', sans-serif; margin-left: 10px; }

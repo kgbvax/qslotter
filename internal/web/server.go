@@ -88,7 +88,13 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		"methodName": methodName,
 		"routeName":  routeName,
 		"slice1":     func(s string) string { return s[:min(len(s), 1)] },
-		"yn":         yn,
+		"mdflag": func(md bool) string { // query value for the master-detail pane
+			if md {
+				return "1"
+			}
+			return ""
+		},
+		"yn": yn,
 	}).ParseFS(pagesFS, "pages/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -164,7 +170,9 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
-	r.Get("/queue/row", s.htmxQueueRow) // ?key=... for SSE-driven fetch
+	r.Get("/queue/row", s.htmxQueueRow)   // ?key=... for SSE-driven fetch
+	r.Get("/queue/list", s.htmxQueueList) // Inbox master list (live refresh)
+	r.Get("/work/list", s.htmxWorkList)   // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
 	r.Handle("/static/*", http.FileServer(http.FS(staticFS)))

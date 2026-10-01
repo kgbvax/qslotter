@@ -92,8 +92,8 @@ down to it) it is a master-detail view.
 | A3 | **Written now**: the card was filled in during a rag-chew QSO - "it's done, I never want to see it again". It records its route: **bureau** or **direct** (no manager, no "other"); supersedes the 2026-09-30 decision "Written is its own outcome". | done (2026-10-01): bureau or direct, `note=written now`; `w` then `b`/`d` on the card view (two keys, so a slip cannot mark a card sent) |
 | A4 | Whatever the decision, the QSO leaves the view at once and the next one is offered. | done |
 | A5 | **Compact list** for operating, e.g. mid-pileup, little screen space: **yes / no** only ("ja nein ja nein"). | done (2026-10-01) |
-| A6 | **Master-detail** for deliberation: the list and the selected QSO's details *in one view*. The list only selects (arrow keys); decisions are made in the detail pane only (buttons/keys: yes / no / written now via bureau / direct), after which the selection moves to the next QSO below. | missing: list (`/queue`) and card view (`/decide`, prev/next; after a decision it shows the newest remaining card, not the next one down) are separate pages |
-| A7 | Detail content: QRZ data (preferred route - direct or bureau -, manager, address), the QSO data, the history: worked before? sent a card before? received one? | done on `/decide` (research panel), with limits: history covers the 12 newest QSOs with the station; the shown QSO's own received state is not displayed. Must move into the master-detail view |
+| A6 | **Master-detail** for deliberation: the list and the selected QSO's details *in one view*. The list only selects (arrow keys); decisions are made in the detail pane only (buttons/keys: yes / no / written now via bureau / direct), after which the selection moves to the next QSO below. | done (2026-10-01): `/queue` is the master-detail view - the list (click / up-down arrows) only selects, the detail pane is the decide card; after a decision the QSO below follows (also on the card-by-card `/decide`); live: new QSOs appear on top, a QSO handled in another window hands the selection to the one that took its place |
+| A7 | Detail content: QRZ data (preferred route - direct or bureau -, manager, address), the QSO data, the history: worked before? sent a card before? received one? | done on `/decide` (research panel), with limits: history covers the 12 newest QSOs with the station; the shown QSO's own received state is not displayed. Shown in the `/queue` master-detail pane since 2026-10-01 |
 
 ### 2.2 Desk - the work queue
 
@@ -103,7 +103,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | B1 | Work through card by card; when one is done the next appears without paging. | done (`/work/card`) |
-| B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | partial: card-by-card view done (`/work/card`); no master-detail (`/work` list is a separate page) |
+| B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | done (2026-10-01): `/work` is the master-detail view - cards grouped by the route offered first (route open, direct, via manager, bureau), the selected card in the detail pane, finishing moves to the card below; batch actions on ticked cards use the route shown; the card-by-card view `/work/card` stays |
 | B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | done (2026-10-01): the work card shows every QSO on the card (freq, RST sent/rcvd, notes), the research panel (QRZ, indicators, history without the card's own QSOs), the station address for direct and the manager's QRZ address for the manager routes (refreshed as the call is typed; live update when the lookup lands) |
 | B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | done (2026-10-01): bureau / direct / via manager direct / via manager bureau, preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it; manager cards print "via <manager>" |
 | B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | done (2026-10-01): "Requested..." (`r`) with channel OQRS / PayPal / e-mail / other and a note; status `requested`, `QSL_RCVD=R` pushed, `QSL_SENT` untouched; QRZ mentioning OQRS (manager field or bio) marks the button and the list row. Listing as *expected* on Incoming QSLs comes with C5 |
@@ -221,8 +221,8 @@ stays the only source of truth.
 
 - One view: the queue list on one side (it only selects), the selected QSO's
   details on the other; deciding in the detail pane moves the selection to the
-  next card down (A6). Same pattern for the Desk (B2). Today list and card
-  view are separate pages.
+  next card down (A6). Same pattern for the Desk (B2). Built 2026-10-01
+  (`/queue`, `/work`); the card-by-card pages `/decide`, `/work/card` stay.
 - The station page grown up: full QRZ picture — `qslmgr`, eqsl/mqsl/lotw
   flags, email, address, bio text — and the suggestion with confidence and
   reason.
@@ -282,7 +282,7 @@ covered by tests; the browser flow was walked end to end.
 | Operator requirement | Status | Evidence |
 |---|---|---|
 | Live decision queue from Log4OM UDP | **done** | `internal/udplistener` -> `qualify` -> `queue_changed` -> `static/live.js` |
-| Research next to the Inbox decision (QRZ preferences, bio lines, history, cards sent/received) | **done** on `/decide`; missing next to the route decision at the Desk (B3) | `researchFor` + `research.html`; `Store.CallHistory` (base-call aware) |
+| Research next to the Inbox decision (QRZ preferences, bio lines, history, cards sent/received) | **done** in the Inbox (`/queue` detail pane, `/decide`) and at the Desk (B3, 2026-10-01) | `researchFor` + `research.html`; `Store.CallHistory` (base-call aware) |
 | Decision queue: a decided card leaves the queue at once | **done** (the 2026-09-30 route stamps B / D / M / Written in the queue were superseded 2026-10-01, see A2/A3/B4) | `QueueDecide/Written/Decline` transitions; `TestListDecideLeavesQueue` |
 | Work queue: decided cards, one at a time, Print or Written, next appears | **done** | `/work`, `/work/card`; `QueuePrinted` only after a successful print |
 | Done view + undo (Back, Reopen) | **done** | `/done`, `QueueBack`, `QueueReopen` (warns if Clublog already has it) |
@@ -296,7 +296,6 @@ Open after the operator walkthrough of 2026-10-01 (section 2, status
 - A1b: the QSO in progress (current contact: bare callsign or N1MM
   `<lookupinfo>`). (A1 backlog discard, A2/A3/A5 Inbox yes / no / written now:
   done 2026-10-01.)
-- A6/B2: master-detail views for Inbox and Desk (list selects, detail decides).
 - A7: research panel limits (12 newest QSOs; own received state). (B3/B4/
   B4b/B6/B9, the Desk: done 2026-10-01.)
 - C1-C5: reply due? answer right there (written now / print / later); requested
@@ -346,7 +345,7 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
    (A1, A2, A3, A5). **Done 2026-10-01**, together with the route choice at
    the Desk (B4 core) - without it a "yes" card could not get a route.
 10. Master-detail views for Inbox and Desk - the list selects, the detail
-    decides; compact list stays for operating (A6, B2).
+    decides; compact list stays for operating (A6, B2). **Done 2026-10-01.**
 11. Desk: route chosen when finishing (bureau, direct, manager direct, manager
     bureau; QRZ suggestion preselected), Print and Written use it; "no card"
     button; "requested (OQRS)" with channel and note; full research panel and

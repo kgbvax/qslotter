@@ -1,37 +1,36 @@
+{{define "queue_md_rows"}}{{range .Rows}}<tr class="md-row" id="row-{{.Item.QSLKey}}" data-key="{{.Item.QSLKey}}" data-keys="{{.Item.QSLKey}}" tabindex="-1">
+  <td class="c-date">{{fmtDate .QSO.QSODate}}<br><span class="muted">{{fmtTime .QSO.TimeOn}}</span></td>
+  <td><span class="call">{{.QSO.Call}}</span><br><span class="muted">{{.QSO.Name}}</span></td>
+  <td class="c-bm">{{.QSO.Band}}<br>{{.QSO.Mode}}</td>
+  <td class="method" title="{{if .Info}}{{.Info.QSLConfidence}} confidence: {{.Info.QSLReason}}{{end}}">{{template "row_suggestion" .}}</td>
+</tr>{{end}}{{if not .Rows}}<tr class="md-empty"><td colspan="4" class="muted">Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged.</td></tr>{{end}}{{end}}
+
 {{define "queue.html"}}<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>qslotter - Inbox</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/htmx.min.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/keys.js"></script>
 <script src="/static/live.js" defer></script>
-</head><body data-live="list">
+</head><body data-live="md-inbox">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
 <main>
-  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span> QSOs: card or not?)</small></h2>
-  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span> (already handled){{end}}.</p>{{end}}
-  <div style="margin-bottom:8px">
-    <a href="/decide">Decide card by card &rarr;</a>
+  <h2>Inbox <small>(<span id="queue-count">{{len .Rows}}</span> QSOs: card or not?)</small>
+    <a class="h2link" href="/queue?compact=1" title="Compact list for operating: yes / no per row">compact list</a>
+    <a class="h2link" href="/decide" title="One QSO at a time">card by card</a>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">Recompute queue</button>
-    <span id="recompute-msg"></span>
-    <span class="muted">Yes = a card goes out (to the <a href="/work">Desk</a>, where the route is chosen) · No = no card · written now = card filled in during the QSO, bureau or direct - done.</span>
+    <span id="recompute-msg"></span></h2>
+  {{if or .Done .Failed}}<p class="banner">Batch: {{.Done}} done{{if ne .Failed "0"}}, <span class="err">{{.Failed}} skipped</span> (already handled){{end}}.</p>{{end}}
+  <div class="md">
+    <div class="md-list" aria-label="QSOs waiting for a decision">
+      <table class="md-table"><tbody id="md-list">{{template "queue_md_rows" .}}</tbody></table>
+      <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or click: select &middot; decide in the card on the right; the next QSO down follows.</p>
+    </div>
+    <div class="md-detail">{{template "decide_content.html" .}}</div>
   </div>
-  <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged.</p>
-  <form id="batch" method="post" action="/queue/batch" class="batchbar">
-    <input type="hidden" name="compact" value="0">
-    <select name="action" title="Batch action">
-      <option value="yes">Yes, card</option>
-      <option value="none">No card</option>
-    </select>
-    <button type="submit">Apply to selected</button>
-  </form>
-  <table id="queue-table">
-    <thead><tr><th class="ck"></th><th>Date</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Name</th><th title="QRZ suggestion - not a decision">Suggests</th><th>Manager</th><th>Card?</th></tr></thead>
-    <tbody id="queue-body">
-    {{range .Rows}}{{template "queue_row_full.html" .}}{{end}}
-    </tbody>
-  </table>
 </main>
+<script>qslKeys.inbox()</script>
 </body></html>{{end}}

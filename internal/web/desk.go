@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -63,9 +64,10 @@ func (s *Server) cardTemplate() (*template.Template, error) {
 	return t, nil
 }
 
-// deskCards groups the Desk's QSOs into cards, newest card first. Only the
-// lead QSO triggers a background QRZ lookup.
-func (s *Server) deskCards() ([]*DeskCard, error) {
+// deskCards groups the Desk's QSOs into cards, newest card first. With
+// refresh, the lead QSO triggers a background QRZ lookup (page loads, not
+// the live list reloads).
+func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 	items, err := s.store.QueueList("decided") // newest QSO first
 	if err != nil {
 		return nil, err
@@ -75,7 +77,7 @@ func (s *Server) deskCards() ([]*DeskCard, error) {
 	for _, it := range items {
 		call := strings.ToUpper(callFromKey(it.QSLKey))
 		c := byCall[call]
-		row := s.buildRow(it.QSLKey, c == nil)
+		row := s.buildRow(it.QSLKey, refresh && c == nil)
 		if row.QSO == nil || row.Item == nil {
 			continue
 		}
@@ -167,13 +169,8 @@ var workGroupOrder = []WorkGroup{
 	{Method: "B", Title: "Bureau"},
 }
 
-// pageWork lists the Desk cards, grouped by the route offered first.
-func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
-	cards, err := s.deskCards()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+// groupCards sorts the Desk cards into the list's route groups.
+func groupCards(cards []*DeskCard) []WorkGroup {
 	var groups []WorkGroup
 	for _, g := range workGroupOrder {
 		for _, c := range cards {
@@ -188,10 +185,43 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 			groups = append(groups, g)
 		}
 	}
-	s.render(w, "worklist.html", map[string]any{
-		"Groups": groups, "Total": len(cards), "Channels": store.RequestChannels,
-		"Done": r.URL.Query().Get("done"), "Failed": r.URL.Query().Get("failed"),
-	})
+	return groups
+}
+
+// listOrder is the cards in the order the master list shows them.
+func listOrder(groups []WorkGroup) []*DeskCard {
+	var out []*DeskCard
+	for _, g := range groups {
+		out = append(out, g.Cards...)
+	}
+	return out
+}
+
+// pageWork is the Desk master-detail view (VISION B2): the cards grouped by
+// the route offered first on one side, the selected card on the other;
+// finishing a card moves to the one below. Batch actions use each card's
+// preselected route.
+func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
+	cards, err := s.deskCards(true)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	groups := groupCards(cards)
+	data := s.workCardData(r, listOrder(groups), "", true)
+	data["Groups"] = groups
+	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
+	s.render(w, "worklist.html", data)
+}
+
+// htmxWorkList renders the Desk master list alone (live refresh).
+func (s *Server) htmxWorkList(w http.ResponseWriter, r *http.Request) {
+	cards, err := s.deskCards(false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "work_md_rows", map[string]any{"Groups": groupCards(cards)})
 }
 
 // pageWorkCard shows one Desk card at a time (?filter=O|B|D|M narrows the
@@ -240,16 +270,19 @@ func (s *Server) htmxWorkManager(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage bool) {
-	cards, err := s.deskCards()
+	cards, err := s.deskCards(true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	md := r.FormValue("md") == "1"
 	filter := strings.ToUpper(r.FormValue("filter"))
-	switch filter {
-	case "B", "D", "M", "O":
-		var kept []*DeskCard
-		for _, c := range cards {
+	switch {
+	case md: // the master-detail pane follows the list's order
+		cards, filter = listOrder(groupCards(cards)), ""
+	case filter == "B", filter == "D", filter == "M", filter == "O":
+		var kept []*DeskCard // in the list's order (bureau: by call)
+		for _, c := range listOrder(groupCards(cards)) {
 			if routeGroup(c.Route) == filter {
 				kept = append(kept, c)
 			}
@@ -258,13 +291,30 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 	default:
 		filter = ""
 	}
-	data := map[string]any{"Total": len(cards), "Filter": filter, "Channels": store.RequestChannels}
-	// ?key= selects a card only on GET (browsing, or a reload that keeps the
-	// operator's unsaved choices: route, manager, unticked QSOs); actions
-	// always advance.
-	want := ""
-	if r.Method == http.MethodGet {
-		want = r.URL.Query().Get("key")
+	data := s.workCardData(r, cards, filter, md)
+	if fullPage {
+		s.render(w, "workcard.html", data)
+		return
+	}
+	s.render(w, "workcard_content.html", data)
+}
+
+// workCardData picks the Desk card to show from cards: ?key= on GET
+// (browsing, the master list's selection, or a reload that keeps the
+// operator's unsaved choices: route, manager, unticked QSOs), else after an
+// action the card that was below the finished one (next=, else prev=).
+func (s *Server) workCardData(r *http.Request, cards []*DeskCard, filter string, md bool) map[string]any {
+	data := map[string]any{"Total": len(cards), "Filter": filter, "MD": md, "Channels": store.RequestChannels, "Down": "", "Up": ""}
+	want := r.URL.Query().Get("key")
+	if r.Method != http.MethodGet {
+		want = ""
+		for _, k := range []string{r.FormValue("next"), r.FormValue("prev")} {
+			for _, c := range cards {
+				if want == "" && k != "" && slices.Contains(c.Keys, k) {
+					want = k
+				}
+			}
+		}
 	}
 	if len(cards) > 0 {
 		i, matched := 0, false
@@ -302,12 +352,14 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 			data["Prev"] = cards[(i+len(cards)-1)%len(cards)].Lead.Item.QSLKey
 			data["Next"] = cards[(i+1)%len(cards)].Lead.Item.QSLKey
 		}
+		if i+1 < len(cards) { // neighbours without wrap-around, for "next one down"
+			data["Down"] = cards[i+1].Lead.Item.QSLKey
+		}
+		if i > 0 {
+			data["Up"] = cards[i-1].Lead.Item.QSLKey
+		}
 	}
-	if fullPage {
-		s.render(w, "workcard.html", data)
-		return
-	}
-	s.render(w, "workcard_content.html", data)
+	return data
 }
 
 // --- Desk actions ---

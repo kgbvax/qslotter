@@ -170,10 +170,12 @@ func routeName(code string) string {
 }
 
 // rowsFor builds rows for the listed items, skipping those whose QSO is gone.
-func (s *Server) rowsFor(items []*store.QueueItem) []*QueueRow {
+// refresh starts background QRZ lookups for missing/stale station info (page
+// loads; not the live list reloads, which run on every event in every window).
+func (s *Server) rowsFor(items []*store.QueueItem, refresh bool) []*QueueRow {
 	var rows []*QueueRow
 	for _, it := range items {
-		if row := s.queueRowFor(it.QSLKey); row.QSO != nil && row.Item != nil {
+		if row := s.buildRow(it.QSLKey, refresh); row.QSO != nil && row.Item != nil {
 			rows = append(rows, row)
 		}
 	}
@@ -361,21 +363,51 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 
 // --- (a) decision queue: list ---
 
+// pageQueue is the Inbox: the master-detail view (VISION A6: the list only
+// selects, the detail pane decides), or ?compact=1 the compact list for
+// operating (A5).
 func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.QueueList("queued")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	name := "queue.html"
 	if r.URL.Query().Get("compact") == "1" {
-		name = "queue_compact.html"
+		s.render(w, "queue_compact.html", map[string]any{
+			"Rows":   withCheckbox(s.rowsFor(items, true)),
+			"Done":   r.URL.Query().Get("done"),
+			"Failed": r.URL.Query().Get("failed"),
+		})
+		return
 	}
-	s.render(w, name, map[string]any{
-		"Rows":   withCheckbox(s.rowsFor(items)),
-		"Done":   r.URL.Query().Get("done"),
-		"Failed": r.URL.Query().Get("failed"),
-	})
+	data := s.decideData(r, items, true)
+	data["Rows"] = s.rowsFor(items, true)
+	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
+	s.render(w, "queue.html", data)
+}
+
+// htmxQueueList renders the Inbox master list alone (live refresh).
+func (s *Server) htmxQueueList(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.QueueList("queued")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "queue_md_rows", map[string]any{"Rows": s.rowsFor(items, false)})
+}
+
+// firstPresent returns the first of keys that is still among items: after an
+// action the view moves to the card that was below the handled one (else the
+// one above it).
+func firstPresent(items []*store.QueueItem, keys ...string) string {
+	for _, k := range keys {
+		for _, it := range items {
+			if k != "" && it.QSLKey == k {
+				return k
+			}
+		}
+	}
+	return ""
 }
 
 // htmxQueueRow renders a single decision-queue row (SSE-driven insert and
@@ -446,11 +478,23 @@ func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPa
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data := map[string]any{"Total": len(items)}
-	// ?key= selects a card only on GET (browsing); actions always advance.
-	want := ""
-	if r.Method == http.MethodGet {
-		want = r.URL.Query().Get("key")
+	data := s.decideData(r, items, r.FormValue("md") == "1")
+	if fullPage {
+		s.render(w, "decide.html", data)
+		return
+	}
+	s.render(w, "decide_content.html", data)
+}
+
+// decideData picks the Inbox card to show: ?key= on GET (browsing, the
+// master list's selection), else after an action the card that was below the
+// handled one (next=, else prev= above it, else the newest). md marks the
+// master-detail detail pane (no browse buttons; the list navigates).
+func (s *Server) decideData(r *http.Request, items []*store.QueueItem, md bool) map[string]any {
+	data := map[string]any{"Total": len(items), "MD": md, "Down": "", "Up": ""}
+	want := r.URL.Query().Get("key")
+	if r.Method != http.MethodGet {
+		want = firstPresent(items, r.FormValue("next"), r.FormValue("prev"))
 	}
 	if cur, prev, next, pos := cardWindow(items, want); cur != nil {
 		if row := s.queueRowFor(cur.QSLKey); row.QSO != nil {
@@ -458,13 +502,15 @@ func (s *Server) renderDecideCard(w http.ResponseWriter, r *http.Request, fullPa
 			data["Row"] = row
 			data["Pos"] = fmt.Sprintf("card %d of %d", pos, len(items))
 			data["Prev"], data["Next"] = prev, next
+			if pos < len(items) { // neighbours without wrap-around, for "next one down"
+				data["Down"] = items[pos].QSLKey
+			}
+			if pos > 1 {
+				data["Up"] = items[pos-2].QSLKey
+			}
 		}
 	}
-	if fullPage {
-		s.render(w, "decide.html", data)
-		return
-	}
-	s.render(w, "decide_content.html", data)
+	return data
 }
 
 // --- done ---
@@ -527,7 +573,7 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 	}
 	shown := items[:min(len(items), 200)]
 	var done []DoneRow
-	for _, row := range s.rowsFor(shown) {
+	for _, row := range s.rowsFor(shown, false) {
 		when := ""
 		if row.Item.SentAt.Valid {
 			when = row.Item.SentAt.String

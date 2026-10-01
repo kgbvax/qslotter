@@ -4,11 +4,11 @@
 <p><button type="button" class="mini" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('mgr-address').innerText)">Copy address</button>{{if .Email}} <span class="flags">mail: {{.Email}}</span>{{end}}</p>{{end}}{{end}}{{end}}{{end}}
 
 {{define "workcard_content.html"}}<div class="decide-wrap" id="workcard" data-filter="{{.Filter}}"{{with .Card}} data-qslkey="{{.Lead.Item.QSLKey}}" data-keys="{{range .Keys}}{{.}} {{end}}" data-call="{{.Call}}" data-mgr="{{.MgrPrefill}}" data-route="{{slice1 .Route}}"{{end}}>
-<p class="filters">Show: <a href="/work/card" class="{{if not .Filter}}on{{end}}" hx-get="/work/card" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">all</a>
+{{if not .MD}}<p class="filters">Show: <a href="/work/card" class="{{if not .Filter}}on{{end}}" hx-get="/work/card" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">all</a>
   <a href="/work/card?filter=O" class="{{if eq .Filter "O"}}on{{end}}" hx-get="/work/card?filter=O" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">route open</a>
   <a href="/work/card?filter=D" class="{{if eq .Filter "D"}}on{{end}}" hx-get="/work/card?filter=D" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">direct</a>
   <a href="/work/card?filter=M" class="{{if eq .Filter "M"}}on{{end}}" hx-get="/work/card?filter=M" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">via manager</a>
-  <a href="/work/card?filter=B" class="{{if eq .Filter "B"}}on{{end}}" hx-get="/work/card?filter=B" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">bureau</a></p>
+  <a href="/work/card?filter=B" class="{{if eq .Filter "B"}}on{{end}}" hx-get="/work/card?filter=B" hx-target="#workcard" hx-swap="outerHTML" hx-push-url="false">bureau</a></p>{{end}}
 {{if not .Card}}
   <div class="empty">
     <p class="big">Nothing to write or print{{if .Filter}} in this group{{end}}.</p>
@@ -16,9 +16,9 @@
     <p><a href="/decide">Go to the Inbox &rarr;</a></p>
   </div>
 {{else}}{{$c := .Card}}{{$skip := .Skip}}
-  {{$act := printf "view=work&filter=%s" .Filter}}
+  {{$act := printf "view=work&filter=%s&md=%s&next=%s&prev=%s" .Filter (mdflag .MD) (q .Down) (q .Up)}}
   <p class="decide-head"><span class="pos">{{.Pos}}</span> <a href="/station/{{$c.Call}}">station details</a>
-    {{if .Prev}}<button type="button" class="mini" data-key="arrowleft" title="Previous card  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; prev</button>
+    {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="Previous card  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; prev</button>
     <button type="button" class="mini" data-key="arrowright" title="Next card  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">next &rsaquo;</button>{{end}}</p>
   <div id="cardform">
   <div class="routes" id="route-pick" role="radiogroup" aria-label="Route">
@@ -81,6 +81,6 @@
       <button type="button" class="mini" data-key="u" title="Take it back to the Inbox  (u)" hx-post="/work/back?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">Back to the Inbox</button>
     </span>
   </div>
-  <p class="muted legend">Keys: route <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> print &middot; <kbd>w</kbd> written &middot; <kbd>r</kbd> requested (OQRS ...) &middot; <kbd>n</kbd> no card &middot; <kbd>u</kbd> back to the Inbox &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse &mdash; the ticked QSOs share the card; done cards are marked sent with their route and go to Clublog with the next push.</p>
+  <p class="muted legend">Keys: route <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> print &middot; <kbd>w</kbd> written &middot; <kbd>r</kbd> requested (OQRS ...) &middot; <kbd>n</kbd> no card &middot; <kbd>u</kbd> back to the Inbox &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> select in the list{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> browse{{end}} &mdash; the ticked QSOs share the card; done cards are marked sent with their route and go to Clublog with the next push.</p>
 {{end}}
 </div>{{end}}
