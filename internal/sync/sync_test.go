@@ -453,3 +453,15 @@ func TestPullClosesItemWithClublogSentDate(t *testing.T) {
 		t.Fatalf("a Clublog sent date must close the card: %+v", it)
 	}
 }
+
+func TestDiffQSO(t *testing.T) {
+	a := &store.QSO{QSLKey: "K", Call: "DL1ABC", Name: "Hans", Hash: "x"}
+	b := &store.QSO{QSLKey: "K", Call: "DL1ABC", Name: "Hans-Peter", QTH: "Bonn", Hash: "y"}
+	got := diffQSO(a, b)
+	if got != `Name "Hans" -> "Hans-Peter", QTH "" -> "Bonn"` {
+		t.Errorf("diffQSO = %s", got)
+	}
+	if got := diffQSO(a, a); !strings.Contains(got, "hash") {
+		t.Errorf("no field differs: %s", got)
+	}
+}

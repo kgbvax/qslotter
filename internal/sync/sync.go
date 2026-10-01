@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -66,11 +68,23 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("parse adif: %w", err)
 	}
+	seen := make(map[string]bool, len(recs))
+	logged := 0
 	for _, rec := range recs {
 		q, err := toQSO(rec)
 		if err != nil {
 			// Skip unparseable records but continue.
 			continue
+		}
+		// Two records with one key (same call, minute, band) overwrite each
+		// other and flip the hash on every pull: say so.
+		if seen[q.QSLKey] {
+			log.Printf("[pull] duplicate key in Clublog export: %s", q.QSLKey)
+		}
+		seen[q.QSLKey] = true
+		var before *store.QSO
+		if logged < 10 {
+			before, _ = o.Store.GetQSO(q.QSLKey)
 		}
 		isNew, changed, err := o.Store.UpsertQSO(q)
 		if err != nil {
@@ -83,6 +97,10 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 			}
 		} else if changed {
 			updated++
+			if before != nil && logged < 10 {
+				logged++
+				log.Printf("[pull] updated %s: %s", q.QSLKey, diffQSO(before, q))
+			}
 		}
 		// The card already went out through another tool: an open queue item
 		// for it is done (a duplicate card costs more than a wrong auto-close).
@@ -261,6 +279,27 @@ func fromQSO(q *store.QSO) adif.Record {
 		rec.Set("QTH", q.QTH)
 	}
 	return rec
+}
+
+// diffQSO names the Clublog-sourced fields that differ between the stored QSO
+// and the pulled one (old -> new), for the pull log.
+func diffQSO(a, b *store.QSO) string {
+	skip := map[string]bool{"QSLKey": true, "Hash": true, "FirstSeenAt": true, "UpdatedAt": true}
+	va, vb := reflect.ValueOf(*a), reflect.ValueOf(*b)
+	var parts []string
+	for i := 0; i < va.NumField(); i++ {
+		f := va.Type().Field(i)
+		if skip[f.Name] || f.Type.Kind() != reflect.String {
+			continue
+		}
+		if x, y := va.Field(i).String(), vb.Field(i).String(); x != y {
+			parts = append(parts, fmt.Sprintf("%s %q -> %q", f.Name, x, y))
+		}
+	}
+	if len(parts) == 0 {
+		return "only fields outside the stored columns (hash)"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // hashRecord returns a stable hex hash of the canonical ADIF representation
