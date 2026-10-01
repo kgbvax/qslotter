@@ -1,13 +1,13 @@
 {{define "nav"}}{{$c := counts}}<nav>
   <span class="areas">
-    <a href="/queue" title="{{t "Inbox: card or not?"}}">{{t "Inbox"}}{{if $c.New}} <span class="cnt">{{$c.New}}</span>{{end}}</a>
-    <a href="/work" title="{{t "Desk: write or print the cards"}}">{{t "Desk"}}{{if $c.Work}} <span class="cnt">{{$c.Work}}</span>{{end}}</a>
-    <a href="/receive" title="{{t "Incoming QSLs: book received cards, answer them"}}">{{t "Incoming QSLs"}}{{if $c.Expected}} <span class="cnt exp" title="{{t "requested cards not arrived yet"}}">{{$c.Expected}}</span>{{end}}</a>
+    <a data-area="inbox" href="/queue" title="{{t "Inbox: card or not?"}}">{{t "Inbox"}}{{if $c.New}} <span class="cnt">{{$c.New}}</span>{{end}}</a>
+    <a data-area="desk" href="/work" title="{{t "Desk: write or print the cards"}}">{{t "Desk"}}{{if $c.Work}} <span class="cnt">{{$c.Work}}</span>{{end}}</a>
+    <a data-area="incoming" href="/receive" title="{{t "Incoming QSLs: book received cards, answer them"}}">{{t "Incoming QSLs"}}{{if $c.Expected}} <span class="cnt exp" title="{{t "requested cards not arrived yet"}}">{{$c.Expected}}</span>{{end}}</a>
   </span>
   <span class="secondary">
-    <a href="/log">{{t "Log"}}</a>
-    <a href="/done" title="{{t "Finished cards"}}">{{t "Done"}}</a>
-    <a href="/settings">{{t "Settings"}}</a>
+    <a data-area="log" href="/log">{{t "Log"}}</a>
+    <a data-area="done" href="/done" title="{{t "Finished cards"}}">{{t "Done"}}</a>
+    <a data-area="settings" href="/settings">{{t "Settings"}}</a>
     {{if $c.Push}}<span class="pending" title="{{t "Local QSL state not yet pushed to Clublog"}}">{{t "%d to push" $c.Push}}</span>{{end}}
   </span>
 </nav>{{end}}

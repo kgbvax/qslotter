@@ -13,17 +13,17 @@
 <script src="/static/app.js"></script>
 <script src="/static/keys.js"></script>
 <script src="/static/live.js" defer></script>
-</head><body data-live="md-inbox">
+</head><body data-area="inbox" data-live="md-inbox">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2>{{t "Inbox"}}</h2><p><b id="queue-count">{{len .Rows}}</b> {{t "QSOs: card or not?"}}</p></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/queue" aria-current="page">{{t "List"}}</a><a href="/queue?compact=1" title="{{t "Compact list for operating: yes / no per row"}}">{{t "compact list"}}</a><a href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
+      <button hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML" title="{{t "Recompute queue"}}">&#8635;</button><span id="recompute-msg"></span></div>
+  </div></div>
 <main>
-  <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span> {{t "QSOs: card or not?"}})</small>
-    <a class="h2link" href="/queue?compact=1" title="{{t "Compact list for operating: yes / no per row"}}">{{t "compact list"}}</a>
-    <a class="h2link" href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
-    <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">{{t "Recompute queue"}}</button>
-    <span id="recompute-msg"></span></h2>
   {{if or .Done .Failed}}<p class="banner">{{t "Batch: %s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s skipped" .Failed}}</span> {{t "(already handled)"}}{{end}}.</p>{{end}}
   {{template "current_contact" .Current}}
   <div class="md">

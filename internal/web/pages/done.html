@@ -4,14 +4,15 @@
 <script src="/static/htmx.min.js"></script>
 <script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
-</head><body>
+</head><body data-area="done">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2>{{t "Done"}}</h2><p>{{t "Finished cards. Reopen one to put it back into the Inbox (e.g. a misclick)."}} <span class="muted-on">{{t "(%d of %d shown, newest QSO first)" (len .Rows) .Total}}</span></p></div>
+  </div></div>
 <main>
-  <h2>{{t "Done"}} <small>{{t "(%d of %d shown, newest QSO first)" (len .Rows) .Total}}</small></h2>
-  <p class="muted">{{t "Finished cards. Reopen one to put it back into the Inbox (e.g. a misclick)."}}</p>
   {{if not .Rows}}<p class="muted">{{t "Nothing finished yet."}}</p>{{else}}
   <table>
     <thead><tr><th>{{t "Date"}}</th><th>{{t "Call"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "Outcome"}}</th><th>{{t "When (UTC)"}}</th><th></th></tr></thead>

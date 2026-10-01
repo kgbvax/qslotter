@@ -15,13 +15,16 @@
 <script src="/static/app.js"></script>
 <script src="/static/keys.js"></script>
 <script src="/static/live.js" defer></script>
-</head><body data-live="md-desk">
+</head><body data-area="desk" data-live="md-desk">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2>{{t "Desk"}}</h2><p><b id="queue-count">{{.Total}}</b> {{t "card(s) to write or print"}}</p></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/work" aria-current="page">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a></div>
+  </div></div>
 <main>
-  <h2>{{t "Desk"}} <small>(<span id="queue-count">{{.Total}}</span> {{t "card(s) to write or print"}})</small> <a class="h2link" href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a></h2>
   {{if or .Done .Failed}}<p class="banner">{{t "Batch: %s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s failed" .Failed}}</span> {{t "(no route preselected, manager call missing, already handled, or the printer refused)"}}{{end}}.</p>{{end}}
   <div class="md">
     <div class="md-list" aria-label="{{t "Cards to write or print"}}">

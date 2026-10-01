@@ -33,8 +33,8 @@
            hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr-{{$n}}" hx-swap="innerHTML" onkeydown="if(event.key==='Escape'){this.blur()}">
   </div>
   <p class="decide-actions">
-    <button type="button" class="stamp d" data-key="w" title="{{t "Card written now with the route above - done  (w twice, or w Enter)"}}" hx-post="/receive/reply?how=written" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Written now"}}</button>
-    <button type="button" class="stamp b" data-key="p" title="{{t "Print the card now with the route above - done  (p twice, or p Enter)"}}" hx-post="/receive/reply?how=print" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Print"}}</button>
+    <button type="button" class="stamp" data-key="w" title="{{t "Card written now with the route above - done  (w twice, or w Enter)"}}" hx-post="/receive/reply?how=written" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Written now"}}</button>
+    <button type="button" class="stamp primary" data-key="p" title="{{t "Print the card now with the route above - done  (p twice, or p Enter)"}}" hx-post="/receive/reply?how=print" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Print"}}</button>
     <button type="button" class="mini" data-key="l" title="{{t "Later: the reply goes to the Desk as yes, card  (l twice, or l Enter)"}}" hx-post="/receive/reply?how=later" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Later via the Desk"}}</button>
     <button type="button" class="mini" data-key="x" title="{{t "No reply - their card stays booked; the line keeps showing reply due  (x twice, or x Enter)"}}" onclick="var p=this.closest('.reply');var m=document.createElement('p');m.className='banner';m.textContent=qslTr('No reply to %s.',p.dataset.call);p.replaceWith(m);document.dispatchEvent(new CustomEvent('qslReplyClosed'))">{{t "No reply"}}</button>
   </p>

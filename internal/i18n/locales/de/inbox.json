@@ -73,5 +73,8 @@
   "written now via bureau / direct": "sofort geschrieben über Büro / direkt",
   "select in the list": "in der Liste auswählen",
   "browse": "blättern",
-  "\"yes\" sends the card to the Desk, where its route is chosen; the next QSO follows.": "„Ja“ legt die Karte auf den Schreibtisch, dort wird ihr Weg gewählt; das nächste QSO folgt."
+  "\"yes\" sends the card to the Desk, where its route is chosen; the next QSO follows.": "„Ja“ legt die Karte auf den Schreibtisch, dort wird ihr Weg gewählt; das nächste QSO folgt.",
+  "List": "Liste",
+  "View": "Ansicht",
+  "QSO logged with": "QSO geloggt mit"
 }

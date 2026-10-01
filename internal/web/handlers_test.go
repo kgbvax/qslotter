@@ -297,7 +297,7 @@ func TestDecideFlow(t *testing.T) {
 	newer := addQueued(t, st, "DL2ZZZ", "20240103")
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "Confirming two-way QSO with", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
+	for _, want := range []string{"<!DOCTYPE html>", "QSO logged with", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q; body:\n%s", want, body)
 		}

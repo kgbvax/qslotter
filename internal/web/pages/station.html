@@ -4,13 +4,16 @@
 <script src="/static/htmx.min.js"></script>
 <script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
-</head><body>
+</head><body data-area="station">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2 class="mono">{{.Call}}</h2></div>
+    <div class="views"><button hx-post="/station/refresh?call={{q .Call}}" hx-target="#station-info" hx-swap="outerHTML">{{t "Refresh from QRZ"}}</button></div>
+  </div></div>
 <main>
-  <h2>{{.Call}} <button hx-post="/station/refresh?call={{q .Call}}" hx-target="#station-info" hx-swap="outerHTML">{{t "Refresh from QRZ"}}</button></h2>
   {{template "station_info.html" .}}
 
   {{if .Rows}}

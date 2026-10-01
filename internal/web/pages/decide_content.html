@@ -10,9 +10,8 @@
   <p class="decide-head"><span class="pos">{{tm .Pos}}</span> <a href="/station/{{.Row.QSO.Call}}">{{t "station details"}}</a>
     {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/decide?key={{q .Prev}}" hx-target="#decide" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/decide?key={{q .Next}}" hx-target="#decide" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
-  <article class="qslcard">
-    <div class="airmail"></div>
-    <p class="confirm">{{t "Confirming two-way QSO with"}}</p>
+  <article class="entry">
+    <p class="confirm">{{t "QSO logged with"}}</p>
     <p class="call"><a href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a>{{if .Row.QSO.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{.Row.QSO.Name}}</span>{{end}}</p>
     <div class="loggrid">
       <div><span class="lbl">{{t "Date"}}</span><span class="val">{{fmtDate .Row.QSO.QSODate}}</span></div>

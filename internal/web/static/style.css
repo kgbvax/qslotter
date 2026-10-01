@@ -17,7 +17,17 @@
   --teal: #1F6E68;   /* electronic */
   --grey: #67707B;   /* none */
   --ok: #2C6E49;
+  /* Where you are: each work area owns one colour (tray amber, desk graphite,
+     postmark violet). Routes keep blue/red/teal; areas never reuse them. */
+  --inbox: #A25F00;
+  --desk: #2A3441;
+  --incoming: #6A3F73;
+  --area: #5C6672;
+  --gutter: max(24px, calc((100% - 1080px) / 2 + 24px));
 }
+body[data-area=inbox] { --area: var(--inbox); }
+body[data-area=desk] { --area: var(--desk); }
+body[data-area=incoming] { --area: var(--incoming); }
 
 * { box-sizing: border-box; }
 
@@ -27,10 +37,6 @@ body {
   margin: 0;
   font: 15px/1.45 'Schibsted Grotesk', system-ui, sans-serif;
   color: var(--ink);
-  border-top: 7px solid transparent;
-  border-image: repeating-linear-gradient(-45deg,
-    var(--red) 0 9px, var(--card) 9px 18px,
-    var(--blue) 18px 27px, var(--card) 27px 36px) 7;
 }
 
 main { max-width: 1080px; margin: 0 auto; padding: 20px 24px 56px; }
@@ -48,14 +54,14 @@ a:hover { text-decoration: underline; }
 /* --- chrome --- */
 
 header.site {
-  display: flex; align-items: baseline; gap: 22px;
-  padding: 14px 24px 10px; max-width: 1080px; margin: 0 auto;
+  display: flex; align-items: flex-end; gap: 28px;
+  padding: 12px var(--gutter) 0;
 }
-header.site h1 { font-size: 19px; margin: 0; letter-spacing: -0.02em; }
+header.site h1 { font-size: 19px; margin: 0 0 9px; letter-spacing: -0.02em; }
 header.site h1 span { color: var(--red); }
-header.site nav { display: flex; gap: 16px; font-size: 14px; }
-header.site nav a { color: var(--ink); padding: 2px 1px; }
-header.site nav a:hover { color: var(--blue); text-decoration: none; box-shadow: 0 2px 0 var(--blue); }
+header.site nav { display: flex; font-size: 14px; }
+header.site nav a { color: var(--ink); }
+header.site nav a:hover { text-decoration: none; }
 
 header .sync { margin-left: auto; font-size: 12px; color: var(--ink-soft); }
 header .sync .ok { color: var(--ok); }
@@ -105,6 +111,10 @@ button.stamp.d:hover,    button.stamp.d.stamped    { background: var(--red); col
 button.stamp.e:hover,    button.stamp.e.stamped    { background: var(--teal); color: var(--card); }
 button.stamp.m:hover,    button.stamp.m.stamped    { background: var(--ink); color: var(--card); }
 button.stamp.none:hover, button.stamp.none.stamped { background: var(--grey); color: var(--card); }
+/* the one action this view exists for: filled with the area's colour. Plain stamps (outlined ink) are the alternatives. */
+button.stamp.primary, button.stamp.yes { background: var(--area); border-color: var(--area); color: #fff; transform: none; }
+button.stamp.primary:hover, button.stamp.yes:hover, button.stamp.yes.stamped { background: var(--ink); border-color: var(--ink); color: #fff; }
+button.stamp:not(.b):not(.d):not(.e):not(.m):not(.none):not(.yes):not(.primary):hover { background: var(--ink); color: #fff; }
 
 /* --- log tables: ruled paper, no boxing --- */
 
@@ -148,12 +158,16 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
     var(--red) 0 9px, var(--card) 9px 18px,
     var(--blue) 18px 27px, var(--card) 27px 36px);
 }
-.qslcard .confirm { font-size: 13px; color: var(--ink-soft); margin: 2px 0 0; }
-.qslcard .call {
+.entry {
+  background: var(--card); border: 1.5px solid var(--ink); border-left: 6px solid var(--area);
+  border-radius: 3px; padding: 12px 22px 18px;
+}
+.entry .confirm, .qslcard .confirm { font-size: 13px; color: var(--ink-soft); margin: 2px 0 0; }
+.entry .call, .qslcard .call {
   font: 700 44px/1.1 'IBM Plex Mono', monospace; letter-spacing: 0.02em;
   margin: 2px 0 10px;
 }
-.qslcard .call a { color: var(--ink); }
+.entry .call a, .qslcard .call a { color: var(--ink); }
 
 .loggrid {
   display: grid; grid-template-columns: repeat(5, 1fr);
@@ -175,7 +189,11 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
 .pref address { font-style: normal; font-size: 13.5px; line-height: 1.5; margin: 8px 0; }
 .pref .flags { font: 400 12px 'IBM Plex Mono', monospace; color: var(--ink-soft); }
 
-.decide-actions { margin: 16px 0 6px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.decide-actions {
+  margin: 16px 0 6px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  position: sticky; bottom: 0; z-index: 5; padding: 10px 0;
+  background: var(--paper); border-top: 1.5px solid var(--ink);
+}
 .decide-actions button.stamp { font-size: 14px; padding: 6px 16px; }
 kbd {
   font: 600 10.5px 'IBM Plex Mono', monospace;
@@ -184,9 +202,9 @@ kbd {
 }
 
 @keyframes cardin { from { opacity: 0; transform: translateY(8px) rotate(-0.3deg); } to { opacity: 1; transform: none; } }
-.decide-wrap .qslcard { animation: cardin 0.22s ease-out; }
+.decide-wrap .qslcard, .decide-wrap .entry { animation: cardin 0.22s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .decide-wrap .qslcard { animation: none; }
+  .decide-wrap .qslcard, .decide-wrap .entry { animation: none; }
   button:active { transform: none; }
 }
 
@@ -252,7 +270,7 @@ header.site nav .cnt {
 }
 header.site nav .pending { margin-left: 8px; font-size: 12px; color: var(--ink-soft); }
 
-.banner { border-left: 3px solid var(--ok); padding: 2px 10px; margin: 6px 0; }
+.banner { border-left: 3px solid var(--area, var(--ok)); padding: 2px 10px; margin: 6px 0; }
 .grouphead { margin: 20px 0 2px; }
 .grouphead small { color: var(--ink-soft); font-weight: 400; }
 .grouphead .mini { font-size: 12.5px; margin-left: 8px; font-weight: 400; }
@@ -262,13 +280,11 @@ header.site nav .pending { margin-left: 8px; font-size: 12px; color: var(--ink-s
 .filters a.on { color: var(--ink); font-weight: 700; text-decoration: none; border-bottom: 2px solid var(--ink); }
 
 /* Inbox: yes / no, written now (armed by the w key) */
-button.stamp.yes { color: var(--ok); }
-button.stamp.yes:hover, button.stamp.yes.stamped { background: var(--ok); color: var(--card); }
 .written-now .lbl { font-size: 12px; color: var(--ink-soft); align-self: center; }
 .written-now.armed { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
 
 /* Desk: the route is chosen when the card is finished */
-.routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+.routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 6px; }
 .routes label.stamp {
   font: 700 12px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 4px 10px; border: 2px solid currentColor; border-radius: 3px; cursor: pointer;
@@ -337,7 +353,7 @@ table.md-table { width: 100%; margin-top: 0; }
 table.md-table td { padding: 5px 8px 5px 4px; vertical-align: top; }
 tr.md-row { cursor: pointer; }
 tr.md-row.sel > td { background: var(--card); box-shadow: inset 0 1.5px 0 var(--ink), inset 0 -1.5px 0 var(--ink); }
-tr.md-row.sel > td:first-child { box-shadow: inset 3px 0 0 var(--red), inset 0 1.5px 0 var(--ink), inset 0 -1.5px 0 var(--ink); }
+tr.md-row.sel > td:first-child { box-shadow: inset 4px 0 0 var(--area), inset 0 1.5px 0 var(--ink), inset 0 -1.5px 0 var(--ink); }
 tr.md-group > th { padding-top: 12px; font-size: 13px; }
 tr.md-group:first-child > th { padding-top: 2px; }
 .md-list .call { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
@@ -351,21 +367,61 @@ h2 .h2link { font: 400 13px 'Schibsted Grotesk', sans-serif; margin-left: 10px; 
 
 /* Incoming QSLs */
 .rcv-find { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-.rcv-find #rcv-call { text-transform: uppercase; font: 600 18px 'IBM Plex Mono', monospace; width: 11ch; padding: 4px 8px; }
+.rcv-find #rcv-call { text-transform: uppercase; font: 600 26px 'IBM Plex Mono', monospace; width: 11ch; padding: 6px 12px; border-width: 2px; border-color: var(--incoming); }
+.rcv-find button { padding: 9px 18px; font-size: 15px; }
 table.rcvtable tr.got > td { color: var(--ink-soft); }
 ul.verdicts { margin: 6px 0 12px; padding-left: 18px; font-size: 14px; }
-.reply { border: 1.5px solid var(--ink); border-radius: 3px; padding: 10px 14px; background: var(--card); margin-top: 8px; }
+.reply { border: 1.5px solid var(--ink); border-left: 6px solid var(--incoming); border-radius: 3px; padding: 10px 16px 12px; background: var(--card); margin-top: 8px; }
 .reply:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
 table.expected tr.overdue > td { background: #fbeee9; }
 .reply button.armed { outline: 2px solid var(--red); outline-offset: 2px; }
 .banner.errbanner { border-left-color: var(--red); }
 
-/* Navigation (VISION D1): the three work areas, the rest secondary */
-header.site nav { flex: 1; justify-content: space-between; align-items: baseline; }
-header.site nav .areas { display: flex; gap: 22px; font-size: 15.5px; font-weight: 600; }
-header.site nav .secondary { display: flex; gap: 14px; font-size: 13px; align-items: baseline; }
+/* Navigation (VISION D1): the three work areas as folder tabs that open into
+   the band of their own colour; the rest is secondary. The tab of the page
+   you are on is filled with the band's colour (body[data-area]). */
+header.site nav { flex: 1; justify-content: space-between; align-items: flex-end; }
+header.site nav .areas { display: flex; gap: 3px; align-items: flex-end; font-size: 15.5px; font-weight: 600; }
+header.site nav .areas a {
+  --tab: var(--grey);
+  padding: 7px 16px 8px; border-radius: 7px 7px 0 0;
+  background: var(--paper-deep); border-top: 3px solid var(--tab);
+}
+header.site nav .areas a[data-area=inbox] { --tab: var(--inbox); }
+header.site nav .areas a[data-area=desk] { --tab: var(--desk); }
+header.site nav .areas a[data-area=incoming] { --tab: var(--incoming); margin-left: 22px; }
+header.site nav .areas a:hover { background: var(--card); box-shadow: none; color: var(--ink); }
+body[data-area=inbox] header.site nav .areas a[data-area=inbox], body[data-area=desk] header.site nav .areas a[data-area=desk], body[data-area=incoming] header.site nav .areas a[data-area=incoming] {
+  background: var(--tab); color: #fff; cursor: default;
+}
+header.site nav .secondary { display: flex; gap: 14px; font-size: 13px; align-items: baseline; padding-bottom: 9px; }
 header.site nav .secondary a { color: var(--ink-soft); }
-header.site nav .cnt.exp { background: var(--blue); }
+header.site nav .secondary a:hover { color: var(--ink); box-shadow: 0 2px 0 var(--ink-soft); }
+body[data-area=done] .secondary a[data-area=done], body[data-area=log] .secondary a[data-area=log], body[data-area=settings] .secondary a[data-area=settings] {
+  color: var(--ink); font-weight: 700; box-shadow: 0 2px 0 var(--ink);
+}
+header.site nav .cnt { color: #fff; background: var(--tab); margin-left: 4px; }
+body[data-area=inbox] header.site nav a[data-area=inbox] .cnt, body[data-area=desk] header.site nav a[data-area=desk] .cnt, body[data-area=incoming] header.site nav a[data-area=incoming] .cnt { background: #fff; color: var(--tab); }
+header.site nav .cnt.exp { background: var(--tab); }
+
+/* The band: name, one line of purpose, how many are left, how to view them. */
+.band { background: var(--area); color: #fff; padding: 14px var(--gutter) 16px; }
+.band-in { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
+.band h2 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; color: #fff; }
+.band p { margin: 4px 0 0; font-size: 14px; color: rgba(255, 255, 255, 0.9); }
+.band p b { font: 600 14px 'IBM Plex Mono', monospace; }
+.band .muted-on { color: rgba(255, 255, 255, 0.75); }
+.band .views { display: inline-flex; gap: 6px; align-items: center; }
+.band .views a, .band .views button {
+  font: 600 13px 'Schibsted Grotesk', sans-serif; color: #fff; background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.6); border-radius: 3px; padding: 3px 11px;
+}
+.band .views a:hover, .band .views button:hover { background: rgba(255, 255, 255, 0.18); text-decoration: none; color: #fff; }
+.band .views a.on { background: #fff; color: var(--area); border-color: #fff; }
+.band a:focus-visible, .band button:focus-visible { outline-color: #fff; }
+
+main { padding-top: 22px; }
+.listtools { margin: 4px 0 0; }
 
 /* The QSO in progress (VISION A1b) */
 .current { border: 1.5px solid var(--red); border-radius: 3px; background: var(--card); padding: 8px 12px; margin: 0 0 12px; }
@@ -379,3 +435,6 @@ header.site nav .cnt.exp { background: var(--blue); }
 .current.compact { padding: 4px 8px; }
 .current.compact .current-head .call { font-size: 16px; }
 .current .current-research { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--rule); margin-top: 4px; padding-top: 4px; }
+
+/* reply panel (Incoming) is short: its action row needs no sticky bar */
+.reply .decide-actions { position: static; border-top: 0; background: transparent; padding: 0; margin: 10px 0 6px; }

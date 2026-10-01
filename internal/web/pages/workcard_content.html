@@ -21,16 +21,6 @@
     {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <div id="cardform">
-  <div class="routes" id="route-pick" role="radiogroup" aria-label="{{t "Route"}}">
-    <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq $c.Route "B"}} checked{{end}}> {{t "Bureau"}} <kbd>b</kbd></label>
-    <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq $c.Route "D"}} checked{{end}}> {{t "Direct"}} <kbd>d</kbd></label>
-    <label class="stamp m"><input type="radio" name="route" value="MD" data-key="m"{{if eq $c.Route "MD"}} checked{{end}}> {{t "Via manager, direct"}} <kbd>m</kbd></label>
-    <label class="stamp m"><input type="radio" name="route" value="MB" data-key="v"{{if eq $c.Route "MB"}} checked{{end}}> {{t "Via manager, bureau"}} <kbd>v</kbd></label>
-    <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="{{t "manager"}}" value="{{$c.MgrPrefill}}" aria-label="{{t "Manager callsign"}}"
-           hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr" hx-swap="innerHTML"
-           oninput="this.closest('#workcard').dataset.mgr = this.value.trim().toUpperCase()" onkeydown="if(event.key==='Escape'){this.blur()}">
-    <span class="muted">{{if $c.RouteFrom}}{{t "preselected: %s" (t $c.RouteFrom)}}{{else}}<span class="route-hint">{{t "choose a route"}}</span>{{end}}</span>
-  </div>
   {{if $c.OQRS}}<p class="oqrs-hint">{{th "QRZ mentions <b>OQRS</b>: their card may be requested instead of sending one (<kbd>r</kbd>)."}}</p>{{end}}
   <article class="qslcard">
     <div class="airmail"></div>
@@ -43,6 +33,16 @@
         <td>{{if not $c.Extra}}<input type="hidden" name="key" value="{{.Item.QSLKey}}">{{end}}{{fmtDate .QSO.QSODate}}</td><td>{{fmtTime .QSO.TimeOn}}</td><td>{{.QSO.Band}}</td><td>{{.QSO.Mode}}</td><td>{{.QSO.RSTSent}}</td><td>{{.QSO.RSTRcvd}}</td><td>{{.QSO.Freq}}</td><td>{{.QSO.Notes}}</td>
       </tr>{{end}}</tbody>
     </table>
+    <div class="routes" id="route-pick" role="radiogroup" aria-label="{{t "Route"}}">
+      <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq $c.Route "B"}} checked{{end}}> {{t "Bureau"}} <kbd>b</kbd></label>
+      <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq $c.Route "D"}} checked{{end}}> {{t "Direct"}} <kbd>d</kbd></label>
+      <label class="stamp m"><input type="radio" name="route" value="MD" data-key="m"{{if eq $c.Route "MD"}} checked{{end}}> {{t "Via manager, direct"}} <kbd>m</kbd></label>
+      <label class="stamp m"><input type="radio" name="route" value="MB" data-key="v"{{if eq $c.Route "MB"}} checked{{end}}> {{t "Via manager, bureau"}} <kbd>v</kbd></label>
+      <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="{{t "manager"}}" value="{{$c.MgrPrefill}}" aria-label="{{t "Manager callsign"}}"
+             hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr" hx-swap="innerHTML"
+             oninput="this.closest('#workcard').dataset.mgr = this.value.trim().toUpperCase()" onkeydown="if(event.key==='Escape'){this.blur()}">
+      <span class="muted">{{if $c.RouteFrom}}{{t "preselected: %s" (t $c.RouteFrom)}}{{else}}<span class="route-hint">{{t "choose a route"}}</span>{{end}}</span>
+    </div>
     <div class="pref sendto">
       <div class="for-none"><p class="why">{{t "Choose the route above: the address to write follows it."}}</p></div>
       <div class="for-D">
@@ -74,8 +74,8 @@
   </div>
   <div class="decide-actions">
     <span class="fulfil">
-      <button type="button" class="stamp b" data-key="p" title="{{t "Print the card, mark it sent with the chosen route, next card"}}  (p)" hx-post="/work/print?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Print"}}</button>
-      <button type="button" class="stamp d" data-key="w" title="{{t "Written by hand, mark it sent with the chosen route, next card"}}  (w)" hx-post="/work/written?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Written"}}</button>
+      <button type="button" class="stamp primary" data-key="p" title="{{t "Print the card, mark it sent with the chosen route, next card"}}  (p)" hx-post="/work/print?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Print"}}</button>
+      <button type="button" class="stamp" data-key="w" title="{{t "Written by hand, mark it sent with the chosen route, next card"}}  (w)" hx-post="/work/written?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Written"}}</button>
       <button type="button" class="mini{{if $c.OQRS}} suggested{{end}}" data-key="r" title="{{t "Request their card instead (OQRS, PayPal, e-mail ...) - no own card"}}  (r)" onclick="var q=document.getElementById('req');q.hidden=!q.hidden;if(!q.hidden)q.querySelector('input[name=note]').focus()">{{t "Requested"}}&hellip;</button>
       <button type="button" class="mini" data-key="n" title="{{t "No card after all - goes to Done, reopenable"}}  (n)" hx-post="/work/none?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "No card"}}</button>
       <button type="button" class="mini" data-key="u" title="{{t "Take it back to the Inbox"}}  (u)" hx-post="/work/back?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Back to the Inbox"}}</button>

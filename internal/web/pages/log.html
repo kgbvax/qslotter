@@ -4,16 +4,20 @@
 <script src="/static/htmx.min.js"></script>
 <script>window.qslT = {{jsT}};</script>
 <script src="/static/app.js"></script>
-</head><body>
+</head><body data-area="log">
 <header class="site">
   <h1>qslotter</h1>
   {{template "nav" .}}
   <div class="sync" id="sync">{{template "sync_status.html" .}}</div>
 </header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2>{{t "QSO Log"}}</h2><p><span class="muted-on">{{t "(%d shown)" (len .QSOs)}}</span></p></div>
+    <div class="views">
+      <button hx-post="/sync/pull" hx-target="#sync" hx-swap="innerHTML">{{t "Pull from Clublog"}}</button>
+      <button hx-post="/sync/push" hx-target="#sync" hx-swap="innerHTML">{{t "Push back to Clublog"}}</button>
+    </div>
+  </div></div>
 <main>
-  <h2>{{t "QSO Log"}} <small>{{t "(%d shown)" (len .QSOs)}}</small></h2>
-  <button hx-post="/sync/pull" hx-target="#sync" hx-swap="innerHTML">{{t "Pull from Clublog"}}</button>
-  <button hx-post="/sync/push" hx-target="#sync" hx-swap="innerHTML">{{t "Push back to Clublog"}}</button>
   <table>
     <thead><tr><th>{{t "Date"}}</th><th>{{t "Time"}}</th><th>{{t "Call"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST"}}</th><th>{{t "QSL Sent"}}</th><th>{{t "QSL Rcvd"}}</th><th>{{t "Notes"}}</th></tr></thead>
     <tbody>
