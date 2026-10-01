@@ -121,11 +121,13 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 ### Package layout
 
 - `cmd/qslotter`: entrypoint, wiring, shutdown.
+- `cmd/ocr-eval`: offline calibration CLI for received-card photo intake. Runs OCR output (from `tools/ocr-dump.swift`, Apple Vision) through `internal/intake` against a copy of the database and reports auto/pick/miss rates. Working data lives in `/eval/` (git-ignored). Not part of the app.
 - `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against the `qsldetermine` heuristic. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
 - `internal/adif`: minimal ADIF reader/writer used for Clublog round-trip.
 - `internal/clublog`: Clublog HTTP client (`getadif.php`, `putlogs.php`).
 - `internal/config`: YAML loader with `${ENV}` expansion.
 - `internal/events`: in-process pub/sub broker used for UDP → SSE (event names `new_qso`, `station_updated`; the queue page listens on `/events`).
+- `internal/intake`: pure-function matcher from OCR text of a photographed incoming card to a QSO in the log (callsign match tolerant of OCR-confusable characters, date/band/mode scoring, `auto`/`pick`/`miss` classes). Roadmap v2 "receive-card photo + OCR"; not yet wired into the web UI.
 - `internal/llmqsl`: LLM-based QSL-method vocabulary/mapping (`none/direct/buero/manager-*`); used only by `cmd/qsl-eval`.
 - `internal/printer`: PDF rendering and platform print shims.
 - `internal/qualify`: eligibility rules and auto-enqueue logic.

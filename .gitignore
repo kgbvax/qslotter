@@ -23,3 +23,6 @@ third_party/
 
 # Local Claude Code state
 .claude/
+
+# Received-card OCR eval data: card photos show other stations' addresses (see cmd/ocr-eval)
+/eval/
