@@ -68,20 +68,34 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("parse adif: %w", err)
 	}
-	seen := make(map[string]bool, len(recs))
-	logged := 0
+	// Clublog can hold two records with one key (same call, minute and band,
+	// e.g. an FT4 and an MFSK entry for one QSO). Upserting both would flip the
+	// stored row twice per pull and count two updates, so only the last record
+	// of a key is used - the state the row ended in before anyway.
+	var qsos []*store.QSO
+	last := make(map[string]int, len(recs))
+	dups := 0
 	for _, rec := range recs {
 		q, err := toQSO(rec)
 		if err != nil {
 			// Skip unparseable records but continue.
 			continue
 		}
-		// Two records with one key (same call, minute, band) overwrite each
-		// other and flip the hash on every pull: say so.
-		if seen[q.QSLKey] {
-			log.Printf("[pull] duplicate key in Clublog export: %s", q.QSLKey)
+		if i, ok := last[q.QSLKey]; ok {
+			qsos[i] = nil
+			dups++
 		}
-		seen[q.QSLKey] = true
+		last[q.QSLKey] = len(qsos)
+		qsos = append(qsos, q)
+	}
+	if dups > 0 {
+		log.Printf("[pull] %d QSOs have several records in the Clublog export (same call, minute, band); using the last", dups)
+	}
+	logged := 0
+	for _, q := range qsos {
+		if q == nil {
+			continue
+		}
 		var before *store.QSO
 		if logged < 10 {
 			before, _ = o.Store.GetQSO(q.QSLKey)
