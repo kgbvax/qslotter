@@ -1,10 +1,12 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -352,5 +354,44 @@ func TestPullEnqueuesAndAnnounces(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no queue_changed event for the enqueued QSO")
+	}
+}
+
+// TestLoopSkipsWithoutCredentials: the background loop takes the live
+// credentials on each tick and makes no request while there are none.
+func TestLoopSkipsWithoutCredentials(t *testing.T) {
+	var pulls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pulls.Add(1)
+		fmt.Fprint(w, sampleADIF)
+	}))
+	defer srv.Close()
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+
+	var haveCreds atomic.Bool
+	o := &Orchestrator{Store: st, Configure: func() (*clublog.Client, bool) {
+		if !haveCreds.Load() {
+			return nil, false
+		}
+		cl := clublog.New("u", "p", "DL9ET", "k")
+		cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+		return cl, true
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := Loop(ctx, o, 10*time.Millisecond, 0)
+	time.Sleep(60 * time.Millisecond)
+	if n := pulls.Load(); n != 0 {
+		t.Fatalf("pulled %d times without credentials", n)
+	}
+	haveCreds.Store(true) // the operator saved credentials under Settings
+	deadline := time.Now().Add(2 * time.Second)
+	for pulls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if pulls.Load() == 0 {
+		t.Fatal("no pull after credentials appeared")
 	}
 }

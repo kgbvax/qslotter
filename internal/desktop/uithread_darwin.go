@@ -4,6 +4,7 @@ package desktop
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/ebitengine/purego"
 )
@@ -18,6 +19,7 @@ var (
 	uiWork         uintptr
 	uiMu           sync.Mutex
 	uiQueue        []func()
+	uiReady        atomic.Bool // set once all of the above are in place
 )
 
 // initUIThread resolves libdispatch; call on the UI thread.
@@ -41,12 +43,13 @@ func initUIThread() error {
 			f()
 		}
 	})
+	uiReady.Store(true)
 	return nil
 }
 
 // uiDo runs f on the UI thread; false when the dispatcher is not set up.
 func uiDo(f func()) bool {
-	if dispatchAsyncF == nil {
+	if !uiReady.Load() {
 		return false
 	}
 	uiMu.Lock()

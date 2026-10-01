@@ -23,6 +23,25 @@ type Orchestrator struct {
 	Clublog *clublog.Client
 	Rules   *qualify.Rules // optional; if set, PullAndUpsert also enqueues eligible QSOs
 	Broker  *events.Broker // optional; announces queue changes to open windows
+
+	// Configure, if set, is called before each background pull/push: it
+	// returns a client built from the live config (credentials changed under
+	// Settings apply at once) and false while no credentials are set (the
+	// tick is skipped - no failed logins).
+	Configure func() (*clublog.Client, bool)
+}
+
+// configure refreshes the client for a background run; false = skip it.
+func (o *Orchestrator) configure() bool {
+	if o.Configure == nil {
+		return true
+	}
+	c, ok := o.Configure()
+	if !ok {
+		return false
+	}
+	o.Clublog = c
+	return true
 }
 
 func (o *Orchestrator) announce(key, to string) {

@@ -34,6 +34,9 @@ func Loop(ctx context.Context, o *Orchestrator, pullEvery, pushEvery time.Durati
 			case <-ctx.Done():
 				return
 			case <-pullC:
+				if !o.configure() {
+					continue // no Clublog credentials yet
+				}
 				inserted, updated, err := o.PullAndUpsert()
 				if err != nil {
 					log.Printf("sync: background pull: %v", err)
@@ -43,6 +46,9 @@ func Loop(ctx context.Context, o *Orchestrator, pullEvery, pushEvery time.Durati
 					log.Printf("sync: background pull: %d new, %d updated", inserted, updated)
 				}
 			case <-pushC:
+				if !o.configure() {
+					continue
+				}
 				pushed, err := o.PushBack()
 				if err != nil {
 					log.Printf("sync: background push: %v", err)

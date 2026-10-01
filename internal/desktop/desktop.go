@@ -47,6 +47,12 @@ type Options struct {
 	StartPath   string // first page of the main window, e.g. "/queue" or "/settings"
 	Title       string
 	OpenCompact bool // also open the compact decision window at start
+
+	// Teardown, if set, runs the program's shutdown synchronously. macOS
+	// calls it when the system asks the app to terminate (Dock Quit, Cmd-Q,
+	// logout, restart): AppKit exits the process right after, so main's own
+	// shutdown after Run would never run. Must be idempotent.
+	Teardown func()
 }
 
 const (
@@ -59,12 +65,14 @@ const (
 type Shell struct {
 	opts Options
 
-	mu      sync.Mutex
-	windows map[string]glaze.WebView // open windows by role ("main", "compact")
-	hasTray bool
-	pumping bool // a window event loop of ours is running on the UI thread
-	quit    chan struct{}
-	quitOne sync.Once
+	mu       sync.Mutex
+	windows  map[string]glaze.WebView // open windows by role ("main", "compact")
+	hasTray  bool
+	pumping  bool            // a window event loop of ours is running on the UI thread
+	creating map[string]bool // roles whose window is being built (glaze.New pumps messages)
+	started  bool            // the first main window was created (StartPath used)
+	quit     chan struct{}
+	quitOne  sync.Once
 }
 
 // New prepares the shell; nothing is shown until Run.
@@ -78,7 +86,7 @@ func New(opts Options) *Shell {
 	if opts.Mode == "" {
 		opts.Mode = ModeWindow
 	}
-	return &Shell{opts: opts, windows: map[string]glaze.WebView{}, quit: make(chan struct{})}
+	return &Shell{opts: opts, windows: map[string]glaze.WebView{}, creating: map[string]bool{}, quit: make(chan struct{})}
 }
 
 // Run shows the UI and blocks until Quit (tray "Quit", a signal, or - where
@@ -87,6 +95,9 @@ func New(opts Options) *Shell {
 func (s *Shell) Run() error {
 	if s.opts.Mode == ModeHeadless {
 		<-s.quit
+		return nil
+	}
+	if s.quitting() { // a signal arrived while starting up
 		return nil
 	}
 	if err := initUIThread(); err != nil {
@@ -103,6 +114,11 @@ func (s *Shell) Run() error {
 			{Title: "Quit qslotter", OnClick: s.Quit},
 		},
 		OnReady: func() {
+			if s.quitting() {
+				// Quit came before the tray could be stopped: stop it now.
+				tray.Stop()
+				return
+			}
 			s.mu.Lock()
 			s.hasTray = true
 			s.mu.Unlock()
@@ -112,25 +128,43 @@ func (s *Shell) Run() error {
 			s.start()
 		},
 	})
+	log.Printf("desktop: tray loop ended (%v)", err)
 	if errors.Is(err, tray.ErrUnsupported) {
-		// No tray backend (Linux): the windows are the app; closing the last
-		// one ends glaze's loop and with it the program.
-		s.start()
-		if s.opts.Mode == ModeBrowser {
-			<-s.quit // browser windows are separate processes; wait for a signal
+		// No tray backend (Linux): the windows are the app; the program ends
+		// with the last one. Browser windows and the browser fallback are
+		// separate processes - then wait for a signal instead.
+		if !s.start() {
+			<-s.quit
 		}
 		return nil
 	}
 	return err
 }
 
-// start opens the initial windows and keeps them serviced.
-func (s *Shell) start() {
+// quitting reports whether Quit was called.
+func (s *Shell) quitting() bool {
+	select {
+	case <-s.quit:
+		return true
+	default:
+		return false
+	}
+}
+
+// start opens the initial windows and keeps them serviced. It reports
+// whether a native window was shown (false: browser windows / fallback).
+func (s *Shell) start() bool {
 	first := s.create("main")
 	if s.opts.OpenCompact {
-		s.create("compact")
+		if c := s.create("compact"); first == nil {
+			first = c
+		}
+	}
+	if first == nil {
+		return false
 	}
 	s.loop(first)
+	return true
 }
 
 // open shows the window for role - or brings an already open one to the
@@ -144,14 +178,28 @@ func (s *Shell) target(role string) (url string, w, h int, title string) {
 	if role == "compact" {
 		return s.opts.BaseURL + compactPath, compactW, compactH, s.opts.Title + " - compact"
 	}
-	return s.opts.BaseURL + s.opts.StartPath, mainW, mainH, s.opts.Title
+	path := "/queue"
+	s.mu.Lock()
+	if !s.started {
+		path = s.opts.StartPath // only the very first main window (first run: /settings)
+	}
+	s.mu.Unlock()
+	return s.opts.BaseURL + path, mainW, mainH, s.opts.Title
 }
 
 // create builds (or raises) the window for role without running a loop.
 // Returns nil when the window already existed or when no native window could
 // be created - then a browser app window is opened instead.
 func (s *Shell) create(role string) glaze.WebView {
+	if s.quitting() {
+		return nil
+	}
 	url, width, height, title := s.target(role)
+	if role == "main" {
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
+	}
 	if s.opts.Mode == ModeBrowser {
 		openAppWindow(url, width, height)
 		return nil
@@ -162,10 +210,30 @@ func (s *Shell) create(role string) glaze.WebView {
 		w.Raise()
 		return nil
 	}
+	if s.creating[role] {
+		// glaze.New pumps the message queue while WebView2 starts; a tray
+		// click or a second launch can land here meanwhile. One is enough.
+		s.mu.Unlock()
+		return nil
+	}
 	delete(s.windows, role) // closed meanwhile
+	s.creating[role] = true
 	s.mu.Unlock()
 
 	w, err := glaze.New(false)
+
+	s.mu.Lock()
+	delete(s.creating, role)
+	s.mu.Unlock()
+	if s.quitting() {
+		// Quit arrived while the window was being built; on Windows its
+		// quit message was consumed by glaze's start-up pump - repost it.
+		postQuit()
+		if err == nil {
+			w.Destroy()
+		}
+		return nil
+	}
 	if err != nil {
 		// No usable WebView (WebView2 / WebKitGTK missing): a browser app
 		// window is better than nothing.
@@ -188,8 +256,9 @@ func (s *Shell) create(role string) glaze.WebView {
 //   - Windows: closing the last window posts WM_QUIT, which would end the
 //     tray's loop; so run a nested message loop (any window's Run serves all
 //     windows of the thread) until the last window is closed.
-//   - no tray (Linux): glaze's Run drives the loop until the last window is
-//     closed, then the program ends.
+//   - no tray (Linux): glaze's Run serves one window until that window is
+//     closed; keep running it for the remaining windows, then the program
+//     ends.
 //
 // While our loop runs, further windows are just created; the loop serves them.
 func (s *Shell) loop(w glaze.WebView) {
@@ -202,9 +271,23 @@ func (s *Shell) loop(w glaze.WebView) {
 		return
 	}
 	s.pumping = true
+	hasTray := s.hasTray
 	s.mu.Unlock()
 
-	w.Run()
+	for w != nil {
+		w.Run()
+		log.Printf("desktop: window loop ended (quitting=%v)", s.quitting())
+		if s.quitting() {
+			// Windows: Quit's quit message (one per thread) ended this nested
+			// loop; repost it so the tray's outer loop ends too.
+			postQuit()
+			break
+		}
+		w = nil
+		if !hasTray {
+			w = s.anyOpenWindow() // Linux: another window is still open
+		}
+	}
 
 	s.mu.Lock()
 	s.pumping = false
@@ -214,6 +297,18 @@ func (s *Shell) loop(w glaze.WebView) {
 		}
 	}
 	s.mu.Unlock()
+}
+
+// anyOpenWindow returns a window that is still open, or nil.
+func (s *Shell) anyOpenWindow() glaze.WebView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, w := range s.windows {
+		if w.Window() != nil {
+			return w
+		}
+	}
+	return nil
 }
 
 // Show brings the main window to the front, opening it if it was closed.
@@ -243,6 +338,7 @@ func (s *Shell) Show() {
 // goroutine; repeated calls are no-ops.
 func (s *Shell) Quit() {
 	s.quitOne.Do(func() {
+		log.Printf("desktop: quit requested")
 		close(s.quit)
 		s.mu.Lock()
 		open := make([]glaze.WebView, 0, len(s.windows))

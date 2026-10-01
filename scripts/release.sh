@@ -22,12 +22,16 @@ build() { # goos goarch outname [extra ldflags]
 		-ldflags "$LDFLAGS ${4:-}" -o "$OUT/$3" ./cmd/qslotter
 }
 
-# Windows icon + version info (optional: needs network for go-winres once).
-if go run github.com/tc-hib/go-winres@latest make --in winres/winres.json \
-	--product-version "$VERSION" --file-version "$VERSION" >/dev/null 2>&1; then
-	echo "winres: icon/version resource embedded"
+# Windows icon, version info and manifest (DPI awareness). The .syso must sit
+# next to the main package to be linked. Optional: needs network for
+# go-winres once.
+WINRES=github.com/tc-hib/go-winres@v0.3.3
+rm -f cmd/qslotter/rsrc_windows_*.syso
+if go run "$WINRES" make --in winres/winres.json --out cmd/qslotter/rsrc --arch amd64 \
+	--product-version "$VERSION" --file-version "$VERSION"; then
+	echo "winres: icon/version/manifest resource embedded"
 else
-	echo "winres: skipped (go-winres not reachable) - exe without icon"
+	echo "winres: FAILED - the Windows exe gets no icon, version info or DPI manifest"
 fi
 
 build darwin  arm64 qslotter-darwin-arm64
@@ -35,15 +39,18 @@ build darwin  amd64 qslotter-darwin-amd64
 build windows amd64 qslotter-windows-amd64.exe "-H windowsgui"
 build linux   amd64 qslotter-linux-amd64
 build linux   arm64 qslotter-linux-arm64
-rm -f rsrc_windows_*.syso
+rm -f cmd/qslotter/rsrc_windows_*.syso
 
 # Linux: binary + desktop entry + icon.
+# One top-level folder in the archive (never a "./" entry: GNU tar would
+# apply its mode to the directory the user extracts into).
 for arch in amd64 arm64; do
-	d="$OUT/qslotter-linux-$arch-pkg"
+	name="qslotter-$VERSION-linux-$arch"
+	d="$OUT/$name"
 	mkdir -p "$d"
 	cp "$OUT/qslotter-linux-$arch" "$d/qslotter"
 	cp packaging/linux/qslotter.desktop packaging/linux/qslotter.png "$d/"
-	tar -C "$d" -czf "$OUT/qslotter-$VERSION-linux-$arch.tar.gz" .
+	tar -C "$OUT" -czf "$OUT/$name.tar.gz" "$name"
 	rm -rf "$d"
 done
 

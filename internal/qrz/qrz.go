@@ -8,6 +8,7 @@ package qrz
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -94,7 +95,7 @@ func (c *Client) ensureSession() error {
 		c.BaseURL, url.QueryEscape(c.Username), url.QueryEscape(c.Password), url.QueryEscape(c.Agent))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
-		return fmt.Errorf("qrz login: %w", err)
+		return fmt.Errorf("qrz login: %w", redact(err))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -141,7 +142,7 @@ func (c *Client) lookup(callsign string, retry bool) (*Callsign, error) {
 	u := fmt.Sprintf("%s?s=%s;callsign=%s", c.BaseURL, c.key(), url.QueryEscape(strings.ToUpper(callsign)))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
-		return nil, fmt.Errorf("qrz lookup: %w", err)
+		return nil, fmt.Errorf("qrz lookup: %w", redact(err))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -181,7 +182,7 @@ func (c *Client) FetchBio(callsign string) (string, error) {
 	u := fmt.Sprintf("%s?s=%s;html=%s", c.BaseURL, c.key(), url.QueryEscape(strings.ToUpper(callsign)))
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
-		return "", fmt.Errorf("qrz bio: %w", err)
+		return "", fmt.Errorf("qrz bio: %w", redact(err))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -238,4 +239,14 @@ func stripHTML(s string) string {
 		lines = append(lines, ln)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// redact drops the request URL from a transport error: the URL carries the
+// password (login) or the session key, and errors end up in the log file.
+func redact(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }

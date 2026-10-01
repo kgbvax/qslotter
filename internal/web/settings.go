@@ -18,7 +18,7 @@ import (
 // pageSettings renders the service-configuration form (QRZ/Clublog
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "settings.html", map[string]any{"Cfg": s.config()})
+	s.render(w, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -79,6 +79,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	qrzStatus, clublogStatus := s.validateFn(newCfg)
 	s.render(w, "settings.html", map[string]any{
 		"Cfg":           newCfg,
+		"CanQuit":       s.Quit != nil,
 		"Saved":         true,
 		"QrzStatus":     qrzStatus,
 		"ClublogStatus": clublogStatus,

@@ -570,6 +570,18 @@ func allowedExternal(host string) bool {
 	return false
 }
 
+// apiQuit ends the desktop app - the way out when the tray icon is not
+// available (e.g. Windows hid it, or Explorer was not ready at logon).
+func (s *Server) apiQuit(w http.ResponseWriter, r *http.Request) {
+	if s.Quit == nil {
+		http.Error(w, "not running as the desktop app", http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<p class="ok">qslotter is shutting down.</p>`))
+	go s.Quit()
+}
+
 // htmxNav renders the nav bar alone (badge counts), for live refresh.
 func (s *Server) htmxNav(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "nav", nil)

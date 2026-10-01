@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	gosync "sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -48,31 +49,10 @@ func main() {
 
 	logPath := setupLog()
 
-	cfgPath, firstRun, err := resolveConfig(*cfgFlag)
-	if err != nil {
-		fatal("Configuration", err)
-	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		fatal("Configuration", err)
-	}
-	log.Printf("config %s, log %s", cfgPath, logPath)
-	uiValue := cfg.UI.Mode
-	if *uiFlag != "" {
-		uiValue = *uiFlag
-	}
-	mode, err := desktop.ParseMode(uiValue)
-	if err != nil {
-		fatal("Configuration", err)
-	}
-
-	if cfg.Store.Driver != "sqlite" {
-		fatal("Configuration", fmt.Errorf("store driver %q not supported in v1 (only sqlite)", cfg.Store.Driver))
-	}
-
-	// Single instance before touching UDP or SQLite: two copies would fight
-	// over the UDP port and the DB. A second launch asks the running one to
-	// show its window, then exits.
+	// Single instance first - before the config is resolved (a hand-off
+	// launch must not create a starter config) and before UDP or SQLite (two
+	// copies would fight over the port and the DB). A second launch asks the
+	// running one to show its window, then exits.
 	var shell atomic.Pointer[desktop.Shell]
 	release, err := desktop.SingleInstance(appID, func() {
 		if s := shell.Load(); s != nil {
@@ -86,13 +66,34 @@ func main() {
 	if err != nil {
 		log.Printf("single-instance check: %v (continuing)", err)
 	}
-	defer release()
+	rotateLog(logPath)
+
+	cfgPath, firstRun, err := resolveConfig(*cfgFlag)
+	if err != nil {
+		fatal("Configuration", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fatal("Configuration", err)
+	}
+	log.Printf("config %s, database %s, log %s", cfgPath, cfg.Store.Path, logPath)
+	uiValue := cfg.UI.Mode
+	if *uiFlag != "" {
+		uiValue = *uiFlag
+	}
+	mode, err := desktop.ParseMode(uiValue)
+	if err != nil {
+		fatal("Configuration", err)
+	}
+
+	if cfg.Store.Driver != "sqlite" {
+		fatal("Configuration", fmt.Errorf("store driver %q not supported in v1 (only sqlite)", cfg.Store.Driver))
+	}
 
 	st, err := store.Open(cfg.Store.Path)
 	if err != nil {
 		fatal("Database", err)
 	}
-	defer st.Close()
 
 	broker := events.New()
 
@@ -121,25 +122,34 @@ func main() {
 	if err != nil {
 		fatal("Web UI", err)
 	}
-	srv.OpenExternal = desktop.OpenExternal
+	if mode == desktop.ModeWindow {
+		srv.OpenExternal = desktop.OpenExternal // only the app window needs it
+	}
 
 	// UDP listener: real-time feed from Log4OM.
 	udp := udplistener.New(cfg.UDP.Listen, st, broker, rules, refresher)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	if err := udp.Start(ctx); err != nil {
 		fatal("Log4OM UDP feed", err)
 	}
-	defer udp.Stop()
 	log.Printf("udp listener on %s (Log4OM ADIF feed)", cfg.UDP.Listen)
 
 	// Background reconciliation loop, config-gated (pull_interval>0 pulls,
-	// push_interval>0 pushes). The manual buttons on the log page stay.
+	// push_interval>0 pushes). The manual buttons on the log page stay. Each
+	// tick uses the live credentials (changed under Settings) and is skipped
+	// while there are none - no failed logins against Clublog.
 	var loopDone <-chan struct{}
 	clublogClient := clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
 		cfg.Clublog.Call, cfg.Clublog.APIKey)
 	if cfg.Clublog.PullInterval > 0 || cfg.Clublog.PushInterval > 0 {
-		o := &sync.Orchestrator{Store: st, Clublog: clublogClient, Rules: rules, Broker: broker}
+		o := &sync.Orchestrator{Store: st, Rules: rules, Broker: broker,
+			Configure: func() (*clublog.Client, bool) {
+				c := srv.CurrentConfig().Clublog
+				if c.Email == "" || c.APIKey == "" || c.AppPassword == "" {
+					return nil, false
+				}
+				return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey), true
+			}}
 		loopDone = sync.Loop(ctx, o, cfg.Clublog.PullInterval, cfg.Clublog.PushInterval)
 		log.Printf("background sync: pull every %s, push every %s",
 			cfg.Clublog.PullInterval, cfg.Clublog.PushInterval)
@@ -187,6 +197,32 @@ func main() {
 		}
 	}()
 
+	// One shutdown path for every way out (tray, window, Dock/Cmd-Q, logout,
+	// signal): idempotent, bounded.
+	var teardownOnce gosync.Once
+	teardown := func() {
+		teardownOnce.Do(func() {
+			log.Printf("shutting down...")
+			reqCancel()
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutCancel()
+			_ = httpSrv.Shutdown(shutCtx)
+			// Stop the background loop, then let an in-flight pull/push
+			// finish (bounded) so it is not torn down mid-import.
+			cancel()
+			if loopDone != nil {
+				select {
+				case <-loopDone:
+				case <-time.After(10 * time.Second):
+					log.Printf("background sync still running; exiting anyway")
+				}
+			}
+			udp.Stop()
+			_ = st.Close()
+			release()
+		})
+	}
+
 	// The UI owns the main thread until the user quits (or a signal).
 	startPath := "/queue"
 	if firstRun {
@@ -197,8 +233,12 @@ func main() {
 		BaseURL:     cfg.Server.LocalURL(),
 		StartPath:   startPath,
 		OpenCompact: cfg.Server.OpenCompact,
+		Teardown:    teardown,
 	})
 	shell.Store(sh)
+	if mode != desktop.ModeHeadless {
+		srv.Quit = sh.Quit
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -208,22 +248,7 @@ func main() {
 	if err := sh.Run(); err != nil {
 		log.Printf("desktop: %v", err)
 	}
-
-	log.Printf("shutting down...")
-	reqCancel()
-	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutCancel()
-	_ = httpSrv.Shutdown(shutCtx)
-	// Stop the background loop, then let an in-flight pull/push finish
-	// (bounded) so it is not torn down mid-import.
-	cancel()
-	if loopDone != nil {
-		select {
-		case <-loopDone:
-		case <-time.After(10 * time.Second):
-			log.Printf("background sync still running; exiting anyway")
-		}
-	}
+	teardown()
 }
 
 // resolveConfig picks the config file: the -config flag, else ./config.yaml

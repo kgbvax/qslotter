@@ -892,3 +892,54 @@ func TestOpenExternal(t *testing.T) {
 		t.Fatalf("opened %v", opened)
 	}
 }
+
+// TestCrossOriginPostsRejected: a web page the operator happens to visit (or
+// any LAN page when server.addr is a wildcard) must not be able to drive the
+// app through POSTs; same-origin and non-browser clients are fine.
+func TestCrossOriginPostsRejected(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	h := srv.Routes()
+	post := func(site string) int {
+		req := httptest.NewRequest("POST", "/queue/none", strings.NewReader(url.Values{"key": {key}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if site != "" {
+			req.Header.Set("Sec-Fetch-Site", site)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post("cross-site"); code != http.StatusForbidden {
+		t.Fatalf("cross-site POST = %d, want 403", code)
+	}
+	if it := status(t, st, key); it.Status != "queued" {
+		t.Fatalf("cross-site POST changed the card: %+v", it)
+	}
+	if code := post("same-origin"); code != http.StatusOK {
+		t.Fatalf("same-origin POST = %d, want 200", code)
+	}
+}
+
+func TestQuitEndpoint(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	h := srv.Routes()
+	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusNotImplemented {
+		t.Fatalf("quit without desktop = %d, want 501", r.Code)
+	}
+	if strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+		t.Fatal("settings offers Quit outside the desktop app")
+	}
+	quit := make(chan struct{})
+	srv.Quit = func() { close(quit) }
+	if !strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+		t.Fatal("settings must offer Quit in the desktop app")
+	}
+	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusOK {
+		t.Fatalf("quit = %d", r.Code)
+	}
+	select {
+	case <-quit:
+	case <-time.After(time.Second):
+		t.Fatal("Quit was not called")
+	}
+}

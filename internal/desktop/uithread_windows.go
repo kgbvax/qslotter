@@ -5,6 +5,7 @@ package desktop
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -45,7 +46,7 @@ type wndClassExW struct {
 }
 
 var ui struct {
-	hwnd  uintptr
+	hwnd  atomic.Uintptr // published once the window exists
 	mu    sync.Mutex
 	queue []func()
 }
@@ -66,7 +67,7 @@ func initUIThread() error {
 	if h == 0 {
 		return fmt.Errorf("CreateWindowExW: %v", e)
 	}
-	ui.hwnd = h
+	ui.hwnd.Store(h)
 	return nil
 }
 
@@ -87,12 +88,13 @@ func uiWndProc(hwnd, msg, wp, lp uintptr) uintptr {
 
 // uiDo runs f on the UI thread; false when no dispatcher exists.
 func uiDo(f func()) bool {
-	if ui.hwnd == 0 {
+	hwnd := ui.hwnd.Load()
+	if hwnd == 0 {
 		return false
 	}
 	ui.mu.Lock()
 	ui.queue = append(ui.queue, f)
 	ui.mu.Unlock()
-	r, _, _ := procPostMessageW.Call(ui.hwnd, wmUIDo, 0, 0)
+	r, _, _ := procPostMessageW.Call(hwnd, wmUIDo, 0, 0)
 	return r != 0
 }

@@ -62,9 +62,10 @@ it shows its own app window using the WebView the OS already ships.
   3.6 print engine hangs).
 - **Linux:** unpack the tarball; needs WebKitGTK (`apt install
   libwebkit2gtk-4.1-0` or `libwebkitgtk-6.0-4`, Fedora `webkit2gtk4.1`,
-  Arch `webkit2gtk-4.1`). Copy `qslotter.desktop` and `qslotter.png` to
-  `~/.local/share/applications/` and `~/.local/share/icons/` for a menu
-  entry. No tray on Linux yet: closing the window quits.
+  Arch `webkit2gtk-4.1`). For a menu entry copy `qslotter` to `~/.local/bin`
+  (on the session PATH), `qslotter.desktop` to `~/.local/share/applications/`
+  and `qslotter.png` to `~/.local/share/icons/`. No tray on Linux yet:
+  closing the last window quits.
 
 Without a WebView runtime qslotter opens a Chromium-family browser as an app
 window instead (`-ui browser` forces that; `-ui headless` runs the server
@@ -90,8 +91,8 @@ or just `go build ./cmd/qslotter` for the machine you are on.
 2. The window shows the decision queue; the tray (macOS menu bar, Windows
    notification area - promote the icon to keep it visible) reopens it and
    has the compact window. Closing the window keeps qslotter running for the
-   Log4OM feed; quit from the tray (or the Dock on macOS). Starting qslotter
-   again brings the running window to the front.
+   Log4OM feed; quit from the tray, the Dock (macOS) or Settings > Quit
+   qslotter. Starting qslotter again brings the running window to the front.
 3. Click **Pull from Clublog** (or wait for the background pull) to mirror
    your log. Only QSOs from the day qslotter first ran enter the decision
    queue; to work through older QSOs too, set `qualify.since` (a date, or

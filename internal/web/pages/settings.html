@@ -30,5 +30,10 @@
 
     <p><button type="submit">Save &amp; validate</button></p>
   </form>
+  {{if .CanQuit}}
+  <h3>Program</h3>
+  <p class="muted">Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon.</p>
+  <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="Quit qslotter? The Log4OM feed stops until you start it again.">Quit qslotter</button></p>
+  {{end}}
 </main>
 </body></html>{{end}}

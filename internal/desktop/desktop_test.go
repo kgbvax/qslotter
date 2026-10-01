@@ -44,3 +44,16 @@ func TestTargets(t *testing.T) {
 		t.Errorf("compact = %s %dx%d %q", url, w, h, title)
 	}
 }
+
+// The first-run start page (Settings) is for the first main window only;
+// reopening the window later shows the queue.
+func TestStartPathOnlyForTheFirstWindow(t *testing.T) {
+	s := New(Options{BaseURL: "http://127.0.0.1:8473", StartPath: "/settings"})
+	if url, _, _, _ := s.target("main"); url != "http://127.0.0.1:8473/settings" {
+		t.Fatalf("first main window = %s", url)
+	}
+	s.started = true
+	if url, _, _, _ := s.target("main"); url != "http://127.0.0.1:8473/queue" {
+		t.Fatalf("reopened main window = %s", url)
+	}
+}

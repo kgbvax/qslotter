@@ -33,12 +33,16 @@ func (s *Shell) setupDock() {
 			Fn:  func(self objc.ID, _cmd objc.SEL, app objc.ID) bool { return false },
 		},
 		{
-			// Quit from the Dock menu or Cmd-Q: cancel AppKit's hard exit and
-			// run qslotter's own shutdown instead (HTTP, sync loop, DB).
+			// The system asks the app to terminate: Dock Quit, Cmd-Q - and
+			// logout, restart, shutdown, which must never be refused. Run the
+			// program's shutdown (HTTP, sync loop, DB) right here, then let
+			// AppKit exit the process.
 			Cmd: sel("applicationShouldTerminate:"),
 			Fn: func(self objc.ID, _cmd objc.SEL, app objc.ID) uint {
-				go s.Quit()
-				return 0 // NSTerminateCancel
+				if s.opts.Teardown != nil {
+					s.opts.Teardown()
+				}
+				return 1 // NSTerminateNow
 			},
 		},
 	})

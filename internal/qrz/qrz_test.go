@@ -84,3 +84,17 @@ func TestLoginEscapesCredentials(t *testing.T) {
 		t.Fatalf("password not escaped in login query: %q", login)
 	}
 }
+
+// TestErrorsCarryNoPassword: a transport error must not include the login
+// URL - it carries the password and ends up in the log file.
+func TestErrorsCarryNoPassword(t *testing.T) {
+	c := New("dl9et", "s3cret!", "test/1.0")
+	c.BaseURL = "http://127.0.0.1:1/xml/" // nothing listens: connection refused
+	err := c.CheckCredentials()
+	if err == nil {
+		t.Fatal("expected a connection error")
+	}
+	if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "password=") {
+		t.Fatalf("error leaks the password: %v", err)
+	}
+}

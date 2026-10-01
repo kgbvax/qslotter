@@ -45,6 +45,10 @@ type Server struct {
 	// desktop app (nil: the endpoint answers 501).
 	OpenExternal func(url string) error
 
+	// Quit ends the desktop app (set by main in window/browser mode): a way
+	// out that does not depend on the tray icon being visible.
+	Quit func()
+
 	// validateFn checks the configured credentials (settings page); a field
 	// so tests can stub the network out.
 	validateFn func(*config.Config) (qrzStatus, clublogStatus string)
@@ -149,6 +153,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/work/print", s.htmxWorkPrint)
 	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
+	r.Post("/api/quit", s.apiQuit)
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
@@ -156,8 +161,14 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
 	r.Handle("/static/*", http.FileServer(http.FS(staticFS)))
-	return r
+	// Reject cross-origin browser POSTs (CSRF): any web page could otherwise
+	// drive the queue, settings or /api/* on 127.0.0.1 - or on the LAN when
+	// server.addr is a wildcard. Same-origin and non-browser clients pass.
+	return http.NewCrossOriginProtection().Handler(r)
 }
+
+// CurrentConfig returns the live config (it changes when Settings are saved).
+func (s *Server) CurrentConfig() *config.Config { return s.config() }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
