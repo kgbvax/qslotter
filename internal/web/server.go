@@ -3,10 +3,13 @@
 package web
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"strings"
@@ -264,7 +267,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/work/list", s.htmxWorkList)              // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
-	r.Handle("/static/*", http.FileServer(http.FS(staticFS)))
+	r.Handle("/static/*", staticHandler())
 	// Reject cross-origin browser POSTs (CSRF): any web page could otherwise
 	// drive the queue, settings or /api/* on 127.0.0.1 - or on the LAN when
 	// server.addr is a wildcard. Same-origin and non-browser clients pass.
@@ -332,4 +335,37 @@ func yn(v string) string {
 		return "no"
 	}
 	return "?"
+}
+
+// staticHandler serves the embedded assets. An embed.FS carries no modification
+// time, so without help every page load downloaded the stylesheet, scripts and
+// fonts again - and the fonts arrived after the first paint (a flash of
+// another typeface on every switch between pages). Fonts never change under
+// their name (rename the file when one does) and are cached for good;
+// everything else is revalidated against a content hash (a 304, no body).
+func staticHandler() http.Handler {
+	files := http.FileServer(http.FS(staticFS))
+	var etags sync.Map // path -> ETag
+	etag := func(path string) string {
+		if v, ok := etags.Load(path); ok {
+			return v.(string)
+		}
+		b, err := fs.ReadFile(staticFS, strings.TrimPrefix(path, "/"))
+		if err != nil {
+			return ""
+		}
+		sum := sha256.Sum256(b)
+		e := `"` + hex.EncodeToString(sum[:8]) + `"`
+		etags.Store(path, e)
+		return e
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/static/fonts/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else if e := etag(r.URL.Path); e != "" {
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("ETag", e)
+		}
+		files.ServeHTTP(w, r)
+	})
 }
