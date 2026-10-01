@@ -3,9 +3,12 @@
   "Desk": "Schreibtisch",
   "Decide": "Entscheiden",
   "Inbox, card by card": "Eingang, Karte für Karte",
-  "QSOs: card or not?": "QSOs: Karte oder nicht?",
   "Compact list for operating: yes / no per row": "Kompaktliste für den Funkbetrieb: Ja / Nein pro Zeile",
   "compact list": "Kompaktliste",
+  "compact": "kompakt",
+  "full view": "Vollansicht",
+  "Switch this window to the small compact Inbox": "Dieses Fenster auf den kleinen kompakten Eingang umschalten",
+  "Switch this window back to the full view": "Dieses Fenster zurück zur Vollansicht schalten",
   "One QSO at a time": "Ein QSO nach dem anderen",
   "card by card": "Karte für Karte",
   "Recompute queue": "Eingang neu berechnen",
@@ -57,9 +60,7 @@
   "Next card": "Nächste Karte",
   "prev": "zurück",
   "next": "weiter",
-  "Confirming two-way QSO with": "Bestätigung des Zweiweg-QSOs mit",
   "freq %s": "Frequenz %s",
-  "RST rcvd %s": "RST erhalten %s",
   "notes: %s": "Notizen: %s",
   "Keys:": "Tasten:",
   "yes, card": "ja, Karte",
@@ -71,5 +72,5 @@
   "\"yes\" sends the card to the Desk, where its route is chosen; the next QSO follows.": "„Ja“ legt die Karte auf den Schreibtisch, dort wird ihr Weg gewählt; das nächste QSO folgt.",
   "List": "Liste",
   "View": "Ansicht",
-  "QSO logged with": "QSO geloggt mit"
+  "Which QSOs get a card?": "Welche QSOs bekommen eine Karte?"
 }

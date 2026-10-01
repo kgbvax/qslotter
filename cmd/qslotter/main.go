@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	gosync "sync"
 	"sync/atomic"
@@ -246,11 +247,11 @@ func main() {
 	// (the window gets the browser language from the WebView).
 	lang := i18n.Default.Match(cfg.UI.Language, desktop.SystemLanguage())
 	sh := desktop.New(desktop.Options{
-		Mode:        mode,
-		BaseURL:     cfg.Server.LocalURL(),
-		StartPath:   startPath,
-		OpenCompact: cfg.Server.OpenCompact,
-		Teardown:    teardown,
+		Mode:      mode,
+		BaseURL:   cfg.Server.LocalURL(),
+		StartPath: startPath,
+		StatePath: filepath.Join(filepath.Dir(cfgPath), "window-state.json"),
+		Teardown:  teardown,
 		Labels: desktop.Labels{
 			Open:         i18n.Default.T(lang, "Open qslotter"),
 			Compact:      i18n.Default.T(lang, "Compact Inbox"),

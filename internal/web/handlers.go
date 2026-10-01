@@ -339,7 +339,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		}
 	}
 	if prior == 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("first QSO with this station")})
+		res.Badges = append(res.Badges, Badge{Kind: "first", Text: i18n.M("first QSO")})
 	} else {
 		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d earlier QSO(s) with this station", prior)})
 	}

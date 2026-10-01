@@ -54,7 +54,8 @@ type ServerCfg struct {
 	// Tray is ignored since the desktop app (2026-10): the tray icon is
 	// always there on macOS and Windows. Kept so old configs still load.
 	Tray bool `yaml:"tray"`
-	// OpenCompact also opens the compact decision window on startup.
+	// OpenCompact is ignored since the app window remembers its view (full /
+	// compact) and position. Kept so old configs still load.
 	OpenCompact bool `yaml:"open_compact"`
 }
 
@@ -208,7 +209,6 @@ const defaultConfig = `# qslotter configuration - created on the first start.
 # Credentials are easiest to enter in the app under Settings.
 server:
     addr: 127.0.0.1:8473      # 0.0.0.0:8473 = reachable from the LAN (no login!)
-    open_compact: false       # also open the compact decision window at start
 station:
     name: ""                  # your name, printed on cards
     qth: ""

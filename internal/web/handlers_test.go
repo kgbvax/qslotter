@@ -297,7 +297,7 @@ func TestDecideFlow(t *testing.T) {
 	newer := addQueued(t, st, "DL2ZZZ", "20240103")
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "QSO logged with", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q; body:\n%s", want, body)
 		}
@@ -852,7 +852,7 @@ func TestDecideCardResearchStates(t *testing.T) {
 
 	// No history, no station info, QRZ not configured (test server has no refresher).
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"first QSO with this station", "QRZ lookups are off"} {
+	for _, want := range []string{"first QSO", "QRZ lookups are off"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q:\n%s", want, body)
 		}
@@ -958,4 +958,3 @@ func TestQuitEndpoint(t *testing.T) {
 		t.Fatal("Quit was not called")
 	}
 }
-

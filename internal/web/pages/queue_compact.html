@@ -9,6 +9,7 @@
 <main>
   <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
     <a href="/decide">{{t "Decide"}}</a> <a href="/work">{{t "Desk"}}</a>
+    <button type="button" class="mini view-switch" data-view="full" title="{{t "Switch this window back to the full view"}}" hidden>{{t "full view"}}</button>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">↻</button>
     <span id="recompute-msg"></span>
   </h2>
