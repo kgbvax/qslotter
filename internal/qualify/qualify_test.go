@@ -324,3 +324,14 @@ func TestDiscardBacklogOncePerCutoff(t *testing.T) {
 		t.Fatalf("no cutoff = %d, %v; want 0", n, err)
 	}
 }
+
+// TestClublogSentDateIsSent: a QSO Clublog has with a QSL sent date is not
+// queued (Clublog exports QSLSDATE, never QSL_SENT).
+func TestClublogSentDateIsSent(t *testing.T) {
+	r := &Rules{}
+	q := qso("DL1AB", "20260101", "120000", "20m", "SSB")
+	q.QSLSDate = "20260105"
+	if ok, _ := r.Eligible(q, nil); ok {
+		t.Fatal("a QSO with a QSL sent date must not be queued")
+	}
+}

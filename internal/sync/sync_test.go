@@ -422,3 +422,34 @@ func TestLoopSkipsWithoutCredentials(t *testing.T) {
 		t.Fatal("no pull after credentials appeared")
 	}
 }
+
+// TestPullClosesItemWithClublogSentDate: Clublog's export has QSLSDATE but
+// no QSL_SENT; a sent date closes an open card like QSL_SENT=Y does.
+func TestPullClosesItemWithClublogSentDate(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	var body string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/getadif.php", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cl := clublog.New("u", "p", "DL9ET", "k")
+	cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+	o := &Orchestrator{Store: st, Clublog: cl}
+	body = "<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<QSL_RCVD:1>N<EOR>\n"
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL1AB", 5)
+	key := qsos[0].QSLKey
+	if err := st.Enqueue(&store.QueueItem{QSLKey: key, Status: "queued"}); err != nil {
+		t.Fatal(err)
+	}
+	body = "<QSO_DATE:8>20240101<TIME_ON:6>120000<CALL:5>DL1AB<BAND:3>20m<MODE:3>SSB<QSLSDATE:8>20240110<QSL_RCVD:1>N<EOR>\n"
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	if it, _ := st.QueueGet(key); it.Status != "sent" || it.Note != "sent elsewhere" {
+		t.Fatalf("a Clublog sent date must close the card: %+v", it)
+	}
+}

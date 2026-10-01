@@ -302,9 +302,11 @@ Remaining gaps (v2 / later):
   for bookkeeping only - it never changes card status, cards are `sent` when
   written or printed (B7);
   (one card for several QSOs is now B9).
-- Unverified against the real services: `putlogs.php` accepting
-  `QSL_SENT_VIA`/`QSL_VIA`; whether a Clublog pull overwrites NAME/QTH/NOTES
-  that arrived via UDP.
+- Clublog (checked 2026-10-01): pushes land - `QSLSDATE` and `QSL_RCVD=Y`
+  come back - but the export never carries `QSL_SENT`, `QSL_SENT_VIA` or
+  `QSL_VIA`, so the route cannot be read back; qslotter keeps it locally and
+  treats a QSL sent date from the log as "card sent". Unverified:
+  `QSL_RCVD=R`; whether a pull overwrites NAME/QTH/NOTES from UDP.
 - Windows: tray and SumatraPDF paths were not exercised in the rebuild;
   macOS `lpstat -d` is parsed with an English-only string (a localized
   system falls back to `lp -d ''`).

@@ -455,10 +455,17 @@ func (q *QSO) EffectiveSent() (sent bool, method, date string) {
 	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
 		return true, q.QSLSentMethodLocal.String, q.QSLSDateLocal.String
 	}
-	if q.QSLSent == "Y" {
+	if q.SentPerLog() {
 		return true, q.QSLSentAs.String, q.QSLSDate
 	}
 	return false, "", ""
+}
+
+// SentPerLog reports that the log (Clublog, Log4OM) has the card as sent:
+// QSL_SENT=Y, or a QSL sent date - Clublog's export carries QSLSDATE but
+// never QSL_SENT, so the date is its only "sent" signal.
+func (q *QSO) SentPerLog() bool {
+	return q.QSLSent == "Y" || (q.QSLSent != "N" && q.QSLSDate != "")
 }
 
 // EffectiveRcvd reports whether a card from the other station is on record
@@ -1086,11 +1093,11 @@ func (s *SQLiteStore) QueueReopen(key string) (inClublog string, err error) {
 				WHERE qsl_key=?`, key); err != nil {
 				return err
 			}
-			var sent sql.NullString
-			if err := tx.QueryRow(`SELECT qsl_sent FROM qsos WHERE qsl_key=?`, key).Scan(&sent); err != nil && err != sql.ErrNoRows {
+			var sent, sdate sql.NullString
+			if err := tx.QueryRow(`SELECT qsl_sent, qslsdate FROM qsos WHERE qsl_key=?`, key).Scan(&sent, &sdate); err != nil && err != sql.ErrNoRows {
 				return err
 			}
-			if sent.String == "Y" {
+			if (&QSO{QSLSent: sent.String, QSLSDate: sdate.String}).SentPerLog() {
 				inClublog = "sent"
 			}
 		}

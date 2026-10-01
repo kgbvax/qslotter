@@ -86,7 +86,7 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 		}
 		// The card already went out through another tool: an open queue item
 		// for it is done (a duplicate card costs more than a wrong auto-close).
-		if (isNew || changed) && q.QSLSent == "Y" {
+		if (isNew || changed) && q.SentPerLog() {
 			if err := o.Store.QueueCloseSentElsewhere(q.QSLKey); err == nil {
 				o.announce(q.QSLKey, "sent")
 			}

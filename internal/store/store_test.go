@@ -973,3 +973,20 @@ func TestQueueReply(t *testing.T) {
 		t.Fatalf("reply to an unknown QSO = %v, want ErrConflict", err)
 	}
 }
+
+// TestSentPerLog: Clublog exports QSLSDATE but never QSL_SENT; the date
+// alone means the card went out.
+func TestSentPerLog(t *testing.T) {
+	for _, c := range []struct {
+		sent, date string
+		want       bool
+	}{{"Y", "", true}, {"", "20260930", true}, {"N", "20260930", false}, {"", "", false}, {"N", "", false}} {
+		q := &QSO{QSLSent: c.sent, QSLSDate: c.date}
+		if got := q.SentPerLog(); got != c.want {
+			t.Errorf("SentPerLog(%q, %q) = %v", c.sent, c.date, got)
+		}
+		if sent, _, _ := q.EffectiveSent(); sent != c.want {
+			t.Errorf("EffectiveSent(%q, %q) = %v", c.sent, c.date, sent)
+		}
+	}
+}

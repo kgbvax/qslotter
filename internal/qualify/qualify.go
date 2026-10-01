@@ -82,7 +82,7 @@ func isDigital(mode string) bool {
 func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool, string) {
 	// A card that already went out is never queued again - not even by the
 	// override marker on an old, already-handled QSO.
-	if q.QSLSent == "Y" {
+	if q.SentPerLog() {
 		return false, "QSL already sent (per Clublog)"
 	}
 	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
