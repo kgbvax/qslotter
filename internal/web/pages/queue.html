@@ -20,11 +20,10 @@
 </header>
 <div class="band"><div class="band-in">
     <div class="band-title"><h2>{{t "Inbox"}}</h2><p><b id="queue-count">{{len .Rows}}</b> {{t "QSOs: card or not?"}}</p></div>
-    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/queue" aria-current="page">{{t "List"}}</a><a href="/queue?compact=1" title="{{t "Compact list for operating: yes / no per row"}}">{{t "compact list"}}</a><a href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/queue" aria-current="page">{{t "List"}}</a><a href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
       <button hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML" title="{{t "Recompute queue"}}">&#8635;</button><span id="recompute-msg"></span></div>
   </div></div>
 <main>
-  {{if or .Done .Failed}}<p class="banner">{{t "Batch: %s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s skipped" .Failed}}</span> {{t "(already handled)"}}{{end}}.</p>{{end}}
   {{template "current_contact" .Current}}
   <div class="md">
     <div class="md-list" aria-label="{{t "QSOs waiting for a decision"}}">

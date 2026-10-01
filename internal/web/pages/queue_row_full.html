@@ -17,7 +17,6 @@
 {{define "row_suggestion"}}{{if .Suggested}}<span class="sug">{{if eq .Suggested "N"}}{{t "none"}}{{else}}{{.Suggested}}{{end}}</span> <span class="badge">QRZ</span>{{else}}<span class="muted">?</span>{{end}}{{end}}
 
 {{define "queue_row_full.html"}}<tr id="row-{{.Item.QSLKey}}">
-  {{if .ShowCheckbox}}<td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Item.QSLKey}}" title="{{t "Select for batch action"}}"></td>{{end}}
   <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
   <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
   <td class="c-bm">{{.QSO.Band}}</td>

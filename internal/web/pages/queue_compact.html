@@ -13,18 +13,9 @@
     <span id="recompute-msg"></span>
   </h2>
   {{template "current_contact" .Current}}
-  {{if or .Done .Failed}}<p class="banner">{{t "%s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s skipped" .Failed}}</span>{{end}}</p>{{end}}
   <p id="empty-msg" class="muted"{{if .Rows}} hidden{{end}}>{{t "Nothing waiting for a decision."}}</p>
-  <form id="batch" method="post" action="/queue/batch" class="batchbar">
-    <input type="hidden" name="compact" value="1">
-    <select name="action">
-      <option value="yes">{{t "Yes"}}</option>
-      <option value="none">{{t "No"}}</option>
-    </select>
-    <button type="submit" class="mini">{{t "Apply"}}</button>
-  </form>
   <table id="queue-table" class="compact">
-    <thead><tr><th class="ck"></th><th>{{t "Date"}}</th><th>{{t "Call"}}</th><th>{{t "Band/Mode"}}</th><th>{{t "Name"}}</th><th title="{{t "QRZ suggestion"}}">?</th><th>{{t "Card?"}}</th></tr></thead>
+    <thead><tr><th>{{t "Date"}}</th><th>{{t "Call"}}</th><th>{{t "Band/Mode"}}</th><th>{{t "Name"}}</th><th title="{{t "QRZ suggestion"}}">?</th><th>{{t "Card?"}}</th></tr></thead>
     <tbody id="queue-body">
     {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
     </tbody>

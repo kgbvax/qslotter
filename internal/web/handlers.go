@@ -57,13 +57,12 @@ func (s *Server) pageLog(w http.ResponseWriter, r *http.Request) {
 // QueueRow is one card: the queue item plus the QSO and the cached station
 // info behind the method suggestion.
 type QueueRow struct {
-	Item         *store.QueueItem
-	QSO          *store.QSO
-	Info         *store.StationInfo
-	Suggested    string // method suggestion from qsldetermine ("N" when paper refused); never a decision
-	Chosen       string // the operator's recorded decision (empty while undecided)
-	MgrPrefill   string // manager callsign for the manager routes (recorded, else a valid suggested route)
-	ShowCheckbox bool   // batch-selection checkbox (queue/work list pages only)
+	Item       *store.QueueItem
+	QSO        *store.QSO
+	Info       *store.StationInfo
+	Suggested  string // method suggestion from qsldetermine ("N" when paper refused); never a decision
+	Chosen     string // the operator's recorded decision (empty while undecided)
+	MgrPrefill string // manager callsign for the manager routes (recorded, else a valid suggested route)
 
 	// Research, filled by researchFor for the card views only (lists stay light).
 	Research *Research
@@ -179,15 +178,6 @@ func (s *Server) rowsFor(items []*store.QueueItem, refresh bool) []*QueueRow {
 		if row := s.buildRow(it.QSLKey, refresh); row.QSO != nil && row.Item != nil {
 			rows = append(rows, row)
 		}
-	}
-	return rows
-}
-
-// withCheckbox marks rows as batch-selectable (list pages; the station page
-// embeds the same row template without the checkbox).
-func withCheckbox(rows []*QueueRow) []*QueueRow {
-	for _, r := range rows {
-		r.ShowCheckbox = true
 	}
 	return rows
 }
@@ -389,16 +379,13 @@ func (s *Server) pageQueue(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("compact") == "1" {
 		s.render(w, r, "queue_compact.html", map[string]any{
 			"Current": s.currentView(true),
-			"Rows":    withCheckbox(s.rowsFor(items, true)),
-			"Done":    r.URL.Query().Get("done"),
-			"Failed":  r.URL.Query().Get("failed"),
+			"Rows":    s.rowsFor(items, true),
 		})
 		return
 	}
 	data := s.decideData(r, items, true)
 	data["Rows"] = s.rowsFor(items, true)
 	data["Current"] = s.currentView(false)
-	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
 	s.render(w, r, "queue.html", data)
 }
 
@@ -448,7 +435,6 @@ func (s *Server) htmxQueueRow(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("compact") == "1" {
 		name = "queue_row_compact.html"
 	}
-	row.ShowCheckbox = true
 	s.render(w, r, name, row)
 }
 
@@ -866,45 +852,15 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "queued")
 }
 
-// batchQueue applies one action to every checked row of a list page and
-// redirects back with a done/failed count. list=work selects the Desk's
-// action set (each row's own route field); the default is the Inbox's.
+// batchQueue applies one action to every ticked card of the Desk list and
+// redirects back with a done/failed count. The Inbox has no batch: deciding
+// a QSO is as quick as ticking it.
 func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
-	action := r.FormValue("action")
-	list := r.FormValue("list")
-	keys := r.Form["keys"]
-
-	if list == "work" {
-		s.batchDesk(w, r, action, keys)
-		return
-	}
-	var apply func(key string) (to string, err error)
-	switch {
-	case action == "yes":
-		apply = func(k string) (string, error) { return "decided", s.store.QueueAccept(k) }
-	case action == "none":
-		apply = func(k string) (string, error) { return "skipped", s.store.QueueDecline(k) }
-	default:
+	if r.FormValue("list") != "work" {
 		s.fail(w, r, http.StatusBadRequest, "unknown batch action for this list")
 		return
 	}
-	done, failed := 0, 0
-	for _, key := range keys {
-		to, err := apply(key)
-		if err != nil {
-			failed++
-			continue
-		}
-		done++
-		s.publishQueueChanged(key, to)
-	}
-
-	target := "/queue"
-	q := url.Values{"done": {fmt.Sprint(done)}, "failed": {fmt.Sprint(failed)}}
-	if r.FormValue("compact") == "1" {
-		q.Set("compact", "1")
-	}
-	http.Redirect(w, r, target+"?"+q.Encode(), http.StatusSeeOther)
+	s.batchDesk(w, r, r.FormValue("action"), r.Form["keys"])
 }
 
 // --- sync handlers ---

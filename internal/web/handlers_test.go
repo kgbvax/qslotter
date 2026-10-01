@@ -671,51 +671,32 @@ func TestQueueRowOnlyForUndecided(t *testing.T) {
 	}
 }
 
-// TestBatchActions: one POST applies an action to many rows; cards that were
-// handled meanwhile are counted as failed, not applied twice.
+// TestBatchActions: the Desk list applies one action to many ticked cards;
+// the Inbox has no batch (a yes/no is as quick as ticking).
 func TestBatchActions(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	q2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	q3 := addQueued(t, st, "DL3YYY", "20240104")
-	postForm(t, h, "/queue/written", url.Values{"key": {q3}, "route": {"B"}}) // already handled
-
-	r := postForm(t, h, "/queue/batch", url.Values{"action": {"yes"}, "keys": {key, q2, q3}})
-	if r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/queue?done=2&failed=1" {
-		t.Fatalf("batch yes = %d %q", r.Code, r.Header().Get("Location"))
-	}
 	for _, k := range []string{key, q2} {
-		if it := status(t, st, k); it.Status != "decided" || it.DesiredMethod != "" {
-			t.Fatalf("%s after batch yes: %+v", k, it)
+		postForm(t, h, "/queue/yes", url.Values{"key": {k}})
+		if it := status(t, st, k); it.Status != "decided" {
+			t.Fatalf("%s after yes: %+v", k, it)
 		}
 	}
-	if it := status(t, st, q3); it.Status != "sent" || it.DesiredMethod != "B" {
-		t.Fatalf("batch touched an already handled card: %+v", it)
-	}
-	if body := get(t, h, "/queue?done=2&failed=1").Body.String(); !strings.Contains(body, "2 done") || !strings.Contains(body, "1 skipped") {
-		t.Fatalf("queue page must report the batch result:\n%s", body)
-	}
 
-	// Routes are the Desk's: no route batch actions in the Inbox.
-	for _, a := range []string{"B", "D", "M", "print", "written"} {
+	// No batch in the Inbox, whatever the action.
+	for _, a := range []string{"yes", "none", "B", "print"} {
 		if r := postForm(t, h, "/queue/batch", url.Values{"action": {a}, "keys": {key}}); r.Code != http.StatusBadRequest {
 			t.Fatalf("Inbox batch %q = %d, want 400", a, r.Code)
 		}
 	}
-
-	// Compact redirect lands back on the compact page.
-	k4 := addQueued(t, st, "DL4WWW", "20240105")
-	r = postForm(t, h, "/queue/batch", url.Values{"action": {"none"}, "keys": {k4}, "compact": {"1"}})
-	if r.Header().Get("Location") != "/queue?compact=1&done=1&failed=0" {
-		t.Fatalf("batch compact redirect = %q", r.Header().Get("Location"))
-	}
-	if it := status(t, st, k4); it.Status != "skipped" || it.DesiredMethod != "N" {
-		t.Fatalf("batch none: %+v", it)
+	if it := status(t, st, key); it.Status != "decided" {
+		t.Fatalf("a refused batch touched the card: %+v", it)
 	}
 
 	// Desk batches use each row's route field; a row without a route fails.
 	fp := srv.printer.(*fakePrinter)
-	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key, q2},
+	r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key, q2},
 		"route:" + key: {"MD"}, "manager:" + key: {"K2ABC"}})
 	if r.Header().Get("Location") != "/work?done=1&failed=1" || len(fp.printed) != 1 {
 		t.Fatalf("batch print = %q, printed %d", r.Header().Get("Location"), len(fp.printed))
@@ -977,3 +958,4 @@ func TestQuitEndpoint(t *testing.T) {
 		t.Fatal("Quit was not called")
 	}
 }
+

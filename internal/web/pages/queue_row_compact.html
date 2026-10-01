@@ -1,4 +1,4 @@
-{{define "row_cells_compact"}}{{if .ShowCheckbox}}<td class="ck"><input type="checkbox" name="keys" form="batch" value="{{.Item.QSLKey}}" title="{{t "Select for batch action"}}"></td>{{end}}<td class="c-date">{{fmtDate .QSO.QSODate}}</td>
+{{define "row_cells_compact"}}<td class="c-date">{{fmtDate .QSO.QSODate}}</td>
 <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
 <td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
 <td class="c-name">{{.QSO.Name}}</td>
