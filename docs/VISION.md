@@ -7,9 +7,10 @@ September 2026. Where README and this document disagree, this document wins.
 ## 1. Product thesis
 
 qslotter is a local QSL workbench. It mirrors the log in real time (Log4OM UDP
-+ Clublog reconciliation), decides which QSOs deserve a paper card, helps the
-operator decide *how* each card goes out (direct, bureau, via manager, or
-none), treats printing and handwriting as equal fulfillment paths, and
++ Clublog reconciliation), lets the operator decide which QSOs deserve a paper card (Inbox: yes / no /
+written now), then *how* each card goes out at the Desk (bureau, direct, via
+manager direct or bureau - or the station's card is requested via OQRS
+instead), treats printing and handwriting as equal fulfillment paths, and
 reconciles QSL state back to Clublog. One Go binary, local web UI, SQLite.
 
 It stays a discovery tool first: the goal is to learn what QSL process actually
@@ -24,7 +25,8 @@ where it stands today.
 
 - **The logbook is the QSL source, and QSL state should mirror back into it.**
   Done: Clublog is the reconciliation source, Log4OM the real-time feed;
-  `QSL_SENT`/`QSL_SENT_AS`/`QSL_RCVD` push back via `putlogs.php`.
+  `QSL_SENT=Y` with `QSL_SENT_VIA` (bureau/direct) and `QSL_VIA` (manager),
+  plus `QSL_RCVD`, push back via `putlogs.php`.
 - **"It should not rely on UDP QSO propagation, this is unreliable."**
   Resolved by architecture: UDP is the *primary* feed (sub-second, works
   mid-pileup) and the Clublog pull is the reconciliation backstop for
@@ -36,55 +38,119 @@ where it stands today.
   marker (`qualify.override_marker`) force-includes a QSO.
 - **Smart method determination from QRZ and other sources — none, "no paper
   please", direct, bureau, manager — accurate enough for semi-automatic
-  processing.** Done in the intended shape: `qsldetermine` suggests with
-  confidence and reason, the operator confirms with one click. "Other
+  processing.** Suggestion done: `qsldetermine` suggests with confidence and
+  reason. Since 2026-10-01 it informs yes/no in the Inbox and preselects the
+  route at the Desk (B4, partial). "Other
   sources" beyond QRZ (LLM bio interpretation) sits behind the `qsl-eval`
   gate (roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
-  each QSO, or in a batch later. Done: the Decide view is the synchronous
-  path (one card, advance on decision); the Queue list with batch actions is
-  the asynchronous one.
+  each QSO, or in a batch later. Done in the 2026-09-30 build, reshaped
+  2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
+  asynchronous = the Desk, card by card or batch Print (B1, B5).
 - **Print QSO data onto the card via a configurable template.** Done: YAML
   templates with millimetre coordinates; DX name and QTH included.
-- **Hand-written QSL cards supported**, usually synchronously. Done: the
-  Written action marks the card sent with the chosen method and shows the
-  data to copy.
+- **Hand-written QSL cards supported**, usually synchronously. Partly done:
+  Written at the Desk records the decided route and shows the data to copy;
+  written now in the Inbox is still route-less (A3: it must record bureau or
+  direct).
 - **Electronic QSL is out of scope** — left to the logbook. Enforced since
   2026-09-30: E is no longer a decision; eQSL-only stations resolve to
   "no card".
 - **Receiving: quick keyboard entry of received cards.** Partially done: the
-  Receive page does callsign → pick QSOs → mark received. The automatic
-  response card for "PSE QSL" is not built (roadmap v1.y/v2).
+  Receive page does callsign → pick QSOs → mark received. Reply due / answer
+  right there and cards requested via OQRS are section 2.3 (C2, C3, C5).
 - **Optional photo capture of received cards with data extraction.** Not
   built (roadmap v2).
 
-## 2. The core loop
+## 2. The three work areas (operator walkthrough, 2026-10-01)
 
-Two queues, one card moving through them (decided 2026-09-30):
+The operator's own walkthrough of how QSL handling should feel (dictated;
+"proposal" marks additions that are not from the walkthrough). Three areas,
+which are also the top-level menu: **Eingang / Inbox** (qualify QSOs),
+**Schreibtisch / Desk** (write or print the cards), **Posteingang / Incoming
+QSLs** (book received cards, answer them). The UI is multilingual (D3); this
+document uses the English names.
 
-1. **QSO logged** in Log4OM -> UDP datagram reaches qslotter within ~1 s -> it
-   enters the **decision queue** (`/queue`, `/decide`; live via SSE). Digital
-   modes and already-carded QSOs stay out; repeat contacts come in, with their
-   history.
-2. **Decide.** The card view puts the research next to the decision: what QRZ
-   says about the station's QSL habits (qslmgr text, bio lines, flags), the
-   earlier QSOs with the station and what happened to their cards (sent,
-   received, LoTW), other cards still pending for the station. The operator
-   chooses **Bureau, Direct, Via manager, No card, or Written** (card filled in
-   on the spot: done, no route). One or two clicks or keys.
-3. **The decided card leaves the decision queue at once.** Bureau / Direct /
-   Via manager go to the **work queue** (`/work`, `/work/card`), one card at a
-   time: **Print** (PDF to card stock) or **Written**, whereupon the card is
-   *sent* and the next one appears. A printer error leaves it in the queue.
-4. **Done** (`/done`) lists finished cards; **Reopen** takes one back to the
-   decision queue (a misclick). **Back** takes a decided card back before it
-   is produced.
-5. On the operator's schedule: **Push to Clublog** uploads `QSL_SENT=Y` with
-   `QSL_SENT_VIA` (B/D) or `QSL_VIA` (manager); a Written-on-the-spot card
-   pushes `QSL_SENT=Y` alone.
+Electronic confirmations need no decision at all - the logbook handles them;
+every question here is about the *paper* card: whether, and how.
 
-Steps 1-2 must work mid-pileup: sub-second, one small window, no full-log
-scans on the hot path.
+Status column: state of the build deployed 2026-09-30 (`done` / `partial` /
+`missing` / `open` = not decided yet).
+
+### 2.1 Inbox - qualify QSOs
+
+The purpose of this queue is to qualify QSOs: decide *whether* a paper card
+goes out. *How* it goes out is decided at the Desk (operator, 2026-10-01).
+While operating it is a glance-and-tap surface; in deliberation mode (sitting
+down to it) it is a master-detail view.
+
+| # | Requirement | Status |
+|---|---|---|
+| A1 | Holds the QSOs not qualified yet, from the cutoff (`qualify.since`, default: the day qslotter first ran) on, live from Log4OM. Reverse chronological: newest on top, older below. The **backlog** before the cutoff is **discarded** once: every QSO before the cutoff still waiting for a decision is filed as "no card" (note "backlog", reopenable from Done); older QSOs never enter. Only new QSOs count. | partial: cutoff and newest-first done (rows re-entering live land on top until reload); the one-time backlog discard is missing - bwpc has 2249 waiting items from the 2026-09-29 build |
+| A1b | Ideally also the QSO *in progress* ("eventuell", "idealerweise"), so a card filled in during a rag-chew can be booked at once. **Source exists:** Log4OM broadcasts the call being worked over UDP (operator: "LookupInfo"). Per the live capture in `stationa/logger-spot-bridge` (2026-09-15), Log4OM's outbound **CALLSIGN** service sends the bare call as plain text (e.g. `VU2ATN`), nothing else; N1MM-family loggers send `<lookupinfo>` XML - that bridge's Go decoder handles both and can be reused. Shape: the Inbox shows the call in progress on top with the research panel (QRZ, history); "written now" is remembered for that call and applied to the next logged QSO with it (the QSL key - date, time, band - exists only once Log4OM saves the QSO). | missing (source available; today the UDP listener expects ADIF and logs other datagrams as parse errors) |
+| A2 | Inbox decision: **yes, card** (goes to the Desk, no route yet), **no card**, or **written now**. | partial: today every "yes" must carry a route (B/D/M buttons); there is no route-less "yes" |
+| A3 | **Written now**: the card was filled in during a rag-chew QSO - "it's done, I never want to see it again". It records its route: **bureau** or **direct** (no manager, no "other"); supersedes the 2026-09-30 decision "Written is its own outcome". | partial: one route-less Written (stored as `W`, pushed as `QSL_SENT=Y` alone) |
+| A4 | Whatever the decision, the QSO leaves the view at once and the next one is offered. | done |
+| A5 | **Compact list** for operating, e.g. mid-pileup, little screen space: **yes / no** only ("ja nein ja nein"). | partial: compact rows carry route buttons (B/D/M/-/Written) |
+| A6 | **Master-detail** for deliberation: the list and the selected QSO's details *in one view*. The list only selects (arrow keys); decisions are made in the detail pane only (buttons/keys: yes / no / written now via bureau / direct), after which the selection moves to the next QSO below. | missing: list (`/queue`) and card view (`/decide`, prev/next; after a decision it shows the newest remaining card, not the next one down) are separate pages |
+| A7 | Detail content: QRZ data (preferred route - direct or bureau -, manager, address), the QSO data, the history: worked before? sent a card before? received one? | done on `/decide` (research panel), with limits: history covers the 12 newest QSOs with the station; the shown QSO's own received state is not displayed. Must move into the master-detail view |
+
+### 2.2 Desk - the work queue
+
+Cards with "yes, card". Typically worked through in the evening, away from the
+radio. Here the route is chosen.
+
+| # | Requirement | Status |
+|---|---|---|
+| B1 | Work through card by card; when one is done the next appears without paging. | done (`/work/card`) |
+| B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | partial: card-by-card view done (`/work/card`); no master-detail (`/work` list is a separate page) |
+| B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | partial: address only for Direct (via manager: manager call + QRZ link, no address); no freq / RST rcvd / notes; no research panel (history, QRZ indicators); no live refresh when a QRZ lookup finishes |
+| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | partial: the route comes from the Inbox decision and cannot be chosen or changed at the Desk; no manager sub-route |
+| B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | missing |
+| B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. | done: card by card (`p` on `/work/card`) or batch Print of ticked rows on `/work`; one print job per card, no select-all |
+| B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | partial: store and `/queue/none` (and batch `none`) accept decided cards, but there is no button on the work card or the `/work` list |
+| B7 | A finished card leaves the queue for good. Written or printed means **sent** - no separate "mailed" step (confirms 2026-09-30). | done |
+| B9 | **One card for several QSOs** with the same station (e.g. different bands): open QSOs of that call are combined into one card - printed with one row per QSO, up to what the template holds; "written"/"printed" finishes them all. Proposal: "same station" = the same worked callsign (a `/P` operation is a separate card). | missing: one card per QSO; the research panel only shows "other cards pending" |
+
+### 2.3 Incoming QSLs
+
+| # | Requirement | Status |
+|---|---|---|
+| C1 | Enter the DX callsign of a received card, pick the QSO(s) it confirms, book the card received - with as few key presses as possible. | done (basic `/receive`): exact-call match only (portable variants not found), newest 20 QSOs, one click per QSO |
+| C2 | Show whether I already sent a card - i.e. whether this card **needs a reply**. | partial: `/receive` shows Clublog's raw QSL_SENT per QSO only; cards sent in qslotter but not pushed, cards waiting on the Desk, the station's other QSOs and a "reply due" verdict are missing (data exists: `EffectiveSent`, `CallHistory`) |
+| C3 | **Answer** or **don't answer**. Answering shows the same data as at the Desk (the QSO the card is about, date, time, QRZ data) with three ways: **written now** (route chosen, "Büro-Karte geschrieben, fertig"), **print** right there, or **later** (the reply goes to the Desk as "yes, card"). | missing |
+| C4 | Or just record the card as received, so the status is known. | done |
+| C5 | Cards **requested** via OQRS (B4b) are listed as *expected*. Booking such a card shows "requested on ... via ..., no reply needed" instead of the reply question. Requests still open after **12 weeks** (configurable) are marked overdue there - a marker only, no mail. | missing |
+
+### 2.4 Navigation
+
+| # | Requirement | Status |
+|---|---|---|
+| D1 | The three areas are the top-level menu. Log, Done and Settings are secondary. | missing: eight equal nav items today |
+| D3 | **Multilingual UI**: German and English, more languages possible (translation files, no hard-coded strings in templates). German names: Eingang / Schreibtisch / Posteingang; English: Inbox / Desk / Incoming QSLs. Proposal: the language is chosen under Settings, defaulting to the browser language. | missing: English-only strings in the templates |
+| D2 | No separate start page: `/` opens the Inbox; the counters in the menu (Inbox, Desk, pending push) are the overview. Statistics later, if at all. | missing: `/` opens the log |
+
+### 2.5 Stage 2 - AI support (after the forms and flows above work)
+
+| # | Requirement | Status |
+|---|---|---|
+| E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM stays behind the `qsl-eval` gate (roadmap v2) |
+
+### 2.6 Invariants carried over
+
+- Live: a QSO logged in Log4OM reaches the Inbox within ~1 s (UDP; Clublog
+  pull as backstop); deciding works mid-pileup - one small window, no Go-side
+  full-log loads on the hot path. (SQLite still scans `qsos` for the call
+  history and the push badge; worth an index when the log grows.)
+- One card lifecycle: Inbox (`queued`) -> Desk (`decided`) -> done
+  (`sent` / `skipped` / requested); every move is one guarded transition;
+  Back and Reopen undo misclicks.
+- Push to Clublog on the operator's schedule: `QSL_SENT=Y` with
+  `QSL_SENT_VIA` = B or D for every sent card, plus `QSL_VIA` = the manager's
+  call for the two manager routes (ADIF: `QSL_SENT_VIA=M` is import-only).
+  A requested card pushes `QSL_RCVD=R` ("the logging station has requested a
+  QSL card") and leaves `QSL_SENT=N`; when it arrives, `QSL_RCVD=Y`.
 
 ## 3. Decision model: suggestion ≠ decision
 
@@ -92,11 +158,15 @@ scans on the hot path.
   regexes) produces a *suggestion*: method, manager, refuse-paper, confidence,
   reason.
 - The suggestion is displayed, never silently acted on.
-- The operator's decision is recorded on the queue item (`desired_method`) and
-  survives queue recompute.
-- "None" is a first-class decision meaning *no paper card* (electronic-only or
-  refused), not a silent no-op. It maps onto the existing `RefusePaper`
-  semantics and leaves the queue with the reason recorded.
+- Two decisions: the Inbox decision (yes / no card / written now) is recorded
+  on the queue item and survives queue recompute; the route (bureau, direct,
+  via manager direct, via manager bureau) - or "requested (OQRS)" - is
+  recorded when the card is finished at the Desk (B4, B4b), with the QRZ
+  suggestion preselected.
+- "No card" is a first-class decision, in the Inbox (A2) and, as a change of
+  mind, at the Desk (B6). It means *no paper card* for any reason
+  (electronic-only, refused, or the operator's choice), not a silent no-op:
+  `desired_method=N`, status `skipped`, reopenable from Done.
 - LLM-based determination (`internal/llmqsl`, `cmd/qsl-eval`, local Ollama)
   stays an offline calibration effort. If it beats the heuristic on the eval
   set it may become a second suggestion source; it does not enter the app
@@ -112,11 +182,21 @@ Two parallel paths, equal citizens:
   mode, RST, my call, manager if via-manager — and record the outcome.
 
 Both end at queue status `sent`, and both push back the correct route to
-Clublog (retired: the old "Mark Sent" that always uploaded bureau). "Written"
-from the decision queue is its own outcome - the card is done on the spot and
-no route is recorded.
+Clublog (retired: the old "Mark Sent" that always uploaded bureau). A card
+written on the spot (during the QSO) records its route: bureau or direct (A3;
+replaces the 2026-09-30 decision "Written is its own outcome"). For every
+other card the route is chosen when it is written or printed: at the Desk
+(B4), or on Incoming QSLs for a reply (C3). A third outcome at the Desk sends
+no card at all but requests the station's card (OQRS, B4b).
 
 ## 5. UI strategy: one web UI, two modes
+
+Top-level menu = the three work areas of section 2: **Eingang / Inbox**,
+**Schreibtisch / Desk**, **Posteingang / Incoming QSLs** (D1, multilingual
+D3). The Inbox comes in two presentations: a
+compact list for operating and a master-detail view (list + selected QSO's
+details in one view) for deliberation (A5/A6). The Desk gets the same
+master-detail view, plus its card-by-card view (B2).
 
 Decision (2026-09): **no Flutter app.** One web UI with two presentation
 modes, plus a tray-resident shell. Rationale: single binary, single
@@ -132,25 +212,32 @@ stays the only source of truth.
   suggestion in place; nav badges follow.
 - Row content: date, call, band/mode, name, QRZ suggestion (dashed hint, never
   a decision).
-- Row actions: **B / D / M (+ manager call) / none / Written** - deciding is
-  the only thing the decision queue offers; producing the card (Print) belongs
-  to the work queue.
+- Row actions: **yes / no** only (A5). Written now (bureau or direct, A3) is
+  in the master-detail view. For every other card the route and Print/Written
+  belong to the Desk (B4).
 - Built for glance-ability during operation.
 
-### Expanded mode — the deliberation surface
+### Expanded mode — the deliberation surface (master-detail)
 
+- One view: the queue list on one side (it only selects), the selected QSO's
+  details on the other; deciding in the detail pane moves the selection to the
+  next card down (A6). Same pattern for the Desk (B2). Today list and card
+  view are separate pages.
 - The station page grown up: full QRZ picture — `qslmgr`, eqsl/mqsl/lotw
   flags, email, address, bio text — and the suggestion with confidence and
   reason.
-- Same decision controls as compact mode, plus context: previous QSOs with
-  this station, cards sent/received.
-- This is where tricky cases get decided (manager changed, "direct only"
-  buried in the bio).
+- Decision controls: yes / no / written now via bureau or direct (A6), plus
+  context: previous QSOs with this station, cards sent/received.
+- This is where the hard *whether* cases get decided (refuses paper, already
+  confirmed, repeat contact). Route questions (manager changed, "direct only"
+  buried in the bio, OQRS) are settled at the Desk when the card is finished
+  (B3, B4, B4b).
 
 ### Tray shell (Windows-first)
 
-- The binary hosts a system-tray icon: *Queue (compact)*, *Log*, *Receive*,
-  *Exit*. No second process.
+- The binary hosts a system-tray icon. Target (D1): *Inbox
+  (compact)*, *Desk*, *Incoming QSLs*, *Log*, *Exit*; today: *Queue
+  (compact)*, *Log*, *Receive*, *Exit*. No second process.
 - Library: `fyne.io/systray` — Windows backend is pure Win32 syscalls, so the
   `GOOS=windows CGO_ENABLED=0` cross-compile is unaffected. Tray code lives in
   `internal/tray` behind `//go:build windows` with a no-op stub; macOS/Linux
@@ -180,14 +267,14 @@ window is therefore *launched* at size, not resized afterwards:
 - Escape hatch if browser-flag quirks bite: WebView2 embedding
   (`jchv/go-webview2`, pure Go) owns the window outright. Recorded, not
   chosen.
-- htmx is vendored to `/static` (today it loads from unpkg; the shack PC must
-  work offline).
+- htmx is vendored to `/static` (`internal/web/static/htmx.min.js`), so the
+  shack PC works offline.
 
 ## 6. Unchanged pillars
 
 - Receive flow stays keyboard-driven.
-- Push-back stays a manual button until a background sync loop lands; the
-  button remains for on-demand pushes afterwards.
+- Push-back runs on `clublog.push_interval` (default off) in the background
+  loop; the button stays for on-demand pushes.
 - SQLite now; CouchDB remains the v2 target (the `Store` interface is already
   backend-agnostic).
 - Card templates stay YAML with millimetre coordinates.
@@ -203,20 +290,37 @@ covered by tests; the browser flow was walked end to end.
 | Operator requirement | Status | Evidence |
 |---|---|---|
 | Live decision queue from Log4OM UDP | **done** | `internal/udplistener` -> `qualify` -> `queue_changed` -> `static/live.js` |
-| Research next to the decision (QRZ preferences, bio lines, history, cards sent/received) | **done** | `researchFor` + `research.html`; `Store.CallHistory` (base-call aware) |
-| Decide Bureau / Direct / Via manager / No card / Written; decided card leaves the queue | **done** | `QueueDecide/Written/Decline` transitions; `TestListDecideLeavesQueue` |
+| Research next to the Inbox decision (QRZ preferences, bio lines, history, cards sent/received) | **done** on `/decide`; missing next to the route decision at the Desk (B3) | `researchFor` + `research.html`; `Store.CallHistory` (base-call aware) |
+| Decision queue: a decided card leaves the queue at once | **done** (the 2026-09-30 route stamps B / D / M / Written in the queue were superseded 2026-10-01, see A2/A3/B4) | `QueueDecide/Written/Decline` transitions; `TestListDecideLeavesQueue` |
 | Work queue: decided cards, one at a time, Print or Written, next appears | **done** | `/work`, `/work/card`; `QueuePrinted` only after a successful print |
 | Done view + undo (Back, Reopen) | **done** | `/done`, `QueueBack`, `QueueReopen` (warns if Clublog already has it) |
-| Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done** | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
+| Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done** for bureau/direct (manager cards push only `QSL_VIA` today; `QSL_SENT_VIA` B/D for them comes with B4) | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
 | Suggestions that mislead less | **done** | `qsldetermine`: callsign-only manager, free-text keywords, QRZ 1/0 flags, negations |
-| Compact decision window, tray launcher, background loop | **done** | unchanged from 2026-09-29 |
+| Compact decision window, tray launcher, background loop | **done** (compact rows still carry B/D/M/-/Written; yes/no only is open, A5) | unchanged from 2026-09-29 |
+
+Open after the operator walkthrough of 2026-10-01 (section 2, status
+`partial`/`missing`):
+
+- A1/A1b: one-time backlog discard (2249 items on bwpc); the QSO in progress
+  (Log4OM CALLSIGN / "LookupInfo" datagram as source).
+- A2/A3/A5: Inbox decides only *whether* (yes / no / written now via bureau or
+  direct); compact rows yes/no only.
+- A6/B2: master-detail views for Inbox and Desk (list selects, detail decides).
+- A7/B3: research panel limits (12 newest QSOs; own received state) and the
+  panel on the work card; address for manager cards.
+- B4/B4b/B6/B9: route chosen at the Desk (incl. manager direct/bureau);
+  "requested (OQRS)" with channel and note; "no card" button; one card for
+  several QSOs with a station.
+- C1-C5: reply due? answer right there (written now / print / later); requested
+  cards as *expected*, overdue after 12 weeks; portable calls on `/receive`.
+- D1-D3: three-area top menu; `/` opens the Inbox; German/English UI.
 
 Remaining gaps (v2 / later):
 
-- Envelope/label printing for direct cards; a "bureau parcel shipped" step;
-  one card covering several QSOs with a station (the research panel shows the
-  pending siblings).
-- Received card -> automatic reply entry in the decision queue.
+- Envelope/label printing for direct cards; (if wanted) a bureau-parcel log
+  for bookkeeping only - it never changes card status, cards are `sent` when
+  written or printed (B7);
+  (one card for several QSOs is now B9).
 - Unverified against the real services: `putlogs.php` accepting
   `QSL_SENT_VIA`/`QSL_VIA`; whether a Clublog pull overwrites NAME/QTH/NOTES
   that arrived via UDP.
@@ -233,35 +337,45 @@ Remaining gaps (v2 / later):
 
 ## 8. Roadmap
 
-**v1.x — decision-first UI (web):**
+**v1.x, v1.x+, v1.y — done 2026-09-29/30** (decision-first UI, tray shell,
+background loop, batch actions; the two-queue rebuild of 2026-09-30):
 
-1. Wire `desired_method` end-to-end: refresher suggestion preselects the
-   chooser; queue rows get a method chooser; `htmxQueueSend` uses the chosen
-   method (`SetQSLSentLocal(method)`), and push-back uploads it.
-2. Handwritten → Sent action.
-3. "None" decision (leaves queue with recorded reason; recompute must not
-   resurrect it).
-4. Compact mode: `?compact=1` template, responsive CSS, vendored htmx.
-5. Expanded station mode: confidence + reason + decision controls.
-6. Richer card/queue data: name and address available for handwriting and the
-   card template.
+1. `desired_method` end-to-end; push-back uploads the route. (The route
+   chooser on queue rows of that build was superseded 2026-10-01: the route
+   is chosen at the Desk, B4.)
+2. Handwritten -> Sent action.
+3. "No card" decision; recompute never resurrects it.
+4. Compact mode: `?compact=1`, responsive CSS, vendored htmx.
+5. Expanded station view: confidence + reason + decision controls.
+6. Name and address for handwriting and the card template.
+7. `internal/tray` (Windows), single-instance mutex, Edge `--app` launcher.
+8. Background pull/push loop (buttons retained); batch actions.
 
-**v1.x+ — shell:**
+**v1.z — the three work areas (section 2, stage 1: forms and flows):**
 
-7. `internal/tray` (Windows) + go-winres icon + `-H windowsgui` + file log +
-   single-instance mutex; compact-window launcher using the Edge `--app`
-   recipe; optional auto-open on server start.
+9. Inbox decides *whether*: yes (route-less, to the Desk) / no / written now
+   via bureau or direct; compact rows yes/no; one-time backlog discard
+   (A1, A2, A3, A5).
+10. Master-detail views for Inbox and Desk - the list selects, the detail
+    decides; compact list stays for operating (A6, B2).
+11. Desk: route chosen when finishing (bureau, direct, manager direct, manager
+    bureau; QRZ suggestion preselected), Print and Written use it; "no card"
+    button; "requested (OQRS)" with channel and note; full research panel and
+    the address for the chosen route; one card for several QSOs with a
+    station (B3, B4, B4b, B6, B9).
+12. Incoming QSLs: reply due? answer / don't answer - written now, print, or
+    later via the Desk; requested cards listed as expected, overdue after 12
+    weeks (C2, C3, C5); portable calls (C1).
+13. Top menu = Eingang/Inbox, Schreibtisch/Desk, Posteingang/Incoming QSLs;
+    `/` opens the Inbox; German and English UI (D1, D2, D3).
+14. QSO in progress from Log4OM's call broadcast (A1b).
 
-**v1.y — operations:**
+**v2 — platform (stage 2: AI support):**
 
-8. Background pull/push loop (buttons retained); batch actions on the queue.
-
-**v2 — platform:**
-
-9. CouchDB store backend + migration command.
-10. Receive-card photo + OCR.
-11. LLM method suggestion behind the eval gate (only if `qsl-eval` shows it
-    beats the heuristic).
+15. CouchDB store backend + migration command.
+16. Phone app: photograph incoming cards, OCR, book with minimal taps (E1).
+17. LLM route suggestion from QRZ free text, at low cost, behind the eval
+    gate (only if `qsl-eval` shows it beats the heuristic) (E2).
 
 ## 9. Decision log
 
@@ -295,4 +409,45 @@ Remaining gaps (v2 / later):
   `QSL_VIA` for a manager (ADIF: `QSL_SENT_VIA=M` is import-only).
 - **2026-09-30 — Every card move is one guarded transition** (transaction +
   `ErrConflict`), so stale pages and second windows cannot double-act.
+- **2026-10-01 — Three work areas: Eingang / Schreibtisch / Posteingang**
+  (English: Inbox / Desk / Incoming QSLs). They are the top-level menu; `/`
+  opens the Inbox, no separate start page. Inbox and Desk get master-detail
+  views (the list selects, the detail pane decides); the Inbox also keeps a
+  compact list for operating.
+- **2026-10-01 — The Inbox decides *whether*, the Desk decides *how*.** Inbox:
+  yes (route-less) / no / written now. The route (bureau, direct, via manager
+  direct, via manager bureau) is chosen at the Desk when the card is written
+  or printed, with the QRZ suggestion preselected. Supersedes the 2026-09-30
+  route stamps in the decision queue. In the pileup (compact list): yes / no
+  only.
+- **2026-10-01 — Written now carries a route: bureau or direct.** Supersedes
+  2026-09-30 "Written is its own outcome". No route "other".
+- **2026-10-01 — "No card" also at the Desk.** A change of mind does not need
+  a trip back to the Inbox.
+- **2026-10-01 — Written or printed = sent, confirmed.** No separate "mailed"
+  step (confirms 2026-09-30 "Sent = card done").
+- **2026-10-01 — "Requested (OQRS)" is a third outcome at the Desk.** For
+  stations that want no card but let you order theirs (OQRS, PayPal, ...): no
+  own card goes out; channel and note are recorded; the card is listed as
+  expected on Incoming QSLs; Clublog gets `QSL_RCVD=R`, `QSL_SENT` stays `N`.
+- **2026-10-01 — Manager routes push both fields.** `QSL_SENT_VIA` = B or D
+  (how the card travelled) plus `QSL_VIA` = the manager's call; ADIF marks
+  `QSL_SENT_VIA=M` import-only.
+- **2026-10-01 — Incoming card = reply question.** Booking a received card
+  shows whether a card already went out and offers to answer right there.
+- **2026-10-01 — AI is stage 2.** Phone scanning of incoming cards and a
+  cheap language model for QRZ free text are explored after the forms and
+  flows work.
+- **2026-10-01 — The QSO in progress comes from Log4OM's call broadcast.**
+  Log4OM sends the call being worked over UDP (CALLSIGN service, plain text;
+  N1MM-family `lookupinfo` XML elsewhere). The Inbox can show it before the
+  QSO is logged; a "written now" is applied to the QSO once it is saved.
+- **2026-10-01 — Backlog discarded.** QSOs before the cutoff that still wait
+  for a decision are filed once as "no card" (reopenable); only new QSOs
+  count. Supersedes "older unanswered QSOs, each qualified individually".
+- **2026-10-01 — One card for several QSOs with a station.** Open QSOs of the
+  same call are combined at the Desk; one "written"/"printed" finishes them.
+- **2026-10-01 — Replying to an incoming card:** written now, print, or later
+  via the Desk. OQRS requests are marked overdue after 12 weeks.
+- **2026-10-01 — Multilingual UI** (German and English, extensible).
 
