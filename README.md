@@ -34,8 +34,8 @@ logbook's job.
 
 ## The UI
 
-- **Queue** — the decision queue as a list (also the compact window: tray menu
-  on Windows). One-click stamps per row, batch actions, live updates.
+- **Queue** — the decision queue as a list (also the compact window from the
+  tray). One-click stamps per row, batch actions, live updates.
 - **Decide** — the decision queue card by card with the full research panel.
   Keyboard: `b` bureau, `d` direct, `m` via manager (type the call, Enter),
   `n` no card, `w` written on the spot, arrows to browse.
@@ -49,36 +49,59 @@ logbook's job.
 
 ## Install
 
-You need Go 1.26+ and, on Windows, [SumatraPDF](https://www.sumatrapdfreader.org/)
-for printing — use **3.5.x** (the 3.6 print engine hangs; bundle the portable
-build as `third_party/sumatrapdf/SumatraPDF.exe` next to `qslotter.exe`).
-macOS/Linux print via `lp`.
+qslotter is one binary per OS, built from any machine (no C toolchain):
+it shows its own app window using the WebView the OS already ships.
 
-    go build ./cmd/qslotter
+- **macOS:** unzip `qslotter-<version>-macos.zip`, move `qslotter.app` to
+  Applications, start it. It is not notarized: the first start needs
+  System Settings > Privacy & Security > "Open Anyway".
+- **Windows:** put `qslotter.exe` anywhere (e.g. `%USERPROFILE%\qslotter`)
+  and start it. Needs the Edge WebView2 Runtime (preinstalled on current
+  Windows 10/11). For printing bundle [SumatraPDF](https://www.sumatrapdfreader.org/)
+  **3.5.x** as `third_party\sumatrapdf\SumatraPDF.exe` next to the exe (the
+  3.6 print engine hangs).
+- **Linux:** unpack the tarball; needs WebKitGTK (`apt install
+  libwebkit2gtk-4.1-0` or `libwebkitgtk-6.0-4`, Fedora `webkit2gtk4.1`,
+  Arch `webkit2gtk-4.1`). Copy `qslotter.desktop` and `qslotter.png` to
+  `~/.local/share/applications/` and `~/.local/share/icons/` for a menu
+  entry. No tray on Linux yet: closing the window quits.
 
-Cross-compile for Windows:
+Without a WebView runtime qslotter opens a Chromium-family browser as an app
+window instead (`-ui browser` forces that; `-ui headless` runs the server
+only).
 
-    GOOS=windows GOARCH=amd64 go build -o qslotter.exe ./cmd/qslotter
+### Build
 
-Optionally embed the tray icon and version info first (`go run
-github.com/tc-hib/go-winres@latest make` — see `winres/`). A tray build can
-hide the console with `-ldflags "-H windowsgui"`.
+Go 1.27.1+. From any OS:
+
+    scripts/release.sh          # all targets -> dist/
+    scripts/macapp.sh           # on a Mac: dist/qslotter.app + zip
+
+or just `go build ./cmd/qslotter` for the machine you are on.
 
 ## Run
 
-1. Copy `config.example.yaml` to `config.yaml` and fill in your Clublog and
-   QRZ credentials (secrets can come from the environment via `${VAR}`).
-2. Start the server and open <http://127.0.0.1:8473/>:
-
-       ./qslotter -config config.yaml
-
+1. Start qslotter. The first start creates a config in the user config dir
+   (`~/Library/Application Support/qslotter/config.yaml`,
+   `%AppData%\qslotter\config.yaml`, `~/.config/qslotter/config.yaml`) and
+   opens **Settings**: enter your Clublog and QRZ credentials there. An
+   existing `config.yaml` in the working directory, or `-config path`, is used
+   instead.
+2. The window shows the decision queue; the tray (macOS menu bar, Windows
+   notification area - promote the icon to keep it visible) reopens it and
+   has the compact window. Closing the window keeps qslotter running for the
+   Log4OM feed; quit from the tray (or the Dock on macOS). Starting qslotter
+   again brings the running window to the front.
 3. Click **Pull from Clublog** (or wait for the background pull) to mirror
    your log. Only QSOs from the day qslotter first ran enter the decision
    queue; to work through older QSOs too, set `qualify.since` (a date, or
    `all`) and press **Recompute queue**. From then on, new QSOs arrive on
    their own.
-4. Wrong QRZ credentials? Fix them under **Settings** — changes apply
-   immediately and are validated on the spot.
+4. Log file: `~/Library/Logs/qslotter/qslotter.log`,
+   `%LOCALAPPDATA%\qslotter\qslotter.log`, `~/.cache/qslotter/qslotter.log`.
+   The web UI also stays reachable at <http://127.0.0.1:8473/> (set
+   `server.addr: 0.0.0.0:8473` for other machines on the LAN - there is no
+   login).
 
 ### Configure Log4OM
 
@@ -103,7 +126,7 @@ Card defaults: 100 × 74 mm.
 ## Configuration
 
 See [`config.example.yaml`](config.example.yaml) for every option with
-comments — server, tray, station identity, Clublog, QRZ, printer, card
+comments — server, UI mode, station identity, Clublog, QRZ, printer, card
 template, qualify rules, store, UDP.
 
 ## Documentation

@@ -233,40 +233,32 @@ stays the only source of truth.
   buried in the bio, OQRS) are settled at the Desk when the card is finished
   (B3, B4, B4b).
 
-### Tray shell (Windows-first)
+### Desktop app: own window, tray, one binary per OS (2026-10-01)
 
-- The binary hosts a system-tray icon. Target (D1): *Inbox
-  (compact)*, *Desk*, *Incoming QSLs*, *Log*, *Exit*; today: *Queue
-  (compact)*, *Log*, *Receive*, *Exit*. No second process.
-- Library: `fyne.io/systray` — Windows backend is pure Win32 syscalls, so the
-  `GOOS=windows CGO_ENABLED=0` cross-compile is unaffected. Tray code lives in
-  `internal/tray` behind `//go:build windows` with a no-op stub; macOS/Linux
-  builds are unchanged.
-- exe icon/version/manifest via `go-winres`; build with `-ldflags "-H
-  windowsgui"` (no console) plus file logging under `%LOCALAPPDATA%`; a
-  single-instance mutex; one shared shutdown path for SIGINT and tray Exit.
-- Windows hides newly registered tray icons until the user promotes them;
-  document this in the run instructions.
-
-### Compact window sizing
-
-A page cannot resize a browser tab the user opened manually. The compact
-window is therefore *launched* at size, not resized afterwards:
-
-    msedge --app=http://127.0.0.1:8473/queue?compact=1 --window-size=480,640 ^
-      --window-position=X,Y --no-first-run --no-default-browser-check ^
-      --user-data-dir=%LOCALAPPDATA%\qslotter\edge-profile
-
-- The dedicated `--user-data-dir` is mandatory: Chromium merges invocations
-  per profile, and an already-running Edge/Chrome silently ignores
-  `--window-size`/`--window-position`.
-- Inside an app window the page may call `window.resizeTo()` to height-fit
-  content — progressive enhancement, guarded by `?app=1` or the
-  `display-mode: standalone` media query. Never relied upon.
-- Firefox has no viable geometry flags: fall back to opening the URL plainly.
-- Escape hatch if browser-flag quirks bite: WebView2 embedding
-  (`jchv/go-webview2`, pure Go) owns the window outright. Recorded, not
-  chosen.
+- `internal/desktop` shows the web UI in a native WebView window via
+  **glaze** (purego, no cgo: WKWebView / WebView2 / WebKitGTK). The window
+  loads the loopback server by URL - never through a framework asset handler,
+  which would buffer the SSE stream - so htmx/SSE run unchanged and the
+  backend can be swapped (Wails v3 is the recorded escape hatch).
+- Every target cross-compiles from the Mac with `CGO_ENABLED=0`
+  (`scripts/release.sh`; `scripts/macapp.sh` for the `.app`).
+- Tray via `crgimenes/native/tray` on macOS and Windows: open the main
+  window, the compact window (480x640, its own second window), quit. Linux has
+  no tray yet: closing the window quits. Target labels follow D1 (Inbox,
+  Desk, Incoming QSLs).
+- macOS: a regular app with its own Dock icon (an app delegate via
+  purego/objc): a Dock click reopens the window, Quit from the Dock runs the
+  normal shutdown.
+- Closing a window keeps qslotter running (UDP feed); a second launch brings
+  the window back (`native/singleinstance` + a cgo-free UI-thread
+  dispatcher: message-only window on Windows, `dispatch_async_f` on macOS).
+- Fallback without a WebView runtime: a Chromium-family browser as app
+  window on its own profile (size passed only on the profile's first start),
+  else the default browser. `-ui browser|headless`, `ui.mode`.
+- Windows exe: GUI subsystem (no console), icon/version via go-winres, log
+  file under `%LOCALAPPDATA%\qslotter`. First start without a config writes
+  one to the user config dir and opens Settings; startup errors show a
+  dialog.
 - htmx is vendored to `/static` (`internal/web/static/htmx.min.js`), so the
   shack PC works offline.
 
@@ -384,7 +376,10 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-09-29 — Compact window via Chromium `--app` launch at fixed size,
   dedicated user-data-dir; in-page `resizeTo` as enhancement.** Pages cannot
   resize manually-opened tabs; Firefox gives no geometry control.
+  (Superseded 2026-10-01 by the desktop app; the `--app` launch remains the
+  fallback.)
 - **2026-09-29 — Tray via `fyne.io/systray` behind `//go:build windows`.**
+  (Superseded 2026-10-01: `crgimenes/native/tray` on macOS and Windows.)
   Pure-syscall Windows backend preserves the CGO_ENABLED=0 cross-compile;
   `getlantern/systray` is stalled, `lxn/walk` dormant, the full Fyne toolkit
   needs cgo.
@@ -450,3 +445,12 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 - **2026-10-01 — Replying to an incoming card:** written now, print, or later
   via the Desk. OQRS requests are marked overdue after 12 weeks.
 - **2026-10-01 — Multilingual UI** (German and English, extensible).
+
+- **2026-10-01 — Desktop app: own window via glaze, one binary per OS.** The
+  browser was the fiddly part (start, window size, lost among tabs). A native
+  rewrite (Fyne/Gio/...) was weighed (15-30 days, loses LAN access) and
+  rejected; glaze (purego, no cgo) keeps the htmx UI and the cross-compile
+  from the Mac. Verified on macOS and Windows 11; Linux built, not yet tested.
+  Risks accepted: glaze is young (v0.0.x, one maintainer) and uses an
+  undocumented WebView2 export - mitigated by the browser fallback and a
+  backend that only loads a URL.

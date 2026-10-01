@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-qslotter is a Go 1.26 single-binary local web tool for QSL card handling. It mirrors QSOs from Clublog, ingests new QSOs in real time via UDP from Log4OM, decides which QSOs need paper QSL cards, renders them to PDF, and pushes QSL state back to Clublog.
+qslotter is a Go 1.27 single-binary QSL card workbench: a local web UI shown in its own app window (native WebView via glaze, cgo-free). It mirrors QSOs from Clublog, ingests new QSOs in real time via UDP from Log4OM, decides which QSOs need paper QSL cards, renders them to PDF, and pushes QSL state back to Clublog.
 
 The consolidated product vision, requirements, gap list, and decision log live in `docs/VISION.md`. Check it before changing scope-relevant behavior; where README and VISION disagree, VISION wins.
 
@@ -14,16 +14,12 @@ Build the binary:
 
     go build ./cmd/qslotter
 
-Cross-compile for Windows from macOS/Linux:
+Release builds for every OS (cgo-free cross-compile, from any machine):
 
-    GOOS=windows GOARCH=amd64 go build -o qslotter.exe ./cmd/qslotter
+    scripts/release.sh          # dist/: darwin, windows (GUI exe + go-winres icon), linux
+    scripts/macapp.sh           # on a Mac, after release.sh: dist/qslotter.app + zip
 
-Optionally embed icon/version/manifest into the exe: `go run
-github.com/tc-hib/go-winres@latest make` regenerates `rsrc_windows_amd64.syso`
-from `winres/winres.json`; committed .syso files are linked by plain builds
-automatically.
-
-Run the server:
+Run it (window + tray; `-ui browser` / `-ui headless` for the alternatives):
 
     ./qslotter -config config.yaml
 
@@ -99,7 +95,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 
 ### Package layout
 
-- `cmd/qslotter`: entrypoint, wiring, shutdown.
+- `cmd/qslotter`: entrypoint, wiring, config bootstrap (user config dir on first start), log file, shutdown.
 - `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against the `qsldetermine` heuristic. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
 - `internal/adif`: minimal ADIF reader/writer used for Clublog round-trip.
 - `internal/clublog`: Clublog HTTP client (`getadif.php`, `putlogs.php`).
@@ -114,7 +110,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 - `internal/store`: `Store` interface and SQLite implementation.
 - `internal/sync`: pull/parse/diff/upsert plus push-back orchestration and background loop.
 - `internal/template`: YAML card layout templates.
-- `internal/tray`: optional Windows tray shell (fyne.io/systray, build-tagged; no-op elsewhere) with the compact-window launcher.
+- `internal/desktop`: the app shell - glaze WebView windows (main + compact), native/tray (macOS/Windows), single instance, cgo-free UI-thread dispatcher, macOS Dock delegate, browser app-window fallback. The only package that imports glaze/native. Threading rule: the UI runs on the main goroutine (locked in `init`); other goroutines only call `Shell.Show`/`Shell.Quit`.
 - `internal/udplistener`: Log4OM UDP ADIF receiver.
 - `internal/web`: chi router, `html/template` pages, htmx partials, SSE endpoint.
 
@@ -126,3 +122,5 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 - Queue statuses are `queued/decided/sent/skipped` (`printed` is legacy: migrated once at startup to `sent`, or back to `queued` when no route was recorded). `desired_method` holds the decision: `B/D/M`, `N` (no card), or `W` (written on the spot, no route). `EnqueueAll` skips QSOs already present in any status, so user decisions survive recompute.
 - ADIF push-back: `qsl_sent_local` always holds `Y`; the send route is `qsl_sent_method_local` (uploaded as `QSL_SENT_VIA` for B/D, `QSL_VIA` = manager for M, nothing for a written-on-the-spot card). "None" is a decision (`desired_method=N`, status `skipped`), never a sent flag.
 - `/settings` edits the config file on disk (YAML-node edit, comments preserved; empty password fields keep the stored secret), swaps the live config + QRZ client immediately (web + UDP listener share one `station.Refresher`), and runs credential checks inline. Startup also validates credentials and logs the outcome (`[startup] QRZ credentials: ...`) without exiting — a transient outage must not kill the feed.
+
+- Desktop app (2026-10-01): the window loads the loopback server by URL; never serve the UI through glaze's `app://` scheme (it buffers the SSE stream). Relative `store.path` / `card.template` are relative to the config file. Logs: `~/Library/Logs/qslotter`, `%LOCALAPPDATA%\qslotter`, `~/.cache/qslotter`. bwpc runs the windowed exe via the scheduled task `qslotter` (`cmd /c ... qslotter.exe -config config.yaml`).
