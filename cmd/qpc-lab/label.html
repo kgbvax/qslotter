@@ -162,7 +162,8 @@ function render() {
 }
 
 function renderBio() {
-  const bio = S.stations[cur].bio || '';
+  // "Untitled Document" is the title of QRZ's bio page, not bio text.
+  const bio = (S.stations[cur].bio || '').replace(/^Untitled Document\s*/, '');
   $('bio').className = 'bio' + (bio ? '' : ' empty');
   $('bio').innerHTML = bio ? (highlight ? esc(bio).replace(KEYWORDS, '<mark>$&</mark>') : esc(bio)) : '(no bio)';
 }
