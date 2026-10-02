@@ -47,8 +47,9 @@ where it stands today.
   processing.** Suggestion done: `qsldetermine` suggests with confidence and
   reason. Since 2026-10-01 it informs yes/no in the Inbox and preselects the
   route at the Desk (B4, partial). "Other
-  sources" beyond QRZ (LLM bio interpretation) sits behind the `qpc` eval
-  gate (`cmd/qpc-lab`, roadmap v2).
+  sources" beyond QRZ (LLM bio interpretation): the `qpc` classifier passed
+  its eval gate on 2026-10-02 (decision log) and may become a second
+  suggestion source next to `qsldetermine`; not integrated yet (roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
   each QSO, or in a batch later. Done in the 2026-09-30 build, reshaped
   2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
@@ -141,7 +142,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
-| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM experiment `qpc` + `cmd/qpc-lab` started 2026-10-02, stays behind its gate (roadmap v2) |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM classifier `qpc` (qwen3.5:4b, prompt v5) passed the gate 2026-10-02 on a fresh blind sample: 59% of stations fully right vs 48% for the heuristic; integration open (roadmap v2) |
 
 ### 2.6 Invariants carried over
 
@@ -175,11 +176,13 @@ radio. Here the route is chosen.
   `desired_method=N`, status `skipped`, reopenable from Done.
 - LLM-based determination (`qpc`: classifier library, backend `cmd/qpcd`,
   eval harness `cmd/qpc-lab`; any OpenAI-compatible endpoint, local Ollama)
-  stays an offline calibration effort. If it beats the heuristic on the
-  operator-labelled sample it may become a second suggestion source; it does
-  not enter the app before that gate. Labels: a route (bureau, direct, oqrs,
-  unclear, no-paper, unknown) plus a separate via callsign (manager or home
-  call); rules in `qpc/LABELS.md`.
+  passed its gate on 2026-10-02: it beat the heuristic on a fresh,
+  operator-labelled sample (decision log). It may become a second suggestion
+  source - shown with its evidence quote and note, never acted on - but it
+  is not wired into the app yet. Answer: status (paper, no-paper, unknown,
+  unclear), every accepted route (bureau, direct, oqrs), the preferred route,
+  a via callsign (manager or home call) and an English note; rules in
+  `qpc/LABELS.md`.
 
 ## 4. Fulfillment: print or handwrite
 
@@ -368,7 +371,9 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 15. CouchDB store backend + migration command.
 16. Phone app: photograph incoming cards, OCR, book with minimal taps (E1).
 17. LLM route suggestion from QRZ free text, at low cost, behind the eval
-    gate (only if `qpc-lab` shows it beats the heuristic) (E2).
+    gate (only if `qpc-lab` shows it beats the heuristic) (E2). Gate passed
+    2026-10-02 (qwen3.5:4b via `qpcd`); next: integration as a second
+    suggestion next to the heuristic.
 
 ## 9. Decision log
 
@@ -494,3 +499,18 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   English note (preferences, conditions, requirements); choosing among the
   accepted routes is the operator's (later: qslotter's) decision, not the
   classifier's. The "cheapest route" rule is gone from the classifier.
+- **2026-10-02 — qpc passed the gate (narrowly).** Two random samples of
+  100 stations from the log, labelled blind by the operator. On the first,
+  the prompts were developed (v1-v5) and qwen3.5:4b + v5 reached 69% fully
+  right vs 60% for the heuristic - optimistic, tuned there. On the second,
+  fresh sample (no prompt written after seeing it): qwen3.5:4b + v5 59%
+  fully right (status, every route, preferred, via) vs heuristic 48%
+  (discordant 18:7, McNemar p = 0.04); status 74% vs 61% (p = 0.004), route
+  set 71% vs 66%. gemma4:e4b, qwen3.5:2b, ministral-3:3b and llama3.1:8b
+  were worse; giving the model the postal address and a code check for
+  "direct without address" changed nothing; a hybrid (heuristic when sure,
+  else LLM) scored below the LLM alone. The model's confidence is not
+  informative (83 "high", 55 right). Remaining errors: no-paper vs unknown
+  for bare mqsl = 0 records, bureau added where only direct is stated,
+  verbose notes. 41% of answers have at least one field wrong, so qpc can
+  only suggest. About 2.5 s per station on an M2 Pro.
