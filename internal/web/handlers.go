@@ -594,7 +594,7 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 var externalHosts = []string{"qrz.com", "clublog.org", "lotw.arrl.org", "eqsl.cc"}
 
 // apiOpenExternal opens an allow-listed URL in the system browser: in the
-// desktop app window a target=_blank link has nowhere to go (a WebView opens
+// desktop app window a link with its own window name (target=_blank, _qrz) has nowhere to go (a WebView opens
 // no second browser window), so static/app.js posts it here.
 func (s *Server) apiOpenExternal(w http.ResponseWriter, r *http.Request) {
 	if s.OpenExternal == nil {

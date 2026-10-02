@@ -493,3 +493,7 @@ main { padding-top: 22px; }
 
 /* reply panel (Incoming) is short: its action row needs no sticky bar */
 .reply .decide-actions { position: static; border-top: 0; background: transparent; padding: 0; margin: 10px 0 6px; }
+
+/* The QRZ heading links to the station's QRZ.com page (always the same window: target="_qrz"). */
+.pref h4 a.qrzlink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.pref h4 a.qrzlink:hover { color: var(--blue); }
