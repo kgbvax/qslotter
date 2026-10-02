@@ -59,10 +59,22 @@ func sigViewFor(a *qsldetermine.Assessment) *SigView {
 		return nil
 	}
 	v := &SigView{Suggest: a.Suggest, Manager: a.Manager}
+	type chipKey struct {
+		kind, value string
+		scoped      bool
+	}
+	seen := map[chipKey]int{}
 	for _, sg := range a.Signals {
 		if sg.Kind == qsldetermine.KindFlag {
 			continue // the flags line shows them
 		}
+		// the same statement in the field and in the bio is one chip (the first source wins the tooltip)
+		k := chipKey{string(sg.Kind), sg.Value, sg.Scoped}
+		if i, dup := seen[k]; dup {
+			v.Chips[i].Decisive = v.Chips[i].Decisive || sg.Decisive
+			continue
+		}
+		seen[k] = len(v.Chips)
 		c := SigChip{Kind: string(sg.Kind), Decisive: sg.Decisive, Scoped: sg.Scoped}
 		c.Text = sigText(sg)
 		src := i18n.M("bio")
