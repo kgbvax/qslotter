@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -45,19 +46,18 @@ func New(email, appPassword, call, apiKey string) *Client {
 // startyear/startmonth/startday. (Clublog has no true delta endpoint; see
 // plan.) Most callers pass "" to fetch the whole log and diff locally.
 func (c *Client) PullLog(recDateFrom string) ([]byte, error) {
-	form := urlValues{
-		"email":    c.Email,
-		"password": c.AppPassword,
-		"call":     c.Call,
-		"api":      c.APIKey,
+	form := url.Values{
+		"email":    {c.Email},
+		"password": {c.AppPassword},
+		"call":     {c.Call},
+		"api":      {c.APIKey},
 	}
 	if len(recDateFrom) == 10 && recDateFrom[4] == '-' && recDateFrom[7] == '-' {
-		form["startyear"] = recDateFrom[0:4]
-		form["startmonth"] = recDateFrom[5:7]
-		form["startday"] = recDateFrom[8:10]
+		form.Set("startyear", recDateFrom[0:4])
+		form.Set("startmonth", recDateFrom[5:7])
+		form.Set("startday", recDateFrom[8:10])
 	}
-	body := form.encode()
-	req, err := http.NewRequest("POST", c.BaseURL+"/getadif.php", strings.NewReader(body))
+	req, err := http.NewRequest("POST", c.BaseURL+"/getadif.php", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -145,23 +145,4 @@ func (c *Client) CheckCredentials() error {
 		return fmt.Errorf("clublog: 403 - credentials rejected (email/app password/API key/call wrong, or IP banned)")
 	}
 	return err
-}
-
-// urlValues is an ordered form encoder (net/url.Values alphabetises keys,
-// which is fine for Clublog but we keep insertion order for debugging).
-type urlValues map[string]string
-
-func (u urlValues) encode() string {
-	var sb strings.Builder
-	first := true
-	for k, v := range u {
-		if !first {
-			sb.WriteByte('&')
-		}
-		first = false
-		sb.WriteString(k)
-		sb.WriteByte('=')
-		sb.WriteString(v)
-	}
-	return sb.String()
 }

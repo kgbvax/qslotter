@@ -93,3 +93,19 @@ func TestReceiveOverdueDefault(t *testing.T) {
 		t.Fatalf("default overdue weeks = %d, want 12", cfg.Receive.OverdueWeeks)
 	}
 }
+
+func TestClublogConfigured(t *testing.T) {
+	full := ClublogCfg{Email: "e", AppPassword: "p", APIKey: "k"}
+	if !full.Configured() {
+		t.Error("all three set: configured")
+	}
+	for _, c := range []ClublogCfg{
+		{AppPassword: "p", APIKey: "k"},
+		{Email: "e", APIKey: "k"},
+		{Email: "e", AppPassword: "p"},
+	} {
+		if c.Configured() {
+			t.Errorf("%+v counts as configured", c)
+		}
+	}
+}

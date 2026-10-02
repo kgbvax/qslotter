@@ -12,10 +12,8 @@ import (
 	"strings"
 
 	"github.com/dl9et/qslotter/internal/clublog"
-	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
-	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
@@ -842,10 +840,24 @@ func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
 
 // --- sync handlers ---
 
+// clublogClient builds the client for a manual pull/push from the live
+// config. Without credentials it answers the request itself and nothing
+// reaches Clublog: a failed login counts towards an IP ban.
+func (s *Server) clublogClient(w http.ResponseWriter, r *http.Request) (*clublog.Client, bool) {
+	c := s.config().Clublog
+	if !c.Configured() {
+		s.fail(w, r, http.StatusBadRequest, "Clublog not configured")
+		return nil, false
+	}
+	return s.clublogFn(c), true
+}
+
 func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
-	cfg := s.config()
-	o := &sync.Orchestrator{Store: s.store, Clublog: clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
-		cfg.Clublog.Call, cfg.Clublog.APIKey), Rules: s.rules, Broker: s.broker}
+	cl, ok := s.clublogClient(w, r)
+	if !ok {
+		return
+	}
+	o := &sync.Orchestrator{Store: s.store, Clublog: cl, Rules: s.rules, Broker: s.broker}
 	if s.Contacts != nil {
 		o.OnNewQSO = s.Contacts.QSOLogged
 	}
@@ -859,10 +871,11 @@ func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
-	cfg := s.config()
-	o := &sync.Orchestrator{Store: s.store,
-		Clublog: clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword,
-			cfg.Clublog.Call, cfg.Clublog.APIKey)}
+	cl, ok := s.clublogClient(w, r)
+	if !ok {
+		return
+	}
+	o := &sync.Orchestrator{Store: s.store, Clublog: cl}
 	_, err := o.PushBack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -879,10 +892,6 @@ func callFromKey(key string) string {
 		return key[:i]
 	}
 	return ""
-}
-
-func qrzClientFromCfg(cfg *config.Config) *qrz.Client {
-	return qrz.New(cfg.QRZ.Username, cfg.QRZ.Password, cfg.QRZ.Agent)
 }
 
 func min(a, b int) int {
@@ -936,11 +945,12 @@ func (s *Server) sseEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	// Send an initial hello so the client knows the stream is alive.
-	_, _ = fmt.Fprintf(w, "event: hello\ndata: {}\n\n")
-	flusher.Flush()
 	ch, unsub := s.broker.Subscribe()
 	defer unsub()
+	// Send an initial hello so the client knows the stream is alive; it
+	// comes after the subscription, so no event after it is missed.
+	_, _ = fmt.Fprintf(w, "event: hello\ndata: {}\n\n")
+	flusher.Flush()
 	ctx := r.Context()
 	for {
 		select {

@@ -31,7 +31,6 @@ type Client struct {
 	// renders, the UDP feed), so mu guards these fields.
 	mu          sync.Mutex
 	sessionKey  string
-	countUsed   int
 	subExp      string
 	lastLoginAt time.Time
 }
@@ -164,9 +163,6 @@ func (c *Client) lookup(callsign string, retry bool) (*Callsign, error) {
 		}
 		return nil, fmt.Errorf("qrz lookup: %s", s.Session.Error)
 	}
-	c.mu.Lock()
-	c.countUsed = parseCount(s.Session.Count)
-	c.mu.Unlock()
 	if s.Callsign == nil {
 		return nil, nil
 	}
@@ -190,24 +186,6 @@ func (c *Client) FetchBio(callsign string) (string, error) {
 		return "", err
 	}
 	return stripHTML(string(body)), nil
-}
-
-// CountUsed returns the number of lookups performed in the current 24h window
-// (per QRZ's <Count> field). Useful for rate-limit backoff.
-func (c *Client) CountUsed() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.countUsed
-}
-
-func parseCount(s string) int {
-	n := 0
-	for _, ch := range s {
-		if ch >= '0' && ch <= '9' {
-			n = n*10 + int(ch-'0')
-		}
-	}
-	return n
 }
 
 var (

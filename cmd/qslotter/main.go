@@ -160,7 +160,7 @@ func main() {
 		o := &sync.Orchestrator{Store: st, Rules: rules, Broker: broker, OnNewQSO: contacts.QSOLogged,
 			Configure: func() (*clublog.Client, bool) {
 				c := srv.CurrentConfig().Clublog
-				if c.Email == "" || c.APIKey == "" || c.AppPassword == "" {
+				if !c.Configured() {
 					return nil, false
 				}
 				return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey), true

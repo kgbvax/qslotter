@@ -3,9 +3,12 @@ package sync
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	gosync "sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -490,5 +493,209 @@ func TestPullDuplicateKeyIsStable(t *testing.T) {
 	q, _ := st.GetQSO("DB5HA|20250819|204600|40M")
 	if q == nil || q.Mode != "FT4" {
 		t.Errorf("stored %+v, want the last record (FT4)", q)
+	}
+}
+
+// recorder is a fake Clublog whose answers a test can change; it counts the
+// requests per endpoint and keeps the last upload. Safe for the loop
+// goroutine.
+type recorder struct {
+	mu           gosync.Mutex
+	pullStatus   int
+	pushStatus   int
+	pulls, pushs int
+	upload       string
+}
+
+func (f *recorder) client(t *testing.T) *clublog.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch r.URL.Path {
+		case "/getadif.php":
+			f.pulls++
+			if f.pullStatus != 0 {
+				w.WriteHeader(f.pullStatus)
+				return
+			}
+			fmt.Fprint(w, sampleADIF)
+		case "/putlogs.php":
+			f.pushs++
+			if f.pushStatus != 0 {
+				w.WriteHeader(f.pushStatus)
+				return
+			}
+			if file, _, err := r.FormFile("file"); err == nil {
+				b, _ := io.ReadAll(file)
+				f.upload = string(b)
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl := clublog.New("u", "p", "DL9ET", "k")
+	cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+	return cl
+}
+
+func (f *recorder) counts() (pulls, pushs int, upload string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pulls, f.pushs, f.upload
+}
+
+// TestLoopPushes: the push ticker uploads what is pending; a failed upload
+// is logged and the next tick tries again; no pull runs while its interval
+// is off.
+func TestLoopPushes(t *testing.T) {
+	// A file: the loop goroutine and the test may hold two connections, and
+	// each connection to ":memory:" is a database of its own.
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	f := &recorder{}
+	cl := f.client(t)
+	if _, _, err := (&Orchestrator{Store: st, Clublog: cl}).PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL2CD", 1)
+	if err := st.SetQSLSentLocal(qsos[0].QSLKey, "B"); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.pulls, f.pushStatus = 0, http.StatusServiceUnavailable
+	f.mu.Unlock()
+
+	o := &Orchestrator{Store: st, Configure: func() (*clublog.Client, bool) { return cl, true }}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := Loop(ctx, o, 0, 10*time.Millisecond)
+	defer func() { cancel(); <-done }()
+
+	waitFor(t, "a failed push", func() bool { _, n, _ := f.counts(); return n >= 1 })
+	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
+		t.Fatalf("a failed upload must stay pending: %d", len(pend))
+	}
+	f.mu.Lock()
+	f.pushStatus = 0
+	f.mu.Unlock()
+	waitFor(t, "the retried push", func() bool { pend, _ := st.PendingPushBack(); return len(pend) == 0 })
+	pulls, _, upload := f.counts()
+	if !strings.Contains(upload, "<CALL:5>DL2CD") || !strings.Contains(upload, "<QSL_SENT_VIA:1>B") {
+		t.Errorf("upload = %q", upload)
+	}
+	if pulls != 0 {
+		t.Errorf("pull interval off, but %d pulls", pulls)
+	}
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second) // generous: a loaded machine
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestPushBackFailureKeepsPending: when Clublog refuses the upload, nothing
+// is marked pushed, so the next push sends it again.
+func TestPushBackFailureKeepsPending(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	f := &recorder{}
+	o := &Orchestrator{Store: st, Clublog: f.client(t)}
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL2CD", 1)
+	_ = st.SetQSLSentLocal(qsos[0].QSLKey, "D")
+	f.pushStatus = http.StatusForbidden
+	if n, err := o.PushBack(); err == nil || n != 0 {
+		t.Fatalf("PushBack = %d, %v; want 0 and the 403", n, err)
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
+		t.Fatalf("pending after a refused upload = %d, want 1", len(pend))
+	}
+	if last, _ := st.MetaGet("clublog_last_push_at"); last != "" {
+		t.Errorf("a refused upload is no push: last push %q", last)
+	}
+}
+
+// TestPullFailureStoresNothing: a refused pull leaves the log and the
+// last-pull time alone.
+func TestPullFailureStoresNothing(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	f := &recorder{pullStatus: http.StatusForbidden}
+	o := &Orchestrator{Store: st, Clublog: f.client(t)}
+	if _, _, err := o.PullAndUpsert(); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %v, want the 403", err)
+	}
+	if all, _ := st.AllQSOs(); len(all) != 0 {
+		t.Errorf("stored %d QSOs from a refused pull", len(all))
+	}
+	if last, _ := st.MetaGet("clublog_last_pull_at"); last != "" {
+		t.Errorf("a refused pull is no pull: last pull %q", last)
+	}
+}
+
+// TestPushBackSendsReceivedDate: a card booked as received pushes
+// QSL_RCVD=Y with the day it arrived.
+func TestPushBackSendsReceivedDate(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	f := &recorder{}
+	o := &Orchestrator{Store: st, Clublog: f.client(t)}
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL2CD", 1)
+	if err := st.SetQSLRcvdLocal(qsos[0].QSLKey); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := o.PushBack(); err != nil || n != 1 {
+		t.Fatalf("PushBack = %d, %v", n, err)
+	}
+	today := time.Now().UTC().Format("20060102")
+	if _, _, up := f.counts(); !strings.Contains(up, "<QSL_RCVD:1>Y") || !strings.Contains(up, "<QSLRDATE:8>"+today) {
+		t.Errorf("received card must push QSL_RCVD=Y + QSLRDATE=%s: %q", today, up)
+	}
+}
+
+// TestPullReportsNewQSOs: OnNewQSO hears about each QSO a pull adds (a card
+// written during it gets booked), never about known or updated ones.
+func TestPullReportsNewQSOs(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	var body string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/getadif.php", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cl := clublog.New("u", "p", "DL9ET", "k")
+	cl.BaseURL, cl.HTTP = srv.URL, srv.Client()
+	var seen []string
+	o := &Orchestrator{Store: st, Clublog: cl, OnNewQSO: func(q *store.QSO) { seen = append(seen, q.Call) }}
+
+	body = sampleADIF
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(seen, ",") != "DL1AB,DL2CD,DL1AB" {
+		t.Fatalf("first pull reported %v", seen)
+	}
+	seen = nil
+	body = strings.Replace(sampleADIF, "<RST_SENT:2>58", "<RST_SENT:2>57", 1) +
+		"<QSO_DATE:8>20240104<TIME_ON:6>150000<CALL:5>DL3EF<BAND:3>20m<MODE:2>CW<EOR>\n"
+	ins, upd, err := o.PullAndUpsert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ins != 1 || upd != 1 || strings.Join(seen, ",") != "DL3EF" {
+		t.Fatalf("second pull: inserted=%d updated=%d reported %v; want 1/1 [DL3EF]", ins, upd, seen)
 	}
 }

@@ -110,7 +110,9 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
-func TestQueueMethodPersistence(t *testing.T) {
+// TestEnqueueKeepsDecision: enqueueing an item that already exists (UDP,
+// pull, recompute) never resets its status or route.
+func TestEnqueueKeepsDecision(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -125,34 +127,18 @@ func TestQueueMethodPersistence(t *testing.T) {
 	if err := st.Enqueue(&QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-
-	item, err := st.QueueGet(q.QSLKey)
-	if err != nil || item == nil {
-		t.Fatalf("QueueGet = %v, %v", item, err)
-	}
-
-	// Record a direct decision, then a manager decision.
-	if err := st.QueueSetMethod(q.QSLKey, "d", ""); err != nil {
+	if err := st.QueueAccept(q.QSLKey); err != nil {
 		t.Fatal(err)
 	}
-	item, _ = st.QueueGet(q.QSLKey)
-	if item.DesiredMethod != "D" {
-		t.Fatalf("DesiredMethod = %q, want D", item.DesiredMethod)
-	}
-	if err := st.QueueSetMethod(q.QSLKey, "M", "DL2XYZ"); err != nil {
+	if err := st.QueuePrinted([]string{q.QSLKey}, Route{Method: "M", Via: "D", Manager: "DL2XYZ"}); err != nil {
 		t.Fatal(err)
 	}
-	item, _ = st.QueueGet(q.QSLKey)
-	if item.DesiredMethod != "M" || item.Manager != "DL2XYZ" {
-		t.Fatalf("QueueGet = %+v, want M/DL2XYZ", item)
-	}
-	// The decision survives a status change (recompute never overwrites it).
-	if err := st.QueueSetStatus(q.QSLKey, "printed"); err != nil {
+	if err := st.Enqueue(&QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
 		t.Fatal(err)
 	}
-	item, _ = st.QueueGet(q.QSLKey)
-	if item.DesiredMethod != "M" || item.Status != "printed" {
-		t.Fatalf("after status change: %+v", item)
+	item, _ := st.QueueGet(q.QSLKey)
+	if item.Status != "sent" || item.DesiredMethod != "M" || item.Manager != "DL2XYZ" || item.SendVia != "D" {
+		t.Fatalf("re-enqueue reset the decision: %+v", item)
 	}
 
 	// QueueGet on an unknown key returns nil, not an error.

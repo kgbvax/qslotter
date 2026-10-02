@@ -79,6 +79,13 @@ type ClublogCfg struct {
 	PushInterval time.Duration `yaml:"push_interval"` // background push-back; 0 = off (default)
 }
 
+// Configured reports whether the credentials a pull or push needs are set.
+// Without them nothing is sent to Clublog: a failed login counts towards an
+// IP ban.
+func (c ClublogCfg) Configured() bool {
+	return c.Email != "" && c.AppPassword != "" && c.APIKey != ""
+}
+
 type QRZCfg struct {
 	Username string        `yaml:"username"`
 	Password string        `yaml:"password"`

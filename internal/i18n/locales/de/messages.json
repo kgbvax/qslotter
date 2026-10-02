@@ -62,6 +62,7 @@
   "QSO not found": "QSO nicht gefunden",
   "QSO not found: %s": "QSO nicht gefunden: %s",
   "QRZ not configured": "QRZ ist nicht eingerichtet",
+  "Clublog not configured": "Clublog ist nicht eingerichtet",
   "qualifier rules not configured": "Eingangsregeln sind nicht eingerichtet",
   "not running as the desktop app": "läuft nicht als Desktop-App",
   "this link cannot be opened from qslotter": "dieser Link lässt sich aus qslotter nicht öffnen",

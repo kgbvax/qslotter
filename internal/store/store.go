@@ -35,8 +35,6 @@ type Store interface {
 	Enqueue(item *QueueItem) error
 	QueueByStatus(status string) ([]*QueueItem, error)
 	QueueGet(qslKey string) (*QueueItem, error)
-	QueueSetStatus(qslKey, status string) error
-	QueueSetMethod(qslKey, method, manager string) error
 	// Guarded queue transitions: each moves one item between statuses inside a
 	// transaction (queue row + qsos columns + event) and returns ErrConflict
 	// when the item is not in a state the transition may start from.
@@ -691,22 +689,6 @@ func (s *SQLiteStore) QueueByStatus(status string) ([]*QueueItem, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) QueueSetStatus(qslKey, status string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	switch status {
-	case "printed":
-		_, err := s.db.Exec(`UPDATE qsl_work_queue SET status=?, printed_at=? WHERE qsl_key=?`, status, now, qslKey)
-		return err
-	case "sent":
-		_, err := s.db.Exec(`UPDATE qsl_work_queue SET status=?, sent_at=? WHERE qsl_key=?`, status, now, qslKey)
-		return err
-	default:
-		_, err := s.db.Exec(`UPDATE qsl_work_queue SET status=? WHERE qsl_key=?`, status, qslKey)
-		return err
-	}
-}
-
-// QueueGet returns a single queue item, or nil if the key is not queued.
 func (s *SQLiteStore) QueueGet(qslKey string) (*QueueItem, error) {
 	qi, err := scanQueueItem(s.db.QueryRow(`SELECT `+queueItemColumns+`
 		FROM qsl_work_queue q WHERE q.qsl_key=?`, qslKey))
@@ -717,15 +699,6 @@ func (s *SQLiteStore) QueueGet(qslKey string) (*QueueItem, error) {
 		return nil, err
 	}
 	return qi, nil
-}
-
-// QueueSetMethod records the operator's method decision on a queue item. The
-// decision survives queue recompute (recompute never touches existing items).
-func (s *SQLiteStore) QueueSetMethod(qslKey, method, manager string) error {
-	method = strings.ToUpper(method)
-	_, err := s.db.Exec(`UPDATE qsl_work_queue SET desired_method=?, manager=? WHERE qsl_key=?`,
-		method, manager, qslKey)
-	return err
 }
 
 // --- guarded queue transitions ---

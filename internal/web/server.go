@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/events"
@@ -68,6 +69,10 @@ type Server struct {
 	// validateFn checks the configured credentials (settings page); a field
 	// so tests can stub the network out.
 	validateFn func(*config.Config) (qrzStatus, clublogStatus i18n.Msg)
+
+	// clublogFn builds the Clublog client of the manual pull/push; a field
+	// so tests can point it at a fake Clublog.
+	clublogFn func(config.ClublogCfg) *clublog.Client
 }
 
 // config returns the current effective config. Safe against concurrent
@@ -94,6 +99,9 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		printer:    printer.New(),
 		now:        time.Now,
 		validateFn: validateCredentials,
+		clublogFn: func(c config.ClublogCfg) *clublog.Client {
+			return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey)
+		},
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"fmtDate":    fmtDate,

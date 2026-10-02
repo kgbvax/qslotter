@@ -152,16 +152,6 @@ func (w *Writer) Write(rec Record) error {
 	return err
 }
 
-// WriteAll writes all records.
-func (w *Writer) WriteAll(recs []Record) error {
-	for _, r := range recs {
-		if err := w.Write(r); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // --- convenience accessors ---
 
 func (r Record) Get(field string) string { return r[strings.ToUpper(field)] }
@@ -201,17 +191,4 @@ func (r Record) QSLKey() (string, error) {
 	call := strings.ToUpper(r.Get("CALL"))
 	band := strings.ToUpper(r.Get("BAND"))
 	return fmt.Sprintf("%s|%s|%s", call, t.Format("20060102|150405"), band), nil
-}
-
-// ParseQSODate parses an ADIF QSO_DATE (YYYYMMDD) or date-time field.
-func ParseQSODate(s string) (time.Time, bool) {
-	if len(s) == 8 {
-		t, err := time.Parse("20060102", s)
-		return t, err == nil
-	}
-	if len(s) == 14 {
-		t, err := time.Parse("20060102150405", s)
-		return t, err == nil
-	}
-	return time.Time{}, false
 }
