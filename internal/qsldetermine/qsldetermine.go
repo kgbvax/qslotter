@@ -89,6 +89,10 @@ func determineRoute(c *qrz.Callsign, bio string, oqrs bool) Result {
 			r := Result{Method: "M", Manager: call, Confidence: conf, Reason: "qslmgr field: " + mgr}
 			sig := readSignals(strings.Replace(strings.ToLower(mgr), strings.ToLower(call), " ", 1))
 			r.Bureau, r.Direct = sig.bureau, sig.direct
+			if !r.Bureau && !r.Direct {
+				// "kx1x" in qslmgr, "BURO OK. Direct QSLs must have SASE" in the bio
+				r.Bureau, r.Direct = bioSig.bureau, bioSig.direct
+			}
 			return r
 		}
 		if r, ok := classify(mgr); ok {
@@ -276,7 +280,7 @@ var (
 	// electronicOnlyRe: confirmations stated to be electronic only. A mere
 	// list ("LoTW, eQSL, Club Log") is not a refusal: mqsl and the address
 	// decide then (operator, 2026-10-02). HamAward is digital only.
-	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)[^.]{0,20}\bonly\b|\bonly (via )?(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)`)
+	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)[^.]{0,20}\b(only|solo|nur|seulement|uniquement|tylko)\b|\b(only|solo|nur|seulement|uniquement|tylko)\b[^.]{0,12}(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
 	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer`)

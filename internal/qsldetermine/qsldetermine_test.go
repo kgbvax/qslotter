@@ -215,6 +215,8 @@ func TestPostalDOKAndInlineManager(t *testing.T) {
 		{"UP0L", "via bureau DL8KAC", "", "M", "DL8KAC", true, false},
 		{"HA7NB", "Only Email-QSL please! NO need more paper QSL ! Tnx!", "", "", "", false, false},
 		{"CN3A", "", "CN3A is qsling via BUREAU - LOTW - and direct. BURO and Direct QSL VIA IK2OHG see qrz", "M", "IK2OHG", true, true},
+		{"NE1C", "kx1x", "QSL Info: logs are uploaded to LoTW. BURO OK. Direct QSLs must have SASE or will not be returned.", "M", "KX1X", true, true},
+		{"IZ2ABM", "", "conferma QSO solo tramite e-qsl", "", "", false, false},
 		// Routes are read only from the bio's sentences about cards.
 		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
 		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},
