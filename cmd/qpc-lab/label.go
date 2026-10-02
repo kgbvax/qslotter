@@ -24,11 +24,17 @@ func cmdLabel(args []string) error {
 	fl := flag.NewFlagSet("label", flag.ExitOnError)
 	dir := fl.String("dir", dirFlagDefault(), "working directory")
 	addr := fl.String("addr", "127.0.0.1:8475", "listen address")
+	calls := fl.String("calls", "", "comma-separated calls: show only these stations (re-checking)")
 	fl.Parse(args)
 	ds := filepath.Join(*dir, "dataset.jsonl")
 	items, err := loadDataset(ds)
 	if err != nil {
 		return err
+	}
+	if *calls != "" {
+		if items, err = onlyCalls(items, *calls); err != nil {
+			return err
+		}
 	}
 	h, err := newLabelHandler(items, filepath.Join(*dir, "gold.jsonl"))
 	if err != nil {
@@ -36,6 +42,27 @@ func cmdLabel(args []string) error {
 	}
 	log.Printf("labelling %d stations from %s at http://%s/", len(items), ds, *addr)
 	return http.ListenAndServe(*addr, h)
+}
+
+// onlyCalls keeps the stations named in a comma-separated list, in its order.
+func onlyCalls(items []item, list string) ([]item, error) {
+	byCall := map[string]item{}
+	for _, it := range items {
+		byCall[it.Call] = it
+	}
+	var out []item
+	for _, c := range strings.Split(list, ",") {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if c == "" {
+			continue
+		}
+		it, ok := byCall[c]
+		if !ok {
+			return nil, fmt.Errorf("%s is not in the dataset", c)
+		}
+		out = append(out, it)
+	}
+	return out, nil
 }
 
 func newLabelHandler(items []item, goldPath string) (http.Handler, error) {

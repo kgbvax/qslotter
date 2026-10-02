@@ -204,7 +204,8 @@ async function save() {
   } finally {
     saving = false;
   }
-  const next = firstTodo(cur + 1);
+  let next = firstTodo(cur + 1);
+  if (next < 0 && cur < S.stations.length - 1) next = cur + 1; // re-checking: everything is labelled, go on in order
   if (next < 0) { render(); status('All stations labelled. Run: qpc-lab report', 'saved'); return; }
   cur = next;
   render();

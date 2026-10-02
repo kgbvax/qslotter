@@ -5,8 +5,8 @@ Route labels:
 - direct: by post to the station's postal address ("direct", "direkt", "SAE", "SASE", "IRC", "green stamps"). Needs a full postal address, see rule 5.
 - oqrs: requested through an online QSL request service ("OQRS", Club Log OQRS, a web request form).
 - unclear: the record asks for paper cards but the route cannot be used as stated: a via callsign with no route, or direct as the only route but no postal address.
-- no-paper: the station explicitly refuses paper cards ("NO QSL", "no paper", "LoTW only", "eQSL only", "no bureau, no direct").
-- unknown: the record says nothing about paper QSL cards.
+- no-paper: the station refuses paper cards: explicitly ("NO QSL", "no paper", "LoTW only", "eQSL only", "no bureau, no direct"), or mqsl = 0 with no paper route offered anywhere (rule 7).
+- unknown: the record says nothing about paper QSL cards (no flags set, nothing in qslmgr or the bio).
 
 Via:
 - The callsign the card is routed via: a QSL manager ("QSL via EA5GL", "QSL manager: IK2DUW", a callsign in the qslmgr field) or the operator's home call named for a portable or special call ("EA8/DL1ABC: QSL via DL1ABC").
@@ -20,10 +20,11 @@ Rules:
 4. Several routes accepted and no preference stated: the cheapest, in the order bureau, oqrs, direct. A stated preference ("direct preferred", "bureau only", "no bureau") wins over this order.
 5. Direct needs a full postal address (at least street and city), in the QRZ postal address or written in the bio. Without one, use the next route the record accepts (bureau, oqrs); if direct is the only route: unclear. This rule is about cards to the station itself: for a via callsign the address is on that callsign's own record, so it does not apply.
 6. A postal address alone, with nothing else about QSL cards, is not a route: unknown.
-7. no-paper needs an explicit refusal of paper. mqsl = 0 together with lotw = 1 or eqsl = 1 is not enough on its own: unknown.
-8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes. Mentioned alone they mean unknown.
-9. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
-10. The bio may be written in any language.
+7. mqsl = 0 means "will not return paper QSL". With mqsl = 0 and no paper route offered in qslmgr or the bio: no-paper, whatever eqsl and lotw say. A route offered in the text wins over mqsl = 0.
+8. A record without flags (mqsl, eqsl, lotw empty), without qslmgr and with nothing about QSL cards in the bio: unknown.
+9. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes. Mentioned alone they mean unknown (no-paper if mqsl = 0, rule 7).
+10. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
+11. The bio may be written in any language.
 
 QRZ fields:
 - qslmgr: QSL manager or QSL instructions, free text.
