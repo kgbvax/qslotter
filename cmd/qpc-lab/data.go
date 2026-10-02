@@ -23,14 +23,29 @@ type item struct {
 	FetchedAt string `json:"fetched_at"`
 }
 
-// goldLabel is one manual label.
+// goldLabel is one manual label. Records from the first labelling pass have
+// only Label (the single-label scheme) and used Note for the labeller's own
+// remark; normalize converts them and marks them Legacy.
 type goldLabel struct {
-	Call   string    `json:"call"`
-	Label  qpc.Label `json:"label"`
-	Via    string    `json:"via,omitempty"`
-	Unsure bool      `json:"unsure,omitempty"`
-	Note   string    `json:"note,omitempty"`
-	At     string    `json:"at"`
+	Call      string      `json:"call"`
+	Status    qpc.Status  `json:"status,omitempty"`
+	Routes    []qpc.Route `json:"routes,omitempty"`
+	Preferred qpc.Route   `json:"preferred,omitempty"`
+	Via       string      `json:"via,omitempty"`
+	Note      string      `json:"note,omitempty"`    // the station's preferences, conditions, requirements
+	Comment   string      `json:"comment,omitempty"` // the labeller's own remark
+	Unsure    bool        `json:"unsure,omitempty"`
+	Label     string      `json:"label,omitempty"` // single-label scheme (first pass)
+	Legacy    bool        `json:"-"`
+	At        string      `json:"at"`
+}
+
+func (g *goldLabel) normalize() {
+	if g.Status == "" && g.Label != "" {
+		g.Status, g.Routes = qpc.FromLegacyLabel(g.Label)
+		g.Comment, g.Note = g.Note, ""
+		g.Legacy = true
+	}
 }
 
 func dirFlagDefault() string { return filepath.Join("eval", "qpc") }
@@ -111,6 +126,7 @@ func loadGold(path string) (map[string]goldLabel, error) {
 	}
 	m := map[string]goldLabel{}
 	for _, g := range all {
+		g.normalize()
 		m[g.Call] = g
 	}
 	return m, nil
@@ -124,6 +140,7 @@ func lastResults(path string) (map[string]qpc.Result, error) {
 	}
 	m := map[string]qpc.Result{}
 	for _, r := range all {
+		r.Normalize()
 		m[r.Call] = r
 	}
 	return m, nil

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -19,57 +20,69 @@ import (
 )
 
 func TestMetricsToyGold(t *testing.T) {
+	bd := []qpc.Route{qpc.Bureau, qpc.Direct}
 	ps := []pair{
-		{Call: "A", Gold: qpc.Bureau, Pred: qpc.Bureau, Conf: "high"},
-		{Call: "B", Gold: qpc.Bureau, Pred: qpc.Direct, Conf: "medium"},
-		{Call: "C", Gold: qpc.Unclear, GoldVia: "EA5GL", Pred: qpc.Unclear, PredVia: "EA5GL", Conf: "high"},
-		{Call: "D", Gold: qpc.Unknown, Pred: unreadable},
+		// entirely right
+		{Call: "A", Gold: answerT{Status: qpc.Paper, Routes: bd}, Pred: answerT{Status: qpc.Paper, Routes: bd}, Conf: "high"},
+		// status right, one route missing, a note only the gold has
+		{Call: "B", Gold: answerT{Status: qpc.Paper, Routes: bd, Preferred: qpc.Direct, Note: "direct preferred"},
+			Pred: answerT{Status: qpc.Paper, Routes: []qpc.Route{qpc.Bureau}}, Conf: "medium"},
+		{Call: "C", Gold: answerT{Status: qpc.Unclear, Via: "EA5GL"}, Pred: answerT{Status: qpc.Unclear, Via: "EA5GL"}, Conf: "high"},
+		{Call: "D", Gold: answerT{Status: qpc.Unknown}, Pred: answerT{Status: unreadable}},
 	}
 	m := computeMetrics(ps)
-	if m.LabelAcc != 0.5 || m.ViaAcc != 1 || m.Both != 0.5 || m.Unreadable != 1 {
-		t.Errorf("acc %v via %v both %v unreadable %d", m.LabelAcc, m.ViaAcc, m.Both, m.Unreadable)
+	if m.StatusAcc != 0.75 || m.RoutesAcc != 0.75 || m.PreferredAcc != 0.75 || m.ViaAcc != 1 || m.AllAcc != 0.5 || m.NoteAgree != 0.75 {
+		t.Errorf("status %v routes %v pref %v via %v all %v notes %v", m.StatusAcc, m.RoutesAcc, m.PreferredAcc, m.ViaAcc, m.AllAcc, m.NoteAgree)
 	}
-	if m.HighCov != 0.5 || m.HighAcc != 1 || m.HighMedCov != 0.75 || m.HighMedAcc != 2.0/3 {
-		t.Errorf("confidence: %v %v %v %v", m.HighCov, m.HighAcc, m.HighMedCov, m.HighMedAcc)
+	if m.Unreadable != 1 || m.HighCov != 0.5 || m.HighAcc != 1 || m.HighMedAcc != 2.0/3 {
+		t.Errorf("unreadable %d high %v/%v highmed %v", m.Unreadable, m.HighCov, m.HighAcc, m.HighMedAcc)
 	}
-	// Per class: bureau P=1 R=.5 F1=2/3; direct P=0 (F1 0); unclear 1; unknown R=0.
-	want := map[qpc.Label]float64{qpc.Bureau: 2.0 / 3, qpc.Direct: 0, qpc.Unclear: 1, qpc.Unknown: 0}
-	for _, c := range m.PerClass {
-		if math.Abs(c.F1-want[c.Label]) > 1e-9 {
-			t.Errorf("%s F1 = %v, want %v", c.Label, c.F1, want[c.Label])
+	// Route detection: bureau 2/2 found, direct found in 1 of 2 stations.
+	for _, c := range m.PerRoute {
+		switch c.Name {
+		case "bureau":
+			if c.Recall != 1 || c.Precision != 1 {
+				t.Errorf("bureau %+v", c)
+			}
+		case "direct":
+			if c.Recall != 0.5 || c.Precision != 1 {
+				t.Errorf("direct %+v", c)
+			}
 		}
 	}
-	if math.Abs(m.MacroF1-(2.0/3+1)/4) > 1e-9 {
-		t.Errorf("macro-F1 %v", m.MacroF1)
-	}
-	// kappa: po=.5; gold B:2 U:1 K:1, pred B:1 D:1 U:1 X:1 -> pe=(2*1+1*1)/16
-	pe := 3.0 / 16
-	if math.Abs(m.Kappa-(0.5-pe)/(1-pe)) > 1e-9 {
+	// kappa on status: po=.75; gold P:2 U:1 K:1, pred P:2 U:1 X:1 -> pe=(4+1)/16
+	pe := 5.0 / 16
+	if math.Abs(m.Kappa-(0.75-pe)/(1-pe)) > 1e-9 {
 		t.Errorf("kappa %v", m.Kappa)
 	}
-	if m.Confusion[qpc.Bureau][qpc.Direct] != 1 || m.Confusion[qpc.Unknown][unreadable] != 1 {
+	if m.Confusion[qpc.Unknown][unreadable] != 1 {
 		t.Errorf("confusion %v", m.Confusion)
+	}
+	if got := (answerT{Status: qpc.Paper, Routes: bd, Preferred: qpc.Direct, Via: "EA5GL"}).String(); got != "bureau+direct* via EA5GL" {
+		t.Errorf("answer string %q", got)
 	}
 }
 
 func TestMapHeuristic(t *testing.T) {
 	cases := []struct {
-		r     qsldetermine.Result
-		label qpc.Label
-		via   string
+		r      qsldetermine.Result
+		status qpc.Status
+		routes string
+		via    string
 	}{
-		{qsldetermine.Result{Method: "B"}, qpc.Bureau, ""},
-		{qsldetermine.Result{Method: "D"}, qpc.Direct, ""},
-		{qsldetermine.Result{Method: "M", Manager: "EA5GL", Reason: "qslmgr field: EA5GL"}, qpc.Unclear, "EA5GL"},
-		{qsldetermine.Result{Method: "M", Manager: "K2ABC", Reason: "qslmgr field: K2ABC (bureau only)"}, qpc.Bureau, "K2ABC"},
-		{qsldetermine.Result{Method: "M", Manager: "IK2DUW", Reason: "bio: QSL via IK2DUW direct"}, qpc.Direct, "IK2DUW"},
-		{qsldetermine.Result{RefusePaper: true}, qpc.NoPaper, ""},
-		{qsldetermine.Result{}, qpc.Unknown, ""},
+		{qsldetermine.Result{Method: "B", Reason: "QSL via bureau"}, qpc.Paper, "[bureau]", ""},
+		{qsldetermine.Result{Method: "B", Reason: "bio: bureau and direct both accepted, bureau is cheaper"}, qpc.Paper, "[bureau direct]", ""},
+		{qsldetermine.Result{Method: "D"}, qpc.Paper, "[direct]", ""},
+		{qsldetermine.Result{Method: "M", Manager: "EA5GL", Reason: "qslmgr field: EA5GL"}, qpc.Unclear, "[]", "EA5GL"},
+		{qsldetermine.Result{Method: "M", Manager: "K2ABC", Reason: "qslmgr field: K2ABC (bureau only)"}, qpc.Paper, "[bureau]", "K2ABC"},
+		{qsldetermine.Result{Method: "M", Manager: "IQ3BM", Reason: "qslmgr field: IQ3BM via bureau or direct"}, qpc.Paper, "[bureau direct]", "IQ3BM"},
+		{qsldetermine.Result{RefusePaper: true}, qpc.NoPaper, "[]", ""},
+		{qsldetermine.Result{}, qpc.Unknown, "[]", ""},
 	}
 	for _, c := range cases {
-		l, v := mapHeuristic(c.r)
-		if l != c.label || v != c.via {
-			t.Errorf("%+v -> %s %q, want %s %q", c.r, l, v, c.label, c.via)
+		st, routes, via := mapHeuristic(c.r)
+		if st != c.status || fmt.Sprint(routes) != c.routes || via != c.via {
+			t.Errorf("%+v -> %s %v %q", c.r, st, routes, via)
 		}
 	}
 }
@@ -92,35 +105,47 @@ func TestDrawOrderDistinctAndSeeded(t *testing.T) {
 
 func TestLabelHandler(t *testing.T) {
 	gold := filepath.Join(t.TempDir(), "gold.jsonl")
-	items := []item{{Station: qpc.Station{Call: "K1A", Bio: "QSL via buro"}}}
+	// A first-pass record (single label, note = the labeller's comment).
+	appendJSONL(gold, map[string]any{"call": "K1A", "label": "bureau", "note": "check later", "at": "x"})
+	items := []item{{Station: qpc.Station{Call: "K1A", Bio: "QSL via buro"}}, {Station: qpc.Station{Call: "K2B"}}}
 	h, err := newLabelHandler(items, gold)
 	if err != nil {
 		t.Fatal(err)
+	}
+	g, _ := loadGold(gold)
+	if k := g["K1A"]; !k.Legacy || k.Status != qpc.Paper || fmt.Sprint(k.Routes) != "[bureau]" || k.Comment != "check later" || k.Note != "" {
+		t.Errorf("first-pass record: %+v", k)
 	}
 	post := func(body string) int {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/label", strings.NewReader(body)))
 		return rec.Code
 	}
-	if c := post(`{"call":"k1a","label":"unclear","via":" ea5gl "}`); c != 200 {
+	if c := post(`{"call":"k1a","routes":["direct","bureau"],"preferred":"direct","note":" direct preferred ","via":" ea5gl "}`); c != 200 {
 		t.Fatalf("save: %d", c)
 	}
-	if c := post(`{"call":"K1A","label":"bureau"}`); c != 200 {
-		t.Fatalf("relabel: %d", c)
+	if c := post(`{"call":"K2B","status":"unclear"}`); c != 200 {
+		t.Fatalf("status only: %d", c)
 	}
-	if c := post(`{"call":"K1A","label":"manager"}`); c != 400 {
-		t.Errorf("invalid label: %d", c)
+	for body, why := range map[string]string{
+		`{"call":"K2B","status":"paper"}`:                         "paper without routes",
+		`{"call":"K2B"}`:                                          "nothing picked",
+		`{"call":"K2B","routes":["bureau"],"preferred":"direct"}`: "preferred not among routes",
+		`{"call":"K2B","routes":["email"]}`:                       "invalid route",
+		`{"call":"ZZ9ZZ","status":"unknown"}`:                     "unknown station",
+	} {
+		if c := post(body); c != 400 {
+			t.Errorf("%s: %d", why, c)
+		}
 	}
-	if c := post(`{"call":"ZZ9ZZ","label":"bureau"}`); c != 400 {
-		t.Errorf("unknown station: %d", c)
-	}
-	g, _ := loadGold(gold)
-	if g["K1A"].Label != qpc.Bureau || len(g) != 1 {
-		t.Errorf("last label must win: %+v", g)
+	g, _ = loadGold(gold)
+	k := g["K1A"]
+	if k.Legacy || k.Status != qpc.Paper || fmt.Sprint(k.Routes) != "[bureau direct]" || k.Preferred != qpc.Direct || k.Via != "EA5GL" || k.Note != "direct preferred" {
+		t.Errorf("new label: %+v", k)
 	}
 	all, _ := readJSONL[goldLabel](gold)
-	if len(all) != 2 || all[0].Via != "EA5GL" {
-		t.Errorf("append-only log: %+v", all)
+	if len(all) != 3 {
+		t.Errorf("append-only log: %d records", len(all))
 	}
 
 	// The page state never carries predictions.
@@ -129,7 +154,9 @@ func TestLabelHandler(t *testing.T) {
 	var st map[string]json.RawMessage
 	json.Unmarshal(rec.Body.Bytes(), &st)
 	for k := range st {
-		if k != "stations" && k != "gold" && k != "labels" && k != "rules" {
+		switch k {
+		case "stations", "gold", "statuses", "routes", "rules":
+		default:
 			t.Errorf("unexpected state key %q", k)
 		}
 	}
@@ -179,12 +206,13 @@ func TestRunResumesAndGuardsChanges(t *testing.T) {
 
 func TestReportSmoke(t *testing.T) {
 	dir := t.TempDir()
-	for _, it := range []item{{Station: qpc.Station{Call: "K1A"}}, {Station: qpc.Station{Call: "K2B"}}, {Station: qpc.Station{Call: "K3C"}}} {
+	for _, it := range []item{{Station: qpc.Station{Call: "K1A"}}, {Station: qpc.Station{Call: "K2B"}}, {Station: qpc.Station{Call: "K3C"}}, {Station: qpc.Station{Call: "K4D"}}} {
 		appendJSONL(filepath.Join(dir, "dataset.jsonl"), it)
 	}
-	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K1A", Label: qpc.Bureau})
-	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K2B", Label: qpc.Unclear, Via: "EA5GL"})
-	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K3C", Label: qpc.Unknown, Unsure: true})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K1A", Status: qpc.Paper, Routes: []qpc.Route{qpc.Bureau}})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K2B", Status: qpc.Unclear, Via: "EA5GL", Note: "manager only"})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K3C", Status: qpc.Unknown, Unsure: true})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), map[string]any{"call": "K4D", "label": "direct", "at": "x"}) // first pass
 	items, _ := loadDataset(filepath.Join(dir, "dataset.jsonl"))
 	ds, _ := fileHash(filepath.Join(dir, "dataset.jsonl"))
 	if err := runVariant(context.Background(), qpc.Variant{Name: "heuristic", Kind: "heuristic"}, items, ds, filepath.Join(dir, "runs", "heuristic"), false); err != nil {
@@ -195,9 +223,15 @@ func TestReportSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(out)
-	for _, want := range []string{"evaluated on 2", "| heuristic | (rules) |", "| K2B | unclear via EA5GL | ✗ unknown |"} {
+	for _, want := range []string{"1 first-pass only (left out); evaluated on 2", "| heuristic | (rules) |", "| K2B | unclear via EA5GL | ✗ unknown |", "With a note: 1."} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("report lacks %q:\n%s", want, b)
 		}
+	}
+	if err := cmdReport([]string{"-dir", dir, "-out", out, "-legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(out); !strings.Contains(string(b), "evaluated on 3") {
+		t.Errorf("-legacy: %s", b)
 	}
 }

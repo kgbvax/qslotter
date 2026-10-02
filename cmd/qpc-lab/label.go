@@ -75,10 +75,6 @@ func newLabelHandler(items []item, goldPath string) (http.Handler, error) {
 		known[it.Call] = true
 	}
 	var mu sync.Mutex
-	labels := make([]string, len(qpc.Labels))
-	for i, l := range qpc.Labels {
-		labels[i] = string(l)
-	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -92,9 +88,17 @@ func newLabelHandler(items []item, goldPath string) (http.Handler, error) {
 		for i, it := range items {
 			stations[i] = it.Station
 		}
+		type goldView struct {
+			goldLabel
+			Legacy bool `json:"legacy"` // first-pass label, not yet in the routes scheme
+		}
+		view := map[string]goldView{}
+		for c, g := range gold {
+			view[c] = goldView{g, g.Legacy}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"stations": stations, "gold": gold, "labels": labels, "rules": qpc.Rules,
+			"stations": stations, "gold": view, "statuses": qpc.Statuses, "routes": qpc.AllRoutes, "rules": qpc.Rules,
 		})
 	})
 	mux.HandleFunc("POST /api/label", func(w http.ResponseWriter, r *http.Request) {
@@ -103,15 +107,12 @@ func newLabelHandler(items []item, goldPath string) (http.Handler, error) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		g.Call = strings.ToUpper(strings.TrimSpace(g.Call))
-		g.Via = strings.ToUpper(strings.TrimSpace(g.Via))
-		g.Note = strings.TrimSpace(g.Note)
-		if !known[g.Call] {
-			http.Error(w, "unknown station "+g.Call, http.StatusBadRequest)
+		if err := g.clean(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if !g.Label.Valid() {
-			http.Error(w, fmt.Sprintf("invalid label %q", g.Label), http.StatusBadRequest)
+		if !known[g.Call] {
+			http.Error(w, "unknown station "+g.Call, http.StatusBadRequest)
 			return
 		}
 		g.At = time.Now().UTC().Format(time.RFC3339)
@@ -126,4 +127,30 @@ func newLabelHandler(items []item, goldPath string) (http.Handler, error) {
 		json.NewEncoder(w).Encode(g)
 	})
 	return mux, nil
+}
+
+// clean normalizes a label posted by the page and rejects inconsistent ones:
+// routes mean status paper, paper needs routes, preferred must be one of them.
+func (g *goldLabel) clean() error {
+	g.Call = strings.ToUpper(strings.TrimSpace(g.Call))
+	g.Via = strings.ToUpper(strings.TrimSpace(g.Via))
+	g.Note, g.Comment, g.Label = strings.TrimSpace(g.Note), strings.TrimSpace(g.Comment), ""
+	for _, r := range g.Routes {
+		if !r.Valid() {
+			return fmt.Errorf("invalid route %q", r)
+		}
+	}
+	g.Routes = qpc.SortRoutes(g.Routes)
+	switch {
+	case len(g.Routes) > 0:
+		g.Status = qpc.Paper
+	case g.Status == qpc.Paper:
+		return fmt.Errorf("status paper needs at least one route")
+	case !g.Status.Valid():
+		return fmt.Errorf("pick routes or a status")
+	}
+	if g.Preferred != "" && !qpc.HasRoute(g.Routes, g.Preferred) {
+		return fmt.Errorf("preferred %q is not among the routes", g.Preferred)
+	}
+	return nil
 }

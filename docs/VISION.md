@@ -487,3 +487,10 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   `unclear` - the model sees the address, and a code check (`address_guard`)
   is compared as a variant. First model choice: `qwen3.5:4b` (multilingual,
   JSON schema), thinking off.
+- **2026-10-02 — qpc answers with all accepted routes, not one.** Labelling
+  showed that stations offering bureau and direct often state a preference
+  or a condition ("direct only if no electronic QSL possible"). The answer is
+  now status + every accepted route + the station's preferred route + an
+  English note (preferences, conditions, requirements); choosing among the
+  accepted routes is the operator's (later: qslotter's) decision, not the
+  classifier's. The "cheapest route" rule is gone from the classifier.

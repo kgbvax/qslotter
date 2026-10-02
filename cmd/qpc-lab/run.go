@@ -187,29 +187,28 @@ func runVariant(ctx context.Context, v qpc.Variant, items []item, dsHash, out st
 		if err := appendJSONL(resultsPath, r); err != nil {
 			return err
 		}
-		label := string(r.Label)
-		if label == "" {
-			label = "(unreadable: " + r.ParseError + ")"
+		ans := answerT{r.Status, r.Routes, r.Preferred, r.Via, r.Note}.String()
+		if r.Status == "" {
+			ans = "(unreadable: " + r.ParseError + ")"
 		}
-		if r.Via != "" {
-			label += " via " + r.Via
+		if r.Note != "" {
+			ans += " [" + r.Note + "]"
 		}
-		log.Printf("[%s] %3d/%d %-12s %s (%.1fs)", v.Name, i+1, len(items), it.Call, label, float64(r.LatencyMS)/1000)
+		log.Printf("[%s] %3d/%d %-12s %s (%.1fs)", v.Name, i+1, len(items), it.Call, ans, float64(r.LatencyMS)/1000)
 	}
 	return nil
 }
 
 // heuristic runs qslotter's rule-based determination (internal/qsldetermine)
-// and maps it to qpc labels, as the baseline the LLM has to beat. It never
-// answers oqrs; a manager becomes the via, and the route is read from the
-// reason text (the qslmgr field can say "K2ABC (bureau only)").
+// and maps it to a qpc answer, as the baseline the LLM has to beat. It never
+// answers oqrs, a preferred route or a note; a manager becomes the via.
 func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	start := time.Now()
 	c := &qrz.Callsign{Call: st.Call, Country: st.Country, DXCC: st.DXCC,
 		QSLMgr: st.QSLMgr, MQSL: st.MQSL, EQSL: st.EQSL, LoTW: st.LoTW}
 	h := qsldetermine.Determine(c, st.Bio)
 	r := qpc.Result{Call: strings.ToUpper(st.Call), Model: "heuristic", Confidence: h.Confidence, Evidence: h.Reason}
-	r.Label, r.Via = mapHeuristic(h)
+	r.Status, r.Routes, r.Via = mapHeuristic(h)
 	r.LatencyMS = time.Since(start).Milliseconds()
 	return r, nil
 }
@@ -217,29 +216,36 @@ func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 var (
 	bureauWordRe = regexp.MustCompile(`(?i)bureau|buro|b\x{fc}ro`)
 	directWordRe = regexp.MustCompile(`(?i)direct|direkt`)
+	bothRe       = regexp.MustCompile(`bureau and direct both accepted`)
 )
 
-func mapHeuristic(h qsldetermine.Result) (qpc.Label, string) {
+func mapHeuristic(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
 	switch h.Method {
 	case "B":
-		return qpc.Bureau, ""
+		if bothRe.MatchString(h.Reason) {
+			return qpc.Paper, []qpc.Route{qpc.Bureau, qpc.Direct}, ""
+		}
+		return qpc.Paper, []qpc.Route{qpc.Bureau}, ""
 	case "D":
-		return qpc.Direct, ""
+		return qpc.Paper, []qpc.Route{qpc.Direct}, ""
 	case "M":
 		// The reason quotes the qslmgr field or the bio match; the manager
 		// call itself never contains these words.
 		rest := strings.Replace(h.Reason, h.Manager, "", 1)
-		b, d := bureauWordRe.MatchString(rest), directWordRe.MatchString(rest)
-		switch {
-		case b:
-			return qpc.Bureau, h.Manager // cheapest accepted route
-		case d:
-			return qpc.Direct, h.Manager
+		var routes []qpc.Route
+		if bureauWordRe.MatchString(rest) {
+			routes = append(routes, qpc.Bureau)
 		}
-		return qpc.Unclear, h.Manager
+		if directWordRe.MatchString(rest) {
+			routes = append(routes, qpc.Direct)
+		}
+		if len(routes) == 0 {
+			return qpc.Unclear, nil, h.Manager
+		}
+		return qpc.Paper, routes, h.Manager
 	}
 	if h.RefusePaper {
-		return qpc.NoPaper, ""
+		return qpc.NoPaper, nil, ""
 	}
-	return qpc.Unknown, ""
+	return qpc.Unknown, nil, ""
 }

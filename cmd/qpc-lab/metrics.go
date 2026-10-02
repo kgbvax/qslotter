@@ -1,55 +1,102 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/dl9et/qslotter/qpc"
 )
 
-// unreadable stands for a prediction without a valid label in the confusion
+// unreadable stands for an answer without a valid status in the confusion
 // matrix.
-const unreadable = qpc.Label("(unreadable)")
+const unreadable = qpc.Status("(unreadable)")
+
+// answerT is the comparable part of an answer: manual label or prediction.
+type answerT struct {
+	Status    qpc.Status
+	Routes    []qpc.Route
+	Preferred qpc.Route
+	Via       string
+	Note      string
+}
+
+// String is the compact form used in tables: "bureau+direct*" (* = preferred),
+// a status otherwise, plus " via CALL".
+func (a answerT) String() string {
+	s := string(a.Status)
+	if a.Status == qpc.Paper {
+		var parts []string
+		for _, r := range a.Routes {
+			p := string(r)
+			if r == a.Preferred {
+				p += "*"
+			}
+			parts = append(parts, p)
+		}
+		s = strings.Join(parts, "+")
+	}
+	if a.Via != "" {
+		s += " via " + a.Via
+	}
+	return s
+}
 
 // pair is one evaluated station: the manual label against a prediction.
 type pair struct {
-	Call      string
-	Gold      qpc.Label
-	GoldVia   string
-	Pred      qpc.Label // unreadable if the model's answer had no valid label
-	PredVia   string
-	Conf      string
-	Evidence  string
-	LatencyMS int64
-	Tokens    int
-	Truncated bool
-	CutOff    bool // finish_reason "length"
-	Guarded   bool // the address guard changed the model's label
+	Call       string
+	Gold, Pred answerT
+	Conf       string
+	Evidence   string
+	LatencyMS  int64
+	Tokens     int
+	Truncated  bool
+	CutOff     bool // finish_reason "length"
+	Guarded    bool // the address guard changed the model's answer
 }
 
-func (p pair) labelOK() bool { return p.Gold == p.Pred }
-func (p pair) viaOK() bool   { return p.GoldVia == p.PredVia }
+func sameRoutes(a, b []qpc.Route) bool {
+	return fmt.Sprint(qpc.SortRoutes(a)) == fmt.Sprint(qpc.SortRoutes(b))
+}
 
-// classStats is one label's precision and recall; NaN = undefined (the label
-// was never predicted / never in gold).
+func (p pair) statusOK() bool    { return p.Gold.Status == p.Pred.Status }
+func (p pair) routesOK() bool    { return sameRoutes(p.Gold.Routes, p.Pred.Routes) }
+func (p pair) preferredOK() bool { return p.Gold.Preferred == p.Pred.Preferred }
+func (p pair) viaOK() bool       { return p.Gold.Via == p.Pred.Via }
+func (p pair) allOK() bool       { return p.statusOK() && p.routesOK() && p.preferredOK() && p.viaOK() }
+func (p pair) noteAgrees() bool  { return (p.Gold.Note != "") == (p.Pred.Note != "") }
+
+// classStats is precision and recall for one status or route; NaN =
+// undefined (never predicted / never in gold).
 type classStats struct {
-	Label                 qpc.Label
+	Name                  string
 	Support, Predicted    int
 	TP                    int
 	Precision, Recall, F1 float64
 }
 
+func newClassStats(name string, support, predicted, tp int) classStats {
+	c := classStats{Name: name, Support: support, Predicted: predicted, TP: tp,
+		Precision: ratio(tp, predicted), Recall: ratio(tp, support)}
+	if tp > 0 {
+		c.F1 = 2 * c.Precision * c.Recall / (c.Precision + c.Recall)
+	}
+	return c
+}
+
 type metrics struct {
-	N                      int
-	LabelAcc, ViaAcc, Both float64
-	MacroF1, Kappa         float64
-	Unreadable, Truncated  int
-	CutOff                 int
-	Guarded, GuardedOK     int
-	PerClass               []classStats
-	Confusion              map[qpc.Label]map[qpc.Label]int // gold -> pred -> count
-	// Confidence: share of stations answered with that confidence or higher,
-	// and the label accuracy on them.
+	N                                  int
+	StatusAcc, RoutesAcc, PreferredAcc float64
+	ViaAcc, AllAcc, NoteAgree          float64
+	StatusF1, Kappa                    float64 // over status
+	Unreadable, Truncated, CutOff      int
+	Guarded, GuardedOK                 int
+	NotesGold, NotesPred, NotesBoth    int
+	PerStatus, PerRoute                []classStats
+	Confusion                          map[qpc.Status]map[qpc.Status]int // gold -> pred -> count
+	// Share of stations the model answered with that confidence or higher,
+	// and how many of those answers are entirely right.
 	HighCov, HighAcc        float64
 	HighMedCov, HighMedAcc  float64
 	LatencyMean, LatencyP95 float64 // seconds
@@ -64,60 +111,52 @@ func ratio(a, b int) float64 {
 }
 
 func computeMetrics(ps []pair) metrics {
-	m := metrics{N: len(ps), Confusion: map[qpc.Label]map[qpc.Label]int{}}
+	m := metrics{N: len(ps), Confusion: map[qpc.Status]map[qpc.Status]int{}}
 	if m.N == 0 {
 		return m
 	}
-	var labelOK, viaOK, both, high, highOK, hm, hmOK, tokSum int
+	var status, routes, pref, via, all, notes, high, highOK, hm, hmOK, tokSum int
 	var lat []float64
+	count := func(ok bool, n *int) {
+		if ok {
+			*n++
+		}
+	}
 	for _, p := range ps {
-		if p.labelOK() {
-			labelOK++
-		}
-		if p.viaOK() {
-			viaOK++
-		}
-		if p.labelOK() && p.viaOK() {
-			both++
-		}
-		if p.Pred == unreadable {
-			m.Unreadable++
-		}
-		if p.Truncated {
-			m.Truncated++
-		}
-		if p.CutOff {
-			m.CutOff++
-		}
-		if p.Guarded {
-			m.Guarded++
-			if p.labelOK() {
-				m.GuardedOK++
-			}
-		}
+		count(p.statusOK(), &status)
+		count(p.routesOK(), &routes)
+		count(p.preferredOK(), &pref)
+		count(p.viaOK(), &via)
+		count(p.allOK(), &all)
+		count(p.noteAgrees(), &notes)
+		count(p.Pred.Status == unreadable, &m.Unreadable)
+		count(p.Truncated, &m.Truncated)
+		count(p.CutOff, &m.CutOff)
+		count(p.Guarded, &m.Guarded)
+		count(p.Guarded && p.allOK(), &m.GuardedOK)
+		count(p.Gold.Note != "", &m.NotesGold)
+		count(p.Pred.Note != "", &m.NotesPred)
+		count(p.Gold.Note != "" && p.Pred.Note != "", &m.NotesBoth)
 		if p.Conf == "high" {
 			high++
-			if p.labelOK() {
-				highOK++
-			}
+			count(p.allOK(), &highOK)
 		}
 		if p.Conf == "high" || p.Conf == "medium" {
 			hm++
-			if p.labelOK() {
-				hmOK++
-			}
+			count(p.allOK(), &hmOK)
 		}
-		if m.Confusion[p.Gold] == nil {
-			m.Confusion[p.Gold] = map[qpc.Label]int{}
+		if m.Confusion[p.Gold.Status] == nil {
+			m.Confusion[p.Gold.Status] = map[qpc.Status]int{}
 		}
-		m.Confusion[p.Gold][p.Pred]++
+		m.Confusion[p.Gold.Status][p.Pred.Status]++
 		lat = append(lat, float64(p.LatencyMS)/1000)
 		tokSum += p.Tokens
 		if p.Tokens > m.TokensMax {
 			m.TokensMax = p.Tokens
 		}
 	}
-	m.LabelAcc, m.ViaAcc, m.Both = ratio(labelOK, m.N), ratio(viaOK, m.N), ratio(both, m.N)
+	m.StatusAcc, m.RoutesAcc, m.PreferredAcc = ratio(status, m.N), ratio(routes, m.N), ratio(pref, m.N)
+	m.ViaAcc, m.AllAcc, m.NoteAgree = ratio(via, m.N), ratio(all, m.N), ratio(notes, m.N)
 	m.HighCov, m.HighAcc = ratio(high, m.N), ratio(highOK, high)
 	m.HighMedCov, m.HighMedAcc = ratio(hm, m.N), ratio(hmOK, hm)
 	m.TokensMean = tokSum / m.N
@@ -129,54 +168,55 @@ func computeMetrics(ps []pair) metrics {
 	m.LatencyMean = sum / float64(len(lat))
 	m.LatencyP95 = lat[int(math.Ceil(0.95*float64(len(lat))))-1]
 
-	// Per class and macro-F1 over the labels that occur in gold or prediction.
+	// Status: per class and macro-F1 over the statuses that occur.
 	var f1Sum float64
-	var f1N int
-	for _, l := range qpc.Labels {
-		cs := classStats{Label: l}
+	for _, s := range qpc.Statuses {
+		var sup, pred, tp int
 		for _, p := range ps {
-			if p.Gold == l {
-				cs.Support++
-			}
-			if p.Pred == l {
-				cs.Predicted++
-			}
-			if p.Gold == l && p.Pred == l {
-				cs.TP++
-			}
+			count(p.Gold.Status == s, &sup)
+			count(p.Pred.Status == s, &pred)
+			count(p.Gold.Status == s && p.Pred.Status == s, &tp)
 		}
-		if cs.Support == 0 && cs.Predicted == 0 {
+		if sup == 0 && pred == 0 {
 			continue
 		}
-		cs.Precision, cs.Recall = ratio(cs.TP, cs.Predicted), ratio(cs.TP, cs.Support)
-		if cs.TP > 0 {
-			cs.F1 = 2 * cs.Precision * cs.Recall / (cs.Precision + cs.Recall)
-		}
-		f1Sum += cs.F1
-		f1N++
-		m.PerClass = append(m.PerClass, cs)
+		c := newClassStats(string(s), sup, pred, tp)
+		f1Sum += c.F1
+		m.PerStatus = append(m.PerStatus, c)
 	}
-	m.MacroF1 = f1Sum / float64(f1N)
+	m.StatusF1 = f1Sum / float64(len(m.PerStatus))
+	// Routes: is each route found where the station accepts it?
+	for _, r := range qpc.AllRoutes {
+		var sup, pred, tp int
+		for _, p := range ps {
+			g, q := qpc.HasRoute(p.Gold.Routes, r), qpc.HasRoute(p.Pred.Routes, r)
+			count(g, &sup)
+			count(q, &pred)
+			count(g && q, &tp)
+		}
+		m.PerRoute = append(m.PerRoute, newClassStats(string(r), sup, pred, tp))
+	}
 	m.Kappa = cohenKappa(ps)
 	return m
 }
 
-// cohenKappa is the agreement between gold and prediction beyond chance.
+// cohenKappa is the agreement on status between gold and prediction beyond
+// chance.
 func cohenKappa(ps []pair) float64 {
 	n := float64(len(ps))
-	gold, pred := map[qpc.Label]float64{}, map[qpc.Label]float64{}
+	gold, pred := map[qpc.Status]float64{}, map[qpc.Status]float64{}
 	var agree float64
 	for _, p := range ps {
-		gold[p.Gold]++
-		pred[p.Pred]++
-		if p.labelOK() {
+		gold[p.Gold.Status]++
+		pred[p.Pred.Status]++
+		if p.statusOK() {
 			agree++
 		}
 	}
 	po := agree / n
 	var pe float64
-	for l, g := range gold {
-		pe += (g / n) * (pred[l] / n)
+	for s, g := range gold {
+		pe += (g / n) * (pred[s] / n)
 	}
 	if pe == 1 {
 		return math.NaN()

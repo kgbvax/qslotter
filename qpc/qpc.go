@@ -1,7 +1,7 @@
 // Package qpc is the QSL preference classifier: it reads a station's QRZ
 // record and bio and asks a language model, through any OpenAI-compatible
-// chat-completions endpoint (Ollama, llama.cpp, LM Studio, ...), which route a
-// paper QSL card should take.
+// chat-completions endpoint (Ollama, llama.cpp, LM Studio, ...), whether and
+// how a paper QSL card can go out.
 //
 // Experimental (docs/VISION.md E2): its answers do not reach qslotter until it
 // beats the heuristic in internal/qsldetermine on a labelled sample
@@ -16,31 +16,88 @@ import (
 	"time"
 )
 
-// Label is the route a paper card should take. Who the card goes via (a QSL
-// manager, the operator's home call) is separate: Result.Via. LABELS.md
-// defines each label and the rules for unclear cases.
-type Label string
+// Status says whether a paper card can go out. With Paper, Result.Routes lists
+// how; the other statuses have no routes.
+type Status string
 
 const (
-	Bureau  Label = "bureau"
-	Direct  Label = "direct"
-	OQRS    Label = "oqrs"
-	Unclear Label = "unclear" // a via callsign is named, the route is not
-	NoPaper Label = "no-paper"
-	Unknown Label = "unknown"
+	Paper   Status = "paper"
+	NoPaper Status = "no-paper"
+	Unknown Status = "unknown"
+	Unclear Status = "unclear" // paper wanted, but no usable route (via without route, direct without address)
 )
 
-// Labels lists every label in a stable order (reports, the labelling page).
-var Labels = []Label{Bureau, Direct, OQRS, Unclear, NoPaper, Unknown}
+// Statuses lists every status in a stable order.
+var Statuses = []Status{Paper, NoPaper, Unknown, Unclear}
 
-// Valid reports whether l is one of Labels.
-func (l Label) Valid() bool {
-	for _, x := range Labels {
-		if l == x {
+// Valid reports whether s is one of Statuses.
+func (s Status) Valid() bool {
+	for _, x := range Statuses {
+		if s == x {
 			return true
 		}
 	}
 	return false
+}
+
+// Route is a way a paper card travels. Who it goes via (a QSL manager, the
+// operator's home call) is separate: Result.Via.
+type Route string
+
+const (
+	Bureau Route = "bureau"
+	Direct Route = "direct"
+	OQRS   Route = "oqrs"
+)
+
+// AllRoutes lists every route in a stable order; route sets are kept in it.
+var AllRoutes = []Route{Bureau, Direct, OQRS}
+
+// Valid reports whether r is one of AllRoutes.
+func (r Route) Valid() bool {
+	for _, x := range AllRoutes {
+		if r == x {
+			return true
+		}
+	}
+	return false
+}
+
+// SortRoutes returns the valid routes of rs, deduplicated, in AllRoutes order.
+func SortRoutes(rs []Route) []Route {
+	var out []Route
+	for _, x := range AllRoutes {
+		if HasRoute(rs, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// HasRoute reports whether rs contains r.
+func HasRoute(rs []Route, r Route) bool {
+	for _, x := range rs {
+		if x == r {
+			return true
+		}
+	}
+	return false
+}
+
+// LegacyLabels is the single-label scheme of prompts v1 and v2: one route or
+// one status, the cheapest route when several were accepted.
+var LegacyLabels = []string{"bureau", "direct", "oqrs", "unclear", "no-paper", "unknown"}
+
+// FromLegacyLabel maps a single label of the old scheme to status and routes.
+func FromLegacyLabel(label string) (Status, []Route) {
+	switch r := Route(label); r {
+	case Bureau, Direct, OQRS:
+		return Paper, []Route{r}
+	}
+	if s := Status(label); s.Valid() && s != Paper {
+		return s, nil
+	}
+	return "", nil
 }
 
 // Rules is the labelling protocol (LABELS.md). The same text is shown to the
@@ -74,12 +131,18 @@ func (s Station) HasFullAddress() bool {
 	return strings.TrimSpace(s.Addr1) != "" && strings.TrimSpace(s.Addr2) != ""
 }
 
-// Result is one classification. Label is empty when the model's answer could
+// Result is one classification. Status is empty when the model's answer could
 // not be read (ParseError says why); a transport failure is an error instead.
 type Result struct {
-	Call             string `json:"call"`
-	Label            Label  `json:"label"`
-	Via              string `json:"via,omitempty"`        // callsign the card goes via, empty if none
+	Call      string  `json:"call"`
+	Status    Status  `json:"status"`
+	Routes    []Route `json:"routes,omitempty"`    // with Status paper: every route the station accepts
+	Preferred Route   `json:"preferred,omitempty"` // the route the station says it prefers, if any
+	Via       string  `json:"via,omitempty"`       // callsign the card goes via, empty if none
+	Note      string  `json:"note,omitempty"`      // the station's preferences, conditions, requirements (English)
+	// Label is the answer of a single-label prompt (v1, v2); Status and
+	// Routes are derived from it.
+	Label            string `json:"label,omitempty"`
 	Confidence       string `json:"confidence,omitempty"` // high, medium or low
 	Evidence         string `json:"evidence,omitempty"`   // the model's quote from the record
 	Model            string `json:"model,omitempty"`
@@ -90,8 +153,16 @@ type Result struct {
 	FinishReason     string `json:"finish_reason,omitempty"` // "length" = the answer was cut off
 	Truncated        bool   `json:"truncated,omitempty"`     // the bio was cut to BioMaxChars
 	ParseError       string `json:"parse_error,omitempty"`
-	Guard            string `json:"guard,omitempty"` // a code check changed the model's label (Variant.AddressGuard)
+	Guard            string `json:"guard,omitempty"` // a code check changed the model's answer (Variant.AddressGuard)
 	Raw              string `json:"raw,omitempty"`   // the model's answer as received
+}
+
+// Normalize fills Status and Routes of a result written by a single-label
+// prompt (v1, v2) before they existed.
+func (r *Result) Normalize() {
+	if r.Status == "" && r.Label != "" {
+		r.Status, r.Routes = FromLegacyLabel(r.Label)
+	}
 }
 
 func msSince(t time.Time) int64 { return time.Since(t).Milliseconds() }

@@ -7,12 +7,17 @@ import (
 	"strings"
 )
 
-// answer is the JSON object the prompt asks for.
+// answer is the JSON object the prompts ask for: Status, Routes, Preferred and
+// Note for a routes prompt, Label for a single-label prompt (v1, v2).
 type answer struct {
-	Evidence   string `json:"evidence"`
-	Label      string `json:"label"`
-	Via        string `json:"via"`
-	Confidence string `json:"confidence"`
+	Evidence   string   `json:"evidence"`
+	Status     string   `json:"status"`
+	Routes     []string `json:"routes"`
+	Preferred  string   `json:"preferred"`
+	Label      string   `json:"label"`
+	Via        string   `json:"via"`
+	Note       string   `json:"note"`
+	Confidence string   `json:"confidence"`
 }
 
 var (
@@ -25,7 +30,7 @@ var (
 
 // parseAnswer reads the model's answer into r. It tolerates thinking blocks,
 // code fences and prose around the object; anything it cannot use is noted in
-// r.ParseError, and r.Label stays empty when no valid label was found.
+// r.ParseError, and r.Status stays empty when no valid answer was found.
 func parseAnswer(raw string, r *Result) {
 	r.Raw = raw
 	s := thinkRe.ReplaceAllString(raw, "")
@@ -45,22 +50,71 @@ func parseAnswer(raw string, r *Result) {
 			return
 		}
 	}
-	r.Evidence = strings.TrimSpace(a.Evidence)
-	if len(r.Evidence) > 400 {
-		r.Evidence = r.Evidence[:400] + "..."
-	}
+	r.Evidence = clip(strings.TrimSpace(a.Evidence), 400)
+	r.Note = clip(strings.TrimSpace(a.Note), 300)
 	r.Confidence = normalizeConfidence(a.Confidence)
-	l := Label(strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(strings.TrimSpace(a.Label))))
-	if !l.Valid() {
-		r.ParseError = fmt.Sprintf("invalid label %q", a.Label)
-		return
-	}
-	r.Label = l
+	var problems []string
 	via, ok := normalizeVia(a.Via)
 	if !ok {
-		r.ParseError = fmt.Sprintf("via %q is not a callsign", a.Via)
+		problems = append(problems, fmt.Sprintf("via %q is not a callsign", a.Via))
 	}
 	r.Via = via
+
+	if a.Status == "" && a.Label != "" {
+		l := word(a.Label)
+		r.Label = l
+		if r.Status, r.Routes = FromLegacyLabel(l); r.Status == "" {
+			problems = append(problems, fmt.Sprintf("invalid label %q", a.Label))
+		}
+		r.ParseError = strings.Join(problems, "; ")
+		return
+	}
+
+	var routes []Route
+	for _, x := range a.Routes {
+		if rt := Route(word(x)); rt.Valid() {
+			routes = append(routes, rt)
+		} else {
+			problems = append(problems, fmt.Sprintf("invalid route %q", x))
+		}
+	}
+	r.Routes = SortRoutes(routes)
+	st := Status(word(a.Status))
+	switch {
+	case len(r.Routes) > 0 && st != Paper:
+		// Routes decide: a station with a usable route takes paper.
+		if st != "" {
+			problems = append(problems, fmt.Sprintf("status %q with routes, taken as paper", a.Status))
+		}
+		st = Paper
+	case st == Paper && len(r.Routes) == 0:
+		problems = append(problems, "status paper without routes")
+		st = ""
+	case !st.Valid():
+		problems = append(problems, fmt.Sprintf("invalid status %q", a.Status))
+		st = ""
+	}
+	r.Status = st
+	if p := Route(word(a.Preferred)); p != "" {
+		if HasRoute(r.Routes, p) {
+			r.Preferred = p
+		} else {
+			problems = append(problems, fmt.Sprintf("preferred %q is not among the routes", a.Preferred))
+		}
+	}
+	r.ParseError = strings.Join(problems, "; ")
+}
+
+// word normalizes an enum value: lowercase, "No Paper" -> "no-paper".
+func word(s string) string {
+	return strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(strings.TrimSpace(s)))
+}
+
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "..."
+	}
+	return s
 }
 
 // normalizeVia returns the callsign in a via answer ("" for none). ok is false

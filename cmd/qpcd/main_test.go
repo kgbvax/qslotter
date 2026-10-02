@@ -13,7 +13,7 @@ import (
 
 func TestHandler(t *testing.T) {
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"evidence\":\"buro\",\"label\":\"bureau\",\"via\":\"\",\"confidence\":\"high\"}"}}]}`)
+		io.WriteString(w, `{"choices":[{"message":{"content":"{\"evidence\":\"buro\",\"status\":\"paper\",\"routes\":[\"bureau\"],\"preferred\":\"\",\"via\":\"\",\"note\":\"\",\"confidence\":\"high\"}"}}]}`)
 	}))
 	defer llm.Close()
 	c, err := qpc.New(qpc.Variant{BaseURL: llm.URL, Model: "m"})
@@ -30,7 +30,7 @@ func TestHandler(t *testing.T) {
 	rec := post(`{"station":{"call":"dl1abc","bio":"QSL via buro"}}`)
 	var res qpc.Result
 	json.Unmarshal(rec.Body.Bytes(), &res)
-	if rec.Code != http.StatusOK || res.Label != qpc.Bureau || res.Call != "DL1ABC" {
+	if rec.Code != http.StatusOK || res.Status != qpc.Paper || len(res.Routes) != 1 || res.Routes[0] != qpc.Bureau || res.Call != "DL1ABC" {
 		t.Errorf("classify: %d %s", rec.Code, rec.Body)
 	}
 	if rec := post(`{"station":{}}`); rec.Code != http.StatusBadRequest {
@@ -47,7 +47,7 @@ func TestHandler(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"prompt":"v2@`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"prompt":"v3@`) {
 		t.Errorf("healthz: %d %s", rec.Code, rec.Body)
 	}
 }

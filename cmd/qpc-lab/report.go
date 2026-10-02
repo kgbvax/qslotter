@@ -31,6 +31,7 @@ func cmdReport(args []string) error {
 	dir := fl.String("dir", dirFlagDefault(), "working directory")
 	only := fl.String("only", "", "comma-separated variant names (default all runs)")
 	out := fl.String("out", "", "Markdown report (default <dir>/report.md)")
+	legacy := fl.Bool("legacy", false, "also evaluate first-pass labels (single label, no also-routes or note)")
 	fl.Parse(args)
 	if *out == "" {
 		*out = filepath.Join(*dir, "report.md")
@@ -46,7 +47,7 @@ func cmdReport(args []string) error {
 		return err
 	}
 	var eval []item
-	unlabelled, unsure := 0, 0
+	unlabelled, unsure, firstPass := 0, 0, 0
 	for _, it := range items {
 		g, ok := gold[it.Call]
 		switch {
@@ -54,12 +55,14 @@ func cmdReport(args []string) error {
 			unlabelled++
 		case g.Unsure:
 			unsure++
+		case g.Legacy && !*legacy:
+			firstPass++
 		default:
 			eval = append(eval, it)
 		}
 	}
 	if len(eval) == 0 {
-		return errors.New("no labelled stations yet (qpc-lab label)")
+		return errors.New("no stations labelled in the routes scheme yet (qpc-lab label; -legacy uses first-pass labels)")
 	}
 
 	runs, err := loadRuns(filepath.Join(*dir, "runs"), *only, dsHash)
@@ -77,33 +80,39 @@ func cmdReport(args []string) error {
 				continue
 			}
 			g := gold[it.Call]
-			p := pair{Call: it.Call, Gold: g.Label, GoldVia: g.Via, Pred: res.Label, PredVia: res.Via,
+			p := pair{Call: it.Call,
+				Gold: answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note},
+				Pred: answerT{res.Status, res.Routes, res.Preferred, res.Via, res.Note},
 				Conf: res.Confidence, Evidence: res.Evidence, LatencyMS: res.LatencyMS,
 				Tokens: res.PromptTokens, Truncated: res.Truncated, CutOff: res.FinishReason == "length",
 				Guarded: res.Guard != ""}
-			if p.Pred == "" {
-				p.Pred = unreadable
+			if p.Pred.Status == "" {
+				p.Pred.Status = unreadable
 			}
 			r.Pairs = append(r.Pairs, p)
 		}
 		r.M = computeMetrics(r.Pairs)
 	}
-	sort.SliceStable(runs, func(i, j int) bool { return runs[i].M.Both > runs[j].M.Both })
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].M.AllAcc > runs[j].M.AllAcc })
 
 	f, err := os.Create(*out)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	head := fmt.Sprintf("dataset %s (%d stations): %d labelled, %d unsure (left out), %d unlabelled; evaluated on %d.",
-		dsHash, len(items), len(items)-unlabelled, unsure, unlabelled, len(eval))
+	head := fmt.Sprintf("dataset %s (%d stations): %d unlabelled, %d unsure, %d first-pass only (left out); evaluated on %d.",
+		dsHash, len(items), unlabelled, unsure, firstPass, len(eval))
+	if *legacy {
+		head += " First-pass labels included: they have one route at most and no note."
+	}
 	fmt.Fprintf(f, "# qpc report\n\nGenerated %s. %s\n\n", time.Now().Format("2006-01-02 15:04"), head)
 	writeGoldDistribution(f, eval, gold)
 	fmt.Fprint(f, "## Summary\n\n")
 	writeSummary(f, runs)
 	fmt.Fprintln(f, `
-"label" = route label right; "via" = via callsign right (both empty counts as right); "both" = the whole answer right.
-"high conf" = share of stations the model answered with high confidence, and its label accuracy there.`)
+"status" = paper / no-paper / unknown / unclear right; "routes" = the whole set of accepted routes right; "pref" = preferred route right (both empty counts as right); "via" likewise; "all" = status, routes, pref and via all right.
+"notes" = both or neither have a note (the wording is compared by reading, below). "high conf" = share answered with high confidence, and how many of those are entirely right.
+Single-label prompts (v1, v2) give one route at most and no note.`)
 	for _, r := range runs {
 		writeRunDetail(f, r)
 	}
@@ -165,39 +174,60 @@ func num(x float64) string {
 }
 
 func writeGoldDistribution(w io.Writer, eval []item, gold map[string]goldLabel) {
-	counts := map[qpc.Label]int{}
-	vias := 0
+	statuses, routes, combos := map[qpc.Status]int{}, map[qpc.Route]int{}, map[string]int{}
+	var pref, vias, notes int
 	for _, it := range eval {
 		g := gold[it.Call]
-		counts[g.Label]++
+		statuses[g.Status]++
+		for _, r := range g.Routes {
+			routes[r]++
+		}
+		if g.Status == qpc.Paper {
+			combos[answerT{Status: g.Status, Routes: g.Routes}.String()]++
+		}
+		if g.Preferred != "" {
+			pref++
+		}
 		if g.Via != "" {
 			vias++
 		}
+		if g.Note != "" {
+			notes++
+		}
 	}
-	fmt.Fprintln(w, "## Manual labels\n\n| label | stations |\n|---|---:|")
-	for _, l := range qpc.Labels {
+	fmt.Fprintln(w, "## Manual labels\n\n| status | stations |\n|---|---:|")
+	for _, s := range qpc.Statuses {
 		note := ""
-		if c := counts[l]; c > 0 && c < 5 {
+		if c := statuses[s]; c > 0 && c < 5 {
 			note = " (few: per-class numbers are anecdotal)"
 		}
-		fmt.Fprintf(w, "| %s | %d%s |\n", l, counts[l], note)
+		fmt.Fprintf(w, "| %s | %d%s |\n", s, statuses[s], note)
 	}
-	fmt.Fprintf(w, "| *with a via callsign* | %d |\n\n", vias)
+	fmt.Fprintln(w, "\n| paper routes | stations |\n|---|---:|")
+	keys := make([]string, 0, len(combos))
+	for k := range combos {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return combos[keys[i]] > combos[keys[j]] })
+	for _, k := range keys {
+		fmt.Fprintf(w, "| %s | %d |\n", k, combos[k])
+	}
+	fmt.Fprintf(w, "\nWith a preferred route: %d. With a via callsign: %d. With a note: %d.\n\n", pref, vias, notes)
 }
 
 func writeSummary(w io.Writer, runs []*run) {
-	fmt.Fprintln(w, "| variant | model | prompt | done | label | via | both | macro-F1 | κ | high conf (cov/acc) | unreadable | s mean/p95 | max tokens |")
-	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+	fmt.Fprintln(w, "| variant | model | prompt | done | status | routes | pref | via | **all** | κ | notes | high conf (cov/all) | unreadable | s mean/p95 |")
+	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, r := range runs {
 		m := r.M
 		model := r.Info.Variant.Model
 		if r.Info.Variant.Kind == "heuristic" {
 			model = "(rules)"
 		}
-		fmt.Fprintf(w, "| %s | %s | %s | %d/%d | %s | %s | %s | %s | %s | %s / %s | %d | %.1f / %.1f | %d |\n",
-			r.Name, model, orDash(r.Info.PromptID), m.N, m.N+r.Missing, pct(m.LabelAcc), pct(m.ViaAcc), pct(m.Both),
-			num(m.MacroF1), num(m.Kappa), pct(m.HighCov), pct(m.HighAcc), m.Unreadable,
-			m.LatencyMean, m.LatencyP95, m.TokensMax)
+		fmt.Fprintf(w, "| %s | %s | %s | %d/%d | %s | %s | %s | %s | **%s** | %s | %s | %s / %s | %d | %.1f / %.1f |\n",
+			r.Name, model, orDash(r.Info.PromptID), m.N, m.N+r.Missing, pct(m.StatusAcc), pct(m.RoutesAcc),
+			pct(m.PreferredAcc), pct(m.ViaAcc), pct(m.AllAcc), num(m.Kappa), pct(m.NoteAgree),
+			pct(m.HighCov), pct(m.HighAcc), m.Unreadable, m.LatencyMean, m.LatencyP95)
 	}
 }
 
@@ -213,7 +243,7 @@ func writeRunDetail(w io.Writer, r *run) {
 	v := r.Info.Variant
 	fmt.Fprintf(w, "\n## %s\n\n", r.Name)
 	if v.Kind == "heuristic" {
-		fmt.Fprintln(w, "internal/qsldetermine mapped to qpc labels (never answers oqrs).")
+		fmt.Fprintln(w, "internal/qsldetermine mapped to qpc answers (no oqrs, no preferred route, no note).")
 	} else {
 		temp := 0.0
 		if v.Temperature != nil {
@@ -221,30 +251,34 @@ func writeRunDetail(w io.Writer, r *run) {
 		}
 		fmt.Fprintf(w, "`%s` at %s, prompt `%s`, format %s, temperature %g, bio cap %d chars, extra %v.\n",
 			v.Model, v.BaseURL, r.Info.PromptID, v.Format, temp, v.BioMaxChars, v.Extra)
-		fmt.Fprintf(w, "High+medium confidence: %s of stations, label accuracy %s. Bio cut: %d. Answer cut off (max_tokens): %d. Mean prompt tokens: %d.\n",
-			pct(m.HighMedCov), pct(m.HighMedAcc), m.Truncated, m.CutOff, m.TokensMean)
+		fmt.Fprintf(w, "High+medium confidence: %s of stations, %s of them entirely right. Bio cut: %d. Answer cut off (max_tokens): %d. Prompt tokens mean/max: %d/%d.\n",
+			pct(m.HighMedCov), pct(m.HighMedAcc), m.Truncated, m.CutOff, m.TokensMean, m.TokensMax)
 		if v.AddressGuard {
-			fmt.Fprintf(w, "Address guard changed %d answers (direct -> unclear); %d of them now match your label.\n", m.Guarded, m.GuardedOK)
+			fmt.Fprintf(w, "Address guard changed %d answers; %d of them are now entirely right.\n", m.Guarded, m.GuardedOK)
 		}
 	}
 	if r.Missing > 0 {
 		fmt.Fprintf(w, "\n**%d labelled stations have no result yet** (rerun `qpc-lab run`).\n", r.Missing)
 	}
-	fmt.Fprintln(w, "\n| label | gold | predicted | precision | recall | F1 |\n|---|---:|---:|---:|---:|---:|")
-	for _, c := range m.PerClass {
-		fmt.Fprintf(w, "| %s | %d | %d | %s | %s | %s |\n", c.Label, c.Support, c.Predicted, pct(c.Precision), pct(c.Recall), num(c.F1))
+	fmt.Fprintf(w, "\nStatus macro-F1 %s.\n\n| status | gold | predicted | precision | recall | F1 |\n|---|---:|---:|---:|---:|---:|\n", num(m.StatusF1))
+	for _, c := range m.PerStatus {
+		fmt.Fprintf(w, "| %s | %d | %d | %s | %s | %s |\n", c.Name, c.Support, c.Predicted, pct(c.Precision), pct(c.Recall), num(c.F1))
 	}
-	// Confusion matrix over the labels that occur.
-	var cols []qpc.Label
-	for _, l := range append(append([]qpc.Label{}, qpc.Labels...), unreadable) {
+	fmt.Fprintln(w, "\n| route found | gold | predicted | precision | recall | F1 |\n|---|---:|---:|---:|---:|---:|")
+	for _, c := range m.PerRoute {
+		fmt.Fprintf(w, "| %s | %d | %d | %s | %s | %s |\n", c.Name, c.Support, c.Predicted, pct(c.Precision), pct(c.Recall), num(c.F1))
+	}
+	// Status confusion over the statuses that occur.
+	var cols []qpc.Status
+	for _, s := range append(append([]qpc.Status{}, qpc.Statuses...), unreadable) {
 		for _, row := range m.Confusion {
-			if row[l] > 0 || m.Confusion[l] != nil {
-				cols = append(cols, l)
+			if row[s] > 0 || m.Confusion[s] != nil {
+				cols = append(cols, s)
 				break
 			}
 		}
 	}
-	fmt.Fprint(w, "\nConfusion (rows = your label, columns = prediction):\n\n| |")
+	fmt.Fprint(w, "\nStatus confusion (rows = your label, columns = prediction):\n\n| |")
 	for _, c := range cols {
 		fmt.Fprintf(w, " %s |", c)
 	}
@@ -260,25 +294,25 @@ func writeRunDetail(w io.Writer, r *run) {
 		}
 		fmt.Fprintf(w, "| **%s** |", g)
 		for _, c := range cols {
-			if n := row[c]; n > 0 {
-				if c == g {
-					fmt.Fprintf(w, " **%d** |", n)
-				} else {
-					fmt.Fprintf(w, " %d |", n)
-				}
-			} else {
+			switch n := row[c]; {
+			case n > 0 && c == g:
+				fmt.Fprintf(w, " **%d** |", n)
+			case n > 0:
+				fmt.Fprintf(w, " %d |", n)
+			default:
 				fmt.Fprint(w, " · |")
 			}
 		}
 		fmt.Fprintln(w)
 	}
-}
-
-func answer(l qpc.Label, via string) string {
-	if via != "" {
-		return string(l) + " via " + via
+	if v.Kind != "heuristic" && (m.NotesGold > 0 || m.NotesPred > 0) {
+		fmt.Fprintf(w, "\nNotes: yours %d, the model's %d, both %d.\n\n| station | your note | model's note |\n|---|---|---|\n", m.NotesGold, m.NotesPred, m.NotesBoth)
+		for _, p := range r.Pairs {
+			if p.Gold.Note != "" || p.Pred.Note != "" {
+				fmt.Fprintf(w, "| %s | %s | %s |\n", p.Call, orDash(cell(p.Gold.Note)), orDash(cell(p.Pred.Note)))
+			}
+		}
 	}
-	return string(l)
 }
 
 func cell(s string) string {
@@ -289,10 +323,11 @@ func cell(s string) string {
 	return s
 }
 
-// writeDisagreements lists every station some variant got wrong, with all
-// answers side by side, then the evidence each wrong variant quoted.
+// writeDisagreements lists every station some variant got wrong (status,
+// routes, preferred or via), with all answers side by side, then the
+// evidence each wrong variant quoted.
 func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]goldLabel) {
-	fmt.Fprint(w, "\n## Disagreements\n\n✗ = differs from your label. Only stations at least one variant got wrong.\n\n")
+	fmt.Fprint(w, "\n## Disagreements\n\n✗ = differs from your label (status, routes, preferred or via; * = preferred). Only stations at least one variant got wrong.\n\n")
 	fmt.Fprint(w, "| station | your label |")
 	for _, r := range runs {
 		fmt.Fprintf(w, " %s |", r.Name)
@@ -307,22 +342,25 @@ func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]g
 	var order []string
 	for _, it := range eval {
 		g := gold[it.Call]
+		ga := answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note}
 		var cells []string
 		any := false
 		for _, r := range runs {
-			res, ok := r.Results[it.Call]
-			if !ok {
+			var p *pair
+			for i := range r.Pairs {
+				if r.Pairs[i].Call == it.Call {
+					p = &r.Pairs[i]
+				}
+			}
+			if p == nil {
 				cells = append(cells, "–")
 				continue
 			}
-			lbl := res.Label
-			if lbl == "" {
-				lbl = unreadable
-			}
-			a := answer(lbl, res.Via)
-			if lbl != g.Label || res.Via != g.Via {
+			a := p.Pred.String()
+			if !p.allOK() {
 				any = true
 				a = "✗ " + a
+				res := r.Results[it.Call]
 				ev := res.Evidence
 				if res.ParseError != "" {
 					ev = res.ParseError + ": " + res.Raw
@@ -335,7 +373,7 @@ func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]g
 			continue
 		}
 		order = append(order, it.Call)
-		fmt.Fprintf(w, "| %s | %s |", it.Call, answer(g.Label, g.Via))
+		fmt.Fprintf(w, "| %s | %s |", it.Call, ga)
 		for _, c := range cells {
 			fmt.Fprintf(w, " %s |", cell(c))
 		}
@@ -348,9 +386,12 @@ func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]g
 	fmt.Fprintln(w, "\n### Evidence quoted by the wrong answers")
 	for _, call := range order {
 		g := gold[call]
-		fmt.Fprintf(w, "\n**%s** — yours: %s", call, answer(g.Label, g.Via))
+		fmt.Fprintf(w, "\n**%s** — yours: %s", call, answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note})
 		if g.Note != "" {
 			fmt.Fprintf(w, " (note: %s)", cell(g.Note))
+		}
+		if g.Comment != "" {
+			fmt.Fprintf(w, " (comment: %s)", cell(g.Comment))
 		}
 		fmt.Fprintln(w)
 		for _, d := range details[call] {

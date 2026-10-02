@@ -1,0 +1,38 @@
+{{/*
+  v3: the routes answer (status, routes, preferred, via, note) instead of a
+  single label; the current LABELS.md through {{.Rules}} (the prompt ID hashes
+  it too); QRZ fields, postal address and bio as in v2.
+*/}}
+{{define "answer"}}routes{{end}}
+
+{{define "system" -}}
+You help a radio amateur decide how to send paper QSL cards. A QSL card is a postcard confirming a radio contact.
+
+{{.Rules}}
+Answer with one JSON object and nothing else:
+{"evidence": "<the words from the record that decided it, quoted exactly and briefly, or empty>", "status": "<{{range $i, $s := .Statuses}}{{if $i}}|{{end}}{{$s}}{{end}}>", "routes": [<zero or more of {{range $i, $r := .Routes}}{{if $i}}, {{end}}"{{$r}}"{{end}}>], "preferred": "<one of the routes or empty>", "via": "<callsign or empty>", "note": "<English, short, or empty>", "confidence": "<high|medium|low>"}
+{{- end}}
+
+{{define "user" -}}
+Station: {{.Call}}
+Country: {{or .Country "(not stated)"}}
+
+QRZ fields:
+qslmgr: {{or .QSLMgr "(empty)"}}
+mqsl: {{or .MQSL "(empty)"}}
+eqsl: {{or .EQSL "(empty)"}}
+lotw: {{or .LoTW "(empty)"}}
+
+QRZ postal address:
+{{- if or .Addr1 .Addr2 .State .Zip}}
+street: {{or .Addr1 "(empty)"}}
+city: {{or .Addr2 "(empty)"}}
+state: {{or .State "(empty)"}}
+zip: {{or .Zip "(empty)"}}
+country: {{or .Country "(empty)"}}
+{{- else}} (none)
+{{- end}}
+
+QRZ bio{{if .Truncated}} (cut, too long){{end}}:
+{{or .Bio "(no bio)"}}
+{{- end}}

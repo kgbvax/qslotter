@@ -45,7 +45,8 @@ func (c *Classifier) PromptID() string { return c.prompt.ID() }
 func (c *Classifier) Messages(st Station) (system, user string, truncated bool, err error) {
 	bio, truncated := PrepareBio(st.Bio, c.v.BioMaxChars)
 	system, user, err = c.prompt.Render(PromptData{
-		Station: st, Bio: bio, Truncated: truncated, Rules: Rules, Labels: Labels,
+		Station: st, Bio: bio, Truncated: truncated, Rules: Rules,
+		Labels: LegacyLabels, Statuses: Statuses, Routes: AllRoutes,
 	})
 	return system, user, truncated, err
 }
@@ -69,7 +70,7 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	}
 	switch c.v.Format {
 	case "schema":
-		req.ResponseFormat = answerSchema
+		req.ResponseFormat = c.prompt.schema()
 	case "json":
 		req.ResponseFormat = jsonObjectFormat
 	}
@@ -83,8 +84,32 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	}
 	r.PromptTokens, r.CompletionTokens, r.FinishReason = ans.PromptTokens, ans.CompletionTokens, ans.FinishReason
 	parseAnswer(ans.Content, &r)
-	if c.v.AddressGuard && r.Label == Direct && r.Via == "" && !st.HasFullAddress() {
-		r.Label, r.Guard = Unclear, "direct without a full QRZ postal address -> unclear"
+	if c.v.AddressGuard {
+		addressGuard(st, &r)
 	}
 	return r, nil
+}
+
+// addressGuard applies rule 5 in code: without a full QRZ postal address,
+// direct is not a usable route (unless the card goes via another call). It
+// cannot see an address written in the bio.
+func addressGuard(st Station, r *Result) {
+	if r.Via != "" || st.HasFullAddress() || !HasRoute(r.Routes, Direct) {
+		return
+	}
+	var keep []Route
+	for _, x := range r.Routes {
+		if x != Direct {
+			keep = append(keep, x)
+		}
+	}
+	r.Routes = keep
+	if r.Preferred == Direct {
+		r.Preferred = ""
+	}
+	r.Guard = "direct dropped: no full QRZ postal address"
+	if len(keep) == 0 {
+		r.Status = Unclear
+		r.Guard = "direct without a full QRZ postal address -> unclear"
+	}
 }

@@ -17,11 +17,15 @@ import (
 var builtinPrompts embed.FS
 
 // Prompt is a parsed prompt template. A template file defines two blocks,
-// {{define "system"}} and {{define "user"}}, rendered with PromptData.
+// {{define "system"}} and {{define "user"}}, rendered with PromptData, and
+// may define {{define "answer"}}routes{{end}} for the routes answer (status,
+// routes, preferred, via, note); without it the answer is a single label
+// (prompts v1, v2).
 type Prompt struct {
-	Name string // file name without extension
-	Hash string // first 8 hex digits of the SHA-256 of the file (and Rules, if used)
-	tmpl *template.Template
+	Name   string // file name without extension
+	Hash   string // first 8 hex digits of the SHA-256 of the file (and Rules, if used)
+	Answer string // "routes" or "label"
+	tmpl   *template.Template
 }
 
 // ID identifies the exact prompt text a result came from.
@@ -29,11 +33,13 @@ func (p *Prompt) ID() string { return p.Name + "@" + p.Hash }
 
 // PromptData is what a prompt template sees.
 type PromptData struct {
-	Station          // .Call, .Country, .QSLMgr, .MQSL, .EQSL, .LoTW, ...
-	Bio       string // the bio after preparation (whitespace, length cap)
-	Truncated bool   // Bio was cut
-	Rules     string // LABELS.md
-	Labels    []Label
+	Station            // .Call, .Country, .QSLMgr, .MQSL, .EQSL, .LoTW, ...
+	Bio       string   // the bio after preparation (whitespace, length cap)
+	Truncated bool     // Bio was cut
+	Rules     string   // LABELS.md
+	Labels    []string // the single-label scheme (v1, v2)
+	Statuses  []Status
+	Routes    []Route
 }
 
 // LoadPrompt returns a built-in prompt by name ("v1") or reads a template
@@ -68,7 +74,28 @@ func LoadPrompt(nameOrPath string) (*Prompt, error) {
 		hashed = append(append(append([]byte{}, src...), 0), Rules...)
 	}
 	sum := sha256.Sum256(hashed)
-	return &Prompt{Name: name, Hash: hex.EncodeToString(sum[:])[:8], tmpl: t}, nil
+	p := &Prompt{Name: name, Hash: hex.EncodeToString(sum[:])[:8], Answer: "label", tmpl: t}
+	if t.Lookup("answer") != nil {
+		var b bytes.Buffer
+		if err := t.ExecuteTemplate(&b, "answer", nil); err != nil {
+			return nil, fmt.Errorf("prompt %q: %w", nameOrPath, err)
+		}
+		switch a := strings.TrimSpace(b.String()); a {
+		case "routes", "label":
+			p.Answer = a
+		default:
+			return nil, fmt.Errorf("prompt %q: answer %q (want routes or label)", nameOrPath, a)
+		}
+	}
+	return p, nil
+}
+
+// schema returns the response_format for Format "schema".
+func (p *Prompt) schema() json.RawMessage {
+	if p.Answer == "routes" {
+		return routesSchema
+	}
+	return labelSchema
 }
 
 // Render returns the system and user messages for d.
@@ -83,11 +110,27 @@ func (p *Prompt) Render(d PromptData) (system, user string, err error) {
 	return strings.TrimSpace(sb.String()), strings.TrimSpace(ub.String()), nil
 }
 
-// answerSchema is the JSON schema for Format "schema". The property order is
-// the order the model writes: quoting the evidence before naming the label
-// gives a small model a moment of reasoning even under constrained decoding.
-var answerSchema = func() json.RawMessage {
-	labels, _ := json.Marshal(Labels)
+// The JSON schemas for Format "schema". The property order is the order the
+// model writes: quoting the evidence before deciding gives a small model a
+// moment of reasoning even under constrained decoding.
+var routesSchema = func() json.RawMessage {
+	statuses, _ := json.Marshal(Statuses)
+	routes, _ := json.Marshal(AllRoutes)
+	preferred, _ := json.Marshal(append([]Route{""}, AllRoutes...))
+	return json.RawMessage(`{"type":"json_schema","json_schema":{"name":"qsl_preference","strict":true,"schema":{` +
+		`"type":"object","properties":{` +
+		`"evidence":{"type":"string"},` +
+		`"status":{"type":"string","enum":` + string(statuses) + `},` +
+		`"routes":{"type":"array","items":{"type":"string","enum":` + string(routes) + `}},` +
+		`"preferred":{"type":"string","enum":` + string(preferred) + `},` +
+		`"via":{"type":"string"},` +
+		`"note":{"type":"string"},` +
+		`"confidence":{"type":"string","enum":["high","medium","low"]}` +
+		`},"required":["evidence","status","routes","preferred","via","note","confidence"],"additionalProperties":false}}}`)
+}()
+
+var labelSchema = func() json.RawMessage {
+	labels, _ := json.Marshal(LegacyLabels)
 	return json.RawMessage(`{"type":"json_schema","json_schema":{"name":"qsl_preference","strict":true,"schema":{` +
 		`"type":"object","properties":{` +
 		`"evidence":{"type":"string"},` +

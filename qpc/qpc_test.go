@@ -3,6 +3,7 @@ package qpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io"
@@ -15,33 +16,53 @@ import (
 	"time"
 )
 
-func TestParseAnswer(t *testing.T) {
+func TestParseRoutesAnswer(t *testing.T) {
 	cases := []struct {
-		name, raw  string
-		label      Label
-		via, error string
+		name, raw string
+		status    Status
+		routes    []Route
+		preferred Route
+		via, note string
+		problem   string
 	}{
-		{"plain", `{"evidence":"QSL via buro","label":"bureau","via":"","confidence":"high"}`, Bureau, "", ""},
-		{"fenced", "Sure:\n```json\n{\"label\":\"direct\",\"via\":\"none\"}\n```", Direct, "", ""},
-		{"think block", `<think>{"label":"oqrs"}</think>{"label":"no-paper","via":""}`, NoPaper, "", ""},
-		{"prose around", `The answer is {"label":"Unclear","via":"via ea5gl"} done.`, Unclear, "EA5GL", ""},
-		{"portable via", `{"label":"bureau","via":"VK9/DL1ABC"}`, Bureau, "VK9/DL1ABC", ""},
-		{"label spelling", `{"label":"No Paper","via":""}`, NoPaper, "", ""},
-		{"invalid label", `{"label":"manager","via":"EA5GL"}`, "", "", `invalid label "manager"`},
-		{"via not a call", `{"label":"bureau","via":"see website"}`, Bureau, "", `via "see website" is not a callsign`},
-		{"no json", `I think bureau.`, "", "", "no JSON object in the answer"},
+		{"both routes", `{"evidence":"via buro or direct","status":"paper","routes":["direct","bureau"],"preferred":"","via":"","note":"","confidence":"high"}`,
+			Paper, []Route{Bureau, Direct}, "", "", "", ""},
+		{"preference + note", `{"status":"paper","routes":["bureau","direct"],"preferred":"Direct","note":"direct preferred"}`,
+			Paper, []Route{Bureau, Direct}, Direct, "", "direct preferred", ""},
+		{"condition (IK4IDF)", `{"status":"paper","routes":["direct"],"preferred":"","note":"only if no electronic QSL possible"}`,
+			Paper, []Route{Direct}, "", "", "only if no electronic QSL possible", ""},
+		{"routes decide status", `{"status":"unknown","routes":["oqrs"]}`,
+			Paper, []Route{OQRS}, "", "", "", `status "unknown" with routes, taken as paper`},
+		{"paper without routes", `{"status":"paper","routes":[]}`, "", nil, "", "", "", "status paper without routes"},
+		{"preferred not listed", `{"status":"paper","routes":["bureau"],"preferred":"direct"}`,
+			Paper, []Route{Bureau}, "", "", "", `preferred "direct" is not among the routes`},
+		{"unclear via", `{"status":"unclear","routes":[],"via":"via ea5gl"}`, Unclear, nil, "", "EA5GL", "", ""},
+		{"bad route", `{"status":"paper","routes":["bureau","email"]}`, Paper, []Route{Bureau}, "", "", "", `invalid route "email"`},
+		{"legacy label", `{"label":"No Paper","via":""}`, NoPaper, nil, "", "", "", ""},
+		{"legacy route label", "```json\n{\"label\":\"direct\",\"via\":\"VK9/DL1ABC\"}\n```", Paper, []Route{Direct}, "", "VK9/DL1ABC", "", ""},
+		{"think block", `<think>{"status":"paper"}</think>{"status":"no-paper","routes":[]}`, NoPaper, nil, "", "", "", ""},
+		{"no json", `I think bureau.`, "", nil, "", "", "", "no JSON object in the answer"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var r Result
 			parseAnswer(c.raw, &r)
-			if r.Label != c.label || r.Via != c.via || r.ParseError != c.error {
-				t.Errorf("got label=%q via=%q err=%q, want %q %q %q", r.Label, r.Via, r.ParseError, c.label, c.via, c.error)
+			if r.Status != c.status || fmt.Sprint(r.Routes) != fmt.Sprint(c.routes) || r.Preferred != c.preferred ||
+				r.Via != c.via || r.Note != c.note || r.ParseError != c.problem {
+				t.Errorf("got %s %v pref=%q via=%q note=%q err=%q", r.Status, r.Routes, r.Preferred, r.Via, r.Note, r.ParseError)
 			}
 			if r.Raw != c.raw {
 				t.Errorf("raw not kept")
 			}
 		})
+	}
+}
+
+func TestNormalizeLegacyResult(t *testing.T) {
+	r := Result{Label: "oqrs"}
+	r.Normalize()
+	if r.Status != Paper || fmt.Sprint(r.Routes) != "[oqrs]" {
+		t.Errorf("%+v", r)
 	}
 }
 
@@ -69,7 +90,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Route labels:", "bureau|direct|oqrs|unclear|no-paper|unknown", "Direct needs a full postal address"} {
+	for _, want := range []string{"paper|no-paper|unknown|unclear", `"bureau", "direct", "oqrs"`, "Direct needs a full postal address", "the note is always in English"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
@@ -79,39 +100,44 @@ func TestBuiltinPromptRenders(t *testing.T) {
 			t.Errorf("user prompt lacks %q:\n%s", want, user)
 		}
 	}
-	if !strings.HasPrefix(c.PromptID(), "v2@") {
+	if !strings.HasPrefix(c.PromptID(), "v3@") {
 		t.Errorf("prompt ID %q", c.PromptID())
 	}
 	_, user, _, _ = c.Messages(Station{Call: "K1A"})
 	if !strings.Contains(user, "QRZ postal address: (none)") {
 		t.Errorf("no address:\n%s", user)
 	}
-	// v1 is frozen: no address, the original rules.
+	// v1 is frozen: no address, the original rules, single label.
 	v1, _ := New(Variant{Model: "m", Prompt: "v1"})
 	sys, user, _, _ = v1.Messages(Station{Call: "K1A", Addr1: "Main St 1", Addr2: "Town"})
-	if strings.Contains(sys, "postal address") || strings.Contains(user, "Main St") {
-		t.Error("v1 must not mention the address")
+	if strings.Contains(sys, "postal address") || strings.Contains(user, "Main St") || !strings.Contains(sys, "bureau|direct|oqrs|unclear|no-paper|unknown") {
+		t.Error("v1 changed")
+	}
+	if v1.prompt.Answer != "label" || c.prompt.Answer != "routes" {
+		t.Errorf("answer formats: v1 %s, v3 %s", v1.prompt.Answer, c.prompt.Answer)
 	}
 }
 
 func TestAddressGuard(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"label\":\"direct\",\"via\":\"\"}"}}]}`)
-	}))
-	defer srv.Close()
-	ctx := context.Background()
-	guarded, _ := New(Variant{BaseURL: srv.URL, Model: "m", AddressGuard: true})
-	r, _ := guarded.Classify(ctx, Station{Call: "K1A", Addr2: "Town"})
-	if r.Label != Unclear || r.Guard == "" {
-		t.Errorf("no street: %+v", r)
+	cases := []struct {
+		in        Result
+		st        Station
+		status    Status
+		routes    string
+		preferred Route
+		guarded   bool
+	}{
+		{Result{Status: Paper, Routes: []Route{Direct}}, Station{Addr2: "Town"}, Unclear, "[]", "", true},
+		{Result{Status: Paper, Routes: []Route{Bureau, Direct}, Preferred: Direct}, Station{}, Paper, "[bureau]", "", true},
+		{Result{Status: Paper, Routes: []Route{Direct}}, Station{Addr1: "Main St 1", Addr2: "Town"}, Paper, "[direct]", "", false},
+		{Result{Status: Paper, Routes: []Route{Direct}, Via: "EA5GL"}, Station{}, Paper, "[direct]", "", false},
 	}
-	r, _ = guarded.Classify(ctx, Station{Call: "K1A", Addr1: "Main St 1", Addr2: "Town"})
-	if r.Label != Direct || r.Guard != "" {
-		t.Errorf("full address: %+v", r)
-	}
-	plain, _ := New(Variant{BaseURL: srv.URL, Model: "m"})
-	if r, _ := plain.Classify(ctx, Station{Call: "K1A"}); r.Label != Direct {
-		t.Errorf("guard off: %+v", r)
+	for i, c := range cases {
+		r := c.in
+		addressGuard(c.st, &r)
+		if r.Status != c.status || fmt.Sprint(r.Routes) != c.routes || r.Preferred != c.preferred || (r.Guard != "") != c.guarded {
+			t.Errorf("%d: %+v", i, r)
+		}
 	}
 }
 
@@ -137,7 +163,7 @@ func TestVariantOver(t *testing.T) {
 	half := 0.5
 	def := Variant{BaseURL: "http://a/v1", Model: "m1", Extra: map[string]any{"think": false, "keep": 1}}
 	v := Variant{Name: "x", Model: "m2", Temperature: &half, Extra: map[string]any{"think": nil, "new": "y"}}.Over(def).WithDefaults()
-	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v2" {
+	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v3" {
 		t.Errorf("merge: %+v", v)
 	}
 	if _, ok := v.Extra["think"]; ok || v.Extra["keep"] != 1 || v.Extra["new"] != "y" {
@@ -159,7 +185,7 @@ func TestClassifyRequestAndResult(t *testing.T) {
 		auth = r.Header.Get("Authorization")
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &got)
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"evidence\":\"QSL via EA5GL direct\",\"label\":\"direct\",\"via\":\"ea5gl\",\"confidence\":\"high\"}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":812,"completion_tokens":31}}`)
+		io.WriteString(w, `{"choices":[{"message":{"content":"{\"evidence\":\"QSL via EA5GL direct\",\"status\":\"paper\",\"routes\":[\"direct\"],\"preferred\":\"\",\"via\":\"ea5gl\",\"note\":\"\",\"confidence\":\"high\"}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":812,"completion_tokens":31}}`)
 	}))
 	defer srv.Close()
 	t.Setenv("QPC_TEST_KEY", "secret")
@@ -177,7 +203,7 @@ func TestClassifyRequestAndResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Label != Direct || r.Via != "EA5GL" || r.Confidence != "high" || r.PromptTokens != 812 || r.Call != "EA8/DL1ABC" || r.FinishReason != "stop" {
+	if r.Status != Paper || fmt.Sprint(r.Routes) != "[direct]" || r.Via != "EA5GL" || r.Confidence != "high" || r.PromptTokens != 812 || r.Call != "EA8/DL1ABC" || r.FinishReason != "stop" {
 		t.Errorf("result %+v", r)
 	}
 	if auth != "Bearer secret" {
@@ -186,9 +212,9 @@ func TestClassifyRequestAndResult(t *testing.T) {
 	if string(got["think"]) != "false" || string(got["seed"]) != "7" || string(got["temperature"]) != "0" || string(got["model"]) != `"qwen3.5:4b"` {
 		t.Errorf("request body: think=%s seed=%s temp=%s model=%s", got["think"], got["seed"], got["temperature"], got["model"])
 	}
-	// The schema keeps evidence before label (the order the model writes).
+	// The schema keeps evidence before status (the order the model writes).
 	rf := string(got["response_format"])
-	if i, j := strings.Index(rf, `"evidence"`), strings.Index(rf, `"label"`); i < 0 || j < i {
+	if i, j := strings.Index(rf, `"evidence"`), strings.Index(rf, `"status"`); i < 0 || j < i || !strings.Contains(rf, `"routes":{"type":"array"`) {
 		t.Errorf("schema property order: %s", rf)
 	}
 }

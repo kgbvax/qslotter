@@ -32,10 +32,15 @@
   mark.q { background:#ffb347; font-weight:700; }
   .empty { color:var(--mute); font-style:italic; }
   aside .card { position:sticky; top:96px; }
-  .labels label { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; }
-  .labels label:hover { background:#f0eee9; }
-  .labels input:checked + kbd + span { font-weight:700; }
-  .labels label:has(input:checked) { background:#e3edf8; }
+  .group { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:4px 0 4px; }
+  .group + .group, .opts + .group { margin-top:14px; }
+  .opts label { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; }
+  .opts label:hover { background:#f0eee9; }
+  .opts label:has(input:checked) { background:#e3edf8; font-weight:600; }
+  .opts .pref { margin-left:auto; border:none; background:none; padding:0 4px; font-size:18px; color:#c9c5bc; cursor:pointer; }
+  .opts .pref.on { color:#d18a00; }
+  .legacy { background:#fff6dd; border:1px solid #f0d58a; border-radius:6px; padding:6px 8px; font-size:13px; margin-bottom:10px; }
+  #grid span.old { background:#b9dcc6; }
   kbd { display:inline-block; min-width:20px; text-align:center; font:12px ui-monospace, monospace; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; color:var(--mute); }
   .field { margin-top:12px; }
   .field label { display:block; font-size:13px; color:var(--mute); margin-bottom:3px; }
@@ -62,7 +67,7 @@
   <span class="spacer"></span>
   <button id="prev" title="Previous (←)">←</button>
   <button id="next" title="Next (→)">→</button>
-  <button id="todo" title="Next unlabelled (j)">Next unlabelled</button>
+  <button id="todo" title="Next to do (j)">Next to do</button>
 </header>
 <div id="grid"></div>
 <main>
@@ -80,19 +85,27 @@
   </section>
   <aside>
     <div class="card">
-      <div class="labels" id="labels"></div>
+      <div class="legacy" id="legacy" hidden>Pre-filled from your first pass (one route at most). Add the other routes, the preferred one and the note, then save.</div>
+      <div class="group">Paper routes the station accepts</div>
+      <div class="opts" id="routes"></div>
+      <div class="group">…or no usable route</div>
+      <div class="opts" id="statuses"></div>
       <div class="field">
         <label for="via">Via callsign <kbd>v</kbd> (manager or home call; empty if none)</label>
         <input type="text" id="via" autocomplete="off" spellcheck="false">
       </div>
-      <div class="row"><input type="checkbox" id="unsure"><label for="unsure">Unsure <kbd>u</kbd></label></div>
       <div class="field">
-        <label for="note">Note <kbd>n</kbd></label>
-        <input type="text" id="note" autocomplete="off">
+        <label for="note">Station's note <kbd>n</kbd> — preferences, conditions, requirements, in English</label>
+        <input type="text" id="note" autocomplete="off" placeholder="e.g. only if no electronic QSL possible">
       </div>
+      <div class="field">
+        <label for="comment">Your comment <kbd>c</kbd> (not part of the answer)</label>
+        <input type="text" id="comment" autocomplete="off">
+      </div>
+      <div class="row"><input type="checkbox" id="unsure"><label for="unsure">Unsure <kbd>u</kbd></label></div>
       <div class="row"><button class="primary" id="save">Save &amp; next</button><kbd>Enter</kbd></div>
       <div class="status" id="status"></div>
-      <div class="keys"><kbd>1</kbd>–<kbd>6</kbd> label · <kbd>Enter</kbd> save &amp; next unlabelled · <kbd>Esc</kbd> leave a text field · <kbd>←</kbd><kbd>→</kbd> browse · <kbd>j</kbd> next unlabelled · <kbd>h</kbd> keyword highlight · <kbd>r</kbd> rules</div>
+      <div class="keys"><kbd>b</kbd><kbd>d</kbd><kbd>o</kbd> route on/off · <kbd>B</kbd><kbd>D</kbd><kbd>O</kbd> preferred (★) · <kbd>1</kbd> no-paper <kbd>2</kbd> unknown <kbd>3</kbd> unclear · <kbd>Enter</kbd> save &amp; next · <kbd>Esc</kbd> leave a text field · <kbd>←</kbd><kbd>→</kbd> browse · <kbd>j</kbd> next to do · <kbd>h</kbd> highlight · <kbd>r</kbd> rules</div>
       <details id="rules"><summary>Labelling rules <kbd>r</kbd></summary><pre id="rulesText"></pre></details>
     </div>
   </aside>
@@ -100,9 +113,11 @@
 <script>
 const $ = id => document.getElementById(id);
 let S = null, cur = 0, highlight = true, saving = false;
+// The answer being edited: routes (a set), preferred, or a status without routes.
+let F = { routes: new Set(), preferred: '', status: '' };
+const ROUTE_KEYS = { b: 'bureau', d: 'direct', o: 'oqrs' };
+const STATUS_KEYS = { '1': 'no-paper', '2': 'unknown', '3': 'unclear' };
 
-// Words worth spotting in a long bio. Highlighting only helps reading; it is
-// not a suggestion.
 // "QSL" stands out (also inside words: eQSL, DigiQSL, QSL-Karte).
 const KEYWORDS = /(\w*qsl\w*)|\b(bureau|buro|büro|bureo|direct\w*|direkt|oqrs|manager|mgr|via|sase?|irc|green ?stamps?|lotw|paypal|clublog|club log|no paper|paper)\b/gi;
 function marked(text) {
@@ -113,18 +128,27 @@ function marked(text) {
 async function load() {
   S = await (await fetch('/api/state')).json();
   $('rulesText').textContent = S.rules;
-  const box = $('labels');
-  S.labels.forEach((l, i) => {
+  S.routes.forEach(r => {
+    const key = Object.keys(ROUTE_KEYS).find(k => ROUTE_KEYS[k] === r);
     const lab = document.createElement('label');
-    lab.innerHTML = `<input type="radio" name="label" value="${l}"><kbd>${i + 1}</kbd><span>${l}</span>`;
-    box.appendChild(lab);
+    lab.innerHTML = `<input type="checkbox" value="${r}"><kbd>${key}</kbd><span>${r}</span><button type="button" class="pref" title="preferred (${key.toUpperCase()})">★</button>`;
+    lab.querySelector('input').onchange = e => toggleRoute(r, e.target.checked);
+    lab.querySelector('.pref').onclick = e => { e.preventDefault(); setPreferred(r); };
+    $('routes').appendChild(lab);
+  });
+  Object.entries(STATUS_KEYS).forEach(([k, st]) => {
+    const lab = document.createElement('label');
+    lab.innerHTML = `<input type="radio" name="status" value="${st}"><kbd>${k}</kbd><span>${st}</span>`;
+    lab.querySelector('input').onchange = () => setStatus(st);
+    $('statuses').appendChild(lab);
   });
   cur = firstTodo(0);
   if (cur < 0) cur = 0;
   render();
 }
 
-function done(i) { return !!S.gold[S.stations[i].call]; }
+// Done = labelled in the routes scheme; a first-pass label still needs a look.
+function done(i) { const g = S.gold[S.stations[i].call]; return !!g && !g.legacy; }
 function firstTodo(from) {
   for (let k = 0; k < S.stations.length; k++) {
     const i = (from + k) % S.stations.length;
@@ -140,11 +164,32 @@ function show(id, v) {
   el.className = v ? '' : 'empty';
 }
 
+function toggleRoute(r, on) {
+  if (on) { F.routes.add(r); F.status = ''; }
+  else { F.routes.delete(r); if (F.preferred === r) F.preferred = ''; }
+  renderForm();
+}
+function setPreferred(r) {
+  if (F.preferred === r) { F.preferred = ''; }
+  else { F.preferred = r; F.routes.add(r); F.status = ''; }
+  renderForm();
+}
+function setStatus(st) { F.status = st; F.routes.clear(); F.preferred = ''; renderForm(); }
+
+function renderForm() {
+  document.querySelectorAll('#routes label').forEach(lab => {
+    const r = lab.querySelector('input').value;
+    lab.querySelector('input').checked = F.routes.has(r);
+    lab.querySelector('.pref').classList.toggle('on', F.preferred === r);
+  });
+  document.querySelectorAll('input[name=status]').forEach(x => x.checked = x.value === F.status);
+}
+
 function render() {
   const st = S.stations[cur];
   const g = S.gold[st.call];
-  const n = Object.keys(S.gold).filter(c => S.stations.some(s => s.call === c)).length;
-  $('progress').textContent = `station ${cur + 1}/${S.stations.length} · ${n} labelled`;
+  const n = S.stations.filter((s, i) => done(i)).length;
+  $('progress').textContent = `station ${cur + 1}/${S.stations.length} · ${n} in the routes scheme`;
   $('call').textContent = st.call;
   $('qrz').href = 'https://www.qrz.com/db/' + encodeURIComponent(st.call);
   $('country').textContent = [st.country, st.dxcc && 'DXCC ' + st.dxcc].filter(Boolean).join(' · ');
@@ -156,18 +201,21 @@ function render() {
   $('addrHint').style.color = full ? '' : '#b3261e';
   renderBio();
   $('bio').scrollTop = 0;
-  document.querySelectorAll('input[name=label]').forEach(r => r.checked = !!g && r.value === g.label);
+  F = { routes: new Set(g ? (g.routes || []) : []), preferred: g ? (g.preferred || '') : '', status: g && g.status !== 'paper' ? g.status : '' };
+  renderForm();
   $('via').value = g ? (g.via || '') : '';
-  $('unsure').checked = !!(g && g.unsure);
   $('note').value = g ? (g.note || '') : '';
-  status(g ? `saved: ${g.label}${g.via ? ' via ' + g.via : ''}${g.unsure ? ' (unsure)' : ''}` : '', g ? 'saved' : '');
+  $('comment').value = g ? (g.comment || '') : '';
+  $('unsure').checked = !!(g && g.unsure);
+  $('legacy').hidden = !(g && g.legacy);
+  status(g && !g.legacy ? 'saved' : '', 'saved');
   const grid = $('grid');
   grid.innerHTML = '';
   S.stations.forEach((s, i) => {
     const d = document.createElement('span');
     const gg = S.gold[s.call];
-    d.className = (gg ? (gg.unsure ? 'unsure' : 'done') : '') + (i === cur ? ' cur' : '');
-    d.title = s.call + (gg ? ': ' + gg.label : '');
+    d.className = (gg ? (gg.unsure ? 'unsure' : gg.legacy ? 'old' : 'done') : '') + (i === cur ? ' cur' : '');
+    d.title = s.call;
     d.onclick = () => { cur = i; render(); };
     grid.appendChild(d);
   });
@@ -187,25 +235,25 @@ function status(msg, cls) { const el = $('status'); el.textContent = msg; el.cla
 async function save() {
   if (saving) return;
   const st = S.stations[cur];
-  const sel = document.querySelector('input[name=label]:checked');
-  if (!sel) { status('Pick a label first (1–6).', 'err'); return; }
-  const body = { call: st.call, label: sel.value, via: $('via').value.trim(), unsure: $('unsure').checked, note: $('note').value.trim() };
-  if (body.label === 'unclear' && !body.via && !confirm('"unclear" is meant for a named via callsign without a route, but via is empty. Save anyway?')) return;
+  if (F.routes.size === 0 && !F.status) { status('Pick routes (b/d/o) or a status (1–3) first.', 'err'); return; }
+  const body = {
+    call: st.call, status: F.routes.size ? 'paper' : F.status, routes: [...F.routes], preferred: F.preferred,
+    via: $('via').value.trim(), note: $('note').value.trim(), comment: $('comment').value.trim(), unsure: $('unsure').checked,
+  };
   // Keys typed while the save is in flight must not land on this station.
   saving = true;
   document.activeElement && document.activeElement.blur();
-  let res;
   try {
-    res = await fetch('/api/label', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    const res = await fetch('/api/label', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     if (!res.ok) { status('Not saved: ' + await res.text(), 'err'); return; }
-    S.gold[st.call] = await res.json();
+    S.gold[st.call] = Object.assign(await res.json(), { legacy: false });
   } catch (err) {
     status('Not saved: ' + err, 'err'); return;
   } finally {
     saving = false;
   }
   let next = firstTodo(cur + 1);
-  if (next < 0 && cur < S.stations.length - 1) next = cur + 1; // re-checking: everything is labelled, go on in order
+  if (next < 0 && cur < S.stations.length - 1) next = cur + 1; // everything done: go on in order
   if (next < 0) { render(); status('All stations labelled. Run: qpc-lab report', 'saved'); return; }
   cur = next;
   render();
@@ -225,19 +273,21 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); save(); return; }
   if (e.key === 'Escape') { e.target.blur(); return; }
   if (typing) return;
-  const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= S.labels.length) {
-    e.preventDefault(); // the digit must not end up in the via field focused below
-    document.querySelectorAll('input[name=label]')[n - 1].checked = true;
-    if (S.labels[n - 1] === 'unclear') $('via').focus();
+  const lower = e.key.toLowerCase();
+  if (ROUTE_KEYS[lower]) {
+    e.preventDefault();
+    const r = ROUTE_KEYS[lower];
+    if (e.shiftKey) setPreferred(r); else toggleRoute(r, !F.routes.has(r));
     return;
   }
+  if (STATUS_KEYS[e.key]) { e.preventDefault(); setStatus(STATUS_KEYS[e.key]); return; }
   switch (e.key) {
     case 'ArrowLeft': move(-1); break;
     case 'ArrowRight': move(1); break;
     case 'j': $('todo').click(); break;
     case 'v': e.preventDefault(); $('via').focus(); break;
     case 'n': e.preventDefault(); $('note').focus(); break;
+    case 'c': e.preventDefault(); $('comment').focus(); break;
     case 'u': $('unsure').checked = !$('unsure').checked; break;
     case 'h': highlight = !highlight; renderBio(); break;
     case 'r': $('rules').open = !$('rules').open; break;
