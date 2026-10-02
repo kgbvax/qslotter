@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>qpc labelling</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1f2328; --mute:#6b7076; --line:#dcd9d2; --acc:#1d5fa8; --ok:#2e7d4f; --warn:#b26a00; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:16px; align-items:center; padding:10px 20px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  header .progress { color:var(--mute); }
+  header .spacer { flex:1; }
+  button { font:inherit; padding:5px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); cursor:pointer; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  #grid { display:flex; flex-wrap:wrap; gap:3px; padding:8px 20px; border-bottom:1px solid var(--line); }
+  #grid span { width:14px; height:14px; border-radius:3px; background:#e4e1da; cursor:pointer; }
+  #grid span.done { background:var(--ok); }
+  #grid span.unsure { background:var(--warn); }
+  #grid span.cur { outline:2px solid var(--acc); outline-offset:1px; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:20px; padding:20px; max-width:1400px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
+  .call { font-size:28px; font-weight:700; letter-spacing:.5px; }
+  .call a { font-size:14px; font-weight:400; margin-left:10px; color:var(--acc); }
+  .country { color:var(--mute); margin-bottom:12px; }
+  table.fields { border-collapse:collapse; margin-bottom:14px; }
+  table.fields td { padding:3px 14px 3px 0; vertical-align:top; }
+  table.fields td:first-child { color:var(--mute); width:70px; }
+  table.fields td.hint { color:var(--mute); font-size:13px; }
+  .bio { white-space:pre-wrap; overflow-wrap:anywhere; max-height:62vh; overflow:auto; border-top:1px solid var(--line); padding-top:10px; }
+  .bio mark { background:#fff1a8; padding:0 1px; }
+  .empty { color:var(--mute); font-style:italic; }
+  aside .card { position:sticky; top:96px; }
+  .labels label { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; }
+  .labels label:hover { background:#f0eee9; }
+  .labels input:checked + kbd + span { font-weight:700; }
+  .labels label:has(input:checked) { background:#e3edf8; }
+  kbd { display:inline-block; min-width:20px; text-align:center; font:12px ui-monospace, monospace; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; color:var(--mute); }
+  .field { margin-top:12px; }
+  .field label { display:block; font-size:13px; color:var(--mute); margin-bottom:3px; }
+  .field input[type=text] { width:100%; font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+  #via { text-transform:uppercase; }
+  .row { display:flex; align-items:center; gap:8px; margin-top:12px; }
+  .status { margin-top:12px; font-size:13px; color:var(--mute); min-height:1.4em; }
+  .status.err { color:#b3261e; }
+  .status.saved { color:var(--ok); }
+  details { margin-top:16px; font-size:13px; }
+  details pre { white-space:pre-wrap; font:13px/1.45 -apple-system, sans-serif; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding:12px; }
+    aside .card { position:static; }
+    .bio { max-height:none; }
+  }
+  .keys { font-size:12px; color:var(--mute); margin-top:14px; line-height:1.9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>qpc labelling</h1>
+  <span class="progress" id="progress"></span>
+  <span class="spacer"></span>
+  <button id="prev" title="Previous (←)">←</button>
+  <button id="next" title="Next (→)">→</button>
+  <button id="todo" title="Next unlabelled (j)">Next unlabelled</button>
+</header>
+<div id="grid"></div>
+<main>
+  <section class="card">
+    <div class="call"><span id="call"></span><a id="qrz" target="_blank" rel="noopener">QRZ page ↗</a></div>
+    <div class="country" id="country"></div>
+    <table class="fields">
+      <tr><td>qslmgr</td><td id="qslmgr"></td><td class="hint"></td></tr>
+      <tr><td>mqsl</td><td id="mqsl"></td><td class="hint">1 = will return paper QSL</td></tr>
+      <tr><td>eqsl</td><td id="eqsl"></td><td class="hint">1 = accepts eQSL (not paper)</td></tr>
+      <tr><td>lotw</td><td id="lotw"></td><td class="hint">1 = uses LoTW (not paper)</td></tr>
+    </table>
+    <div class="bio" id="bio"></div>
+  </section>
+  <aside>
+    <div class="card">
+      <div class="labels" id="labels"></div>
+      <div class="field">
+        <label for="via">Via callsign <kbd>v</kbd> (manager or home call; empty if none)</label>
+        <input type="text" id="via" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="row"><input type="checkbox" id="unsure"><label for="unsure">Unsure <kbd>u</kbd></label></div>
+      <div class="field">
+        <label for="note">Note <kbd>n</kbd></label>
+        <input type="text" id="note" autocomplete="off">
+      </div>
+      <div class="row"><button class="primary" id="save">Save &amp; next</button><kbd>Enter</kbd></div>
+      <div class="status" id="status"></div>
+      <div class="keys"><kbd>1</kbd>–<kbd>6</kbd> label · <kbd>Enter</kbd> save &amp; next unlabelled · <kbd>Esc</kbd> leave a text field · <kbd>←</kbd><kbd>→</kbd> browse · <kbd>j</kbd> next unlabelled · <kbd>h</kbd> keyword highlight · <kbd>r</kbd> rules</div>
+      <details id="rules"><summary>Labelling rules <kbd>r</kbd></summary><pre id="rulesText"></pre></details>
+    </div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let S = null, cur = 0, highlight = true, saving = false;
+
+// Words worth spotting in a long bio. Highlighting only helps reading; it is
+// not a suggestion.
+const KEYWORDS = /\b(qsl\w*|bureau|buro|büro|bureo|direct\w*|direkt|oqrs|manager|mgr|via|sase?|irc|green ?stamps?|lotw|e-?qsl|paypal|clublog|club log|no paper|paper)\b/gi;
+
+async function load() {
+  S = await (await fetch('/api/state')).json();
+  $('rulesText').textContent = S.rules;
+  const box = $('labels');
+  S.labels.forEach((l, i) => {
+    const lab = document.createElement('label');
+    lab.innerHTML = `<input type="radio" name="label" value="${l}"><kbd>${i + 1}</kbd><span>${l}</span>`;
+    box.appendChild(lab);
+  });
+  cur = firstTodo(0);
+  if (cur < 0) cur = 0;
+  render();
+}
+
+function done(i) { return !!S.gold[S.stations[i].call]; }
+function firstTodo(from) {
+  for (let k = 0; k < S.stations.length; k++) {
+    const i = (from + k) % S.stations.length;
+    if (!done(i)) return i;
+  }
+  return -1;
+}
+
+function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function show(id, v) {
+  const el = $(id);
+  el.textContent = v || '(empty)';
+  el.className = v ? '' : 'empty';
+}
+
+function render() {
+  const st = S.stations[cur];
+  const g = S.gold[st.call];
+  const n = Object.keys(S.gold).filter(c => S.stations.some(s => s.call === c)).length;
+  $('progress').textContent = `station ${cur + 1}/${S.stations.length} · ${n} labelled`;
+  $('call').textContent = st.call;
+  $('qrz').href = 'https://www.qrz.com/db/' + encodeURIComponent(st.call);
+  $('country').textContent = [st.country, st.dxcc && 'DXCC ' + st.dxcc].filter(Boolean).join(' · ');
+  show('qslmgr', st.qslmgr); show('mqsl', st.mqsl); show('eqsl', st.eqsl); show('lotw', st.lotw);
+  renderBio();
+  $('bio').scrollTop = 0;
+  document.querySelectorAll('input[name=label]').forEach(r => r.checked = !!g && r.value === g.label);
+  $('via').value = g ? (g.via || '') : '';
+  $('unsure').checked = !!(g && g.unsure);
+  $('note').value = g ? (g.note || '') : '';
+  status(g ? `saved: ${g.label}${g.via ? ' via ' + g.via : ''}${g.unsure ? ' (unsure)' : ''}` : '', g ? 'saved' : '');
+  const grid = $('grid');
+  grid.innerHTML = '';
+  S.stations.forEach((s, i) => {
+    const d = document.createElement('span');
+    const gg = S.gold[s.call];
+    d.className = (gg ? (gg.unsure ? 'unsure' : 'done') : '') + (i === cur ? ' cur' : '');
+    d.title = s.call + (gg ? ': ' + gg.label : '');
+    d.onclick = () => { cur = i; render(); };
+    grid.appendChild(d);
+  });
+}
+
+function renderBio() {
+  const bio = S.stations[cur].bio || '';
+  $('bio').className = 'bio' + (bio ? '' : ' empty');
+  $('bio').innerHTML = bio ? (highlight ? esc(bio).replace(KEYWORDS, '<mark>$&</mark>') : esc(bio)) : '(no bio)';
+}
+
+function status(msg, cls) { const el = $('status'); el.textContent = msg; el.className = 'status ' + (cls || ''); }
+
+async function save() {
+  if (saving) return;
+  const st = S.stations[cur];
+  const sel = document.querySelector('input[name=label]:checked');
+  if (!sel) { status('Pick a label first (1–6).', 'err'); return; }
+  const body = { call: st.call, label: sel.value, via: $('via').value.trim(), unsure: $('unsure').checked, note: $('note').value.trim() };
+  if (body.label === 'unclear' && !body.via && !confirm('"unclear" is meant for a named via callsign without a route, but via is empty. Save anyway?')) return;
+  // Keys typed while the save is in flight must not land on this station.
+  saving = true;
+  document.activeElement && document.activeElement.blur();
+  let res;
+  try {
+    res = await fetch('/api/label', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { status('Not saved: ' + await res.text(), 'err'); return; }
+    S.gold[st.call] = await res.json();
+  } catch (err) {
+    status('Not saved: ' + err, 'err'); return;
+  } finally {
+    saving = false;
+  }
+  const next = firstTodo(cur + 1);
+  if (next < 0) { render(); status('All stations labelled. Run: qpc-lab report', 'saved'); return; }
+  cur = next;
+  render();
+}
+
+function move(d) { cur = (cur + d + S.stations.length) % S.stations.length; render(); }
+
+$('prev').onclick = () => move(-1);
+$('next').onclick = () => move(1);
+$('todo').onclick = () => { const t = firstTodo(cur + 1); if (t >= 0) { cur = t; render(); } };
+$('save').onclick = save;
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (saving) { e.preventDefault(); return; }
+  const typing = e.target.matches('input[type=text]');
+  if (e.key === 'Enter') { e.preventDefault(); save(); return; }
+  if (e.key === 'Escape') { e.target.blur(); return; }
+  if (typing) return;
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= S.labels.length) {
+    e.preventDefault(); // the digit must not end up in the via field focused below
+    document.querySelectorAll('input[name=label]')[n - 1].checked = true;
+    if (S.labels[n - 1] === 'unclear') $('via').focus();
+    return;
+  }
+  switch (e.key) {
+    case 'ArrowLeft': move(-1); break;
+    case 'ArrowRight': move(1); break;
+    case 'j': $('todo').click(); break;
+    case 'v': e.preventDefault(); $('via').focus(); break;
+    case 'n': e.preventDefault(); $('note').focus(); break;
+    case 'u': $('unsure').checked = !$('unsure').checked; break;
+    case 'h': highlight = !highlight; renderBio(); break;
+    case 'r': $('rules').open = !$('rules').open; break;
+  }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{{/*
+  v1: rules from LABELS.md, the structured QRZ fields, the bio. No hint from
+  the heuristic. Rendered with qpc.PromptData; see qpc/prompt.go.
+*/}}
+{{define "system" -}}
+You help a radio amateur decide how to send paper QSL cards. A QSL card is a postcard confirming a radio contact.
+
+{{.Rules}}
+Answer with one JSON object and nothing else:
+{"evidence": "<the words from the record that decided it, quoted exactly and briefly, or empty>", "label": "<{{range $i, $l := .Labels}}{{if $i}}|{{end}}{{$l}}{{end}}>", "via": "<callsign or empty>", "confidence": "<high|medium|low>"}
+{{- end}}
+
+{{define "user" -}}
+Station: {{.Call}}
+Country: {{or .Country "(not stated)"}}
+
+QRZ fields:
+qslmgr: {{or .QSLMgr "(empty)"}}
+mqsl: {{or .MQSL "(empty)"}}
+eqsl: {{or .EQSL "(empty)"}}
+lotw: {{or .LoTW "(empty)"}}
+
+QRZ bio{{if .Truncated}} (cut, too long){{end}}:
+{{or .Bio "(no bio)"}}
+{{- end}}

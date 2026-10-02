@@ -1,0 +1,28 @@
+# Round 1: five small models, prompt v1, against qslotter's heuristic.
+#   go run ./cmd/qpc-lab run -dir <eval dir> -experiment qpc/experiments/round1.yaml
+# A variant's results live under runs/<name>; changing a variant's settings or
+# its prompt file needs a new name (or -force), so results never mix.
+defaults:
+  base_url: http://localhost:11434/v1
+  prompt: v1
+  temperature: 0
+  max_tokens: 512
+  bio_max_chars: 6000
+  format: schema
+  timeout: 3m
+  extra:
+    reasoning_effort: none   # Ollama /v1: thinking off (think:false is ignored there)
+
+variants:
+  - name: heuristic
+    kind: heuristic
+  - name: qwen3.5-4b-v1
+    model: qwen3.5:4b
+  - name: gemma4-e4b-v1
+    model: gemma4:e4b
+  - name: ministral3-3b-v1
+    model: ministral-3:3b
+  - name: qwen3.5-2b-v1
+    model: qwen3.5:2b
+  - name: llama3.1-8b-v1
+    model: llama3.1:8b

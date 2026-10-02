@@ -11,10 +11,12 @@ boot.log
 # Build output
 /qslotter
 /qslotter.exe
-/qsl-eval
+/qpcd
+/qpc-lab
 rsrc_windows_*.syso
 
-# Scratch from the QSL-method calibration effort (see docs/VISION.md)
+# Scratch left by the retired qsl-eval tool (replaced by cmd/qpc-lab)
+/qsl-eval
 qsl-eval.jsonl
 ww
 

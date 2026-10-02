@@ -135,13 +135,13 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 
 - `cmd/qslotter`: entrypoint, wiring, config bootstrap (user config dir on first start), log file, shutdown.
 - `cmd/ocr-eval`: offline calibration CLI for received-card photo intake. Runs OCR output (from `tools/ocr-dump.swift`, Apple Vision) through `internal/intake` against a copy of the database and reports auto/pick/miss rates. Working data lives in `/eval/` (git-ignored). Not part of the app.
-- `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against the `qsldetermine` heuristic. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
+- `cmd/qpcd`: the QSL preference classifier backend (package `qpc`): `serve` (HTTP `POST /v1/classify`) and `classify` (one station from stdin). Experimental, deployable on its own; not part of the app. Build with `go build -o qpcd ./cmd/qpcd`.
+- `cmd/qpc-lab`: offline experiment harness for `qpc`: `sample` (random stations from a copy of the database, fresh QRZ data), `label` (blind manual labelling page on :8475), `run` (model x prompt variants from `qpc/experiments/*.yaml`, resumable, plus the `qsldetermine` heuristic as baseline), `report` (accuracy, F1, kappa, confusion, disagreements). Working data in `/eval/qpc/` (git-ignored). Not part of the app.
 - `internal/adif`: minimal ADIF reader/writer used for Clublog round-trip.
 - `internal/clublog`: Clublog HTTP client (`getadif.php`, `putlogs.php`).
 - `internal/config`: YAML loader with `${ENV}` expansion.
 - `internal/events`: in-process pub/sub broker used for UDP → SSE (event names `new_qso`, `station_updated`; the queue page listens on `/events`).
 - `internal/intake`: pure-function matcher from OCR text of a photographed incoming card to a QSO in the log (callsign match tolerant of OCR-confusable characters, date/band/mode scoring, `auto`/`pick`/`miss` classes). Roadmap v2 "receive-card photo + OCR"; not yet wired into the web UI.
-- `internal/llmqsl`: LLM-based QSL-method vocabulary/mapping (`none/direct/buero/manager-*`); used only by `cmd/qsl-eval`.
 - `internal/printer`: PDF rendering and platform print shims.
 - `internal/qualify`: eligibility rules and auto-enqueue logic.
 - `internal/qrz`: QRZ XML session, lookup, and bio parsing.
@@ -151,6 +151,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 - `internal/sync`: pull/parse/diff/upsert plus push-back orchestration and background loop.
 - `internal/template`: YAML card layout templates.
 - `internal/desktop`: the app shell - glaze WebView windows (main + compact), native/tray (macOS/Windows), single instance, cgo-free UI-thread dispatcher, macOS Dock delegate, browser app-window fallback. The only package that imports glaze/native. Threading rule: the UI runs on the main goroutine (locked in `init`); other goroutines only call `Shell.Show`/`Shell.Quit`.
+- `qpc`: QSL preference classifier library (VISION E2, experimental). Asks a small LLM behind any OpenAI-compatible endpoint (local Ollama, `reasoning_effort: none` turns thinking off) for a route label (`bureau/direct/oqrs/unclear/no-paper/unknown`) plus a `via` callsign; rules in `qpc/LABELS.md` (shared by prompt and labelling page), prompts in `qpc/prompts/*.tmpl` (ID = name@hash). Must not import `internal/` so it can move out of the repo.
 - `internal/udplistener`: Log4OM UDP receiver: ADIF QSOs, plus the current-contact broadcast handed to `internal/contact`.
 - `internal/contact`: the QSO in progress (VISION A1b): datagram classification and the tracker for cards written during a QSO.
 - `internal/web`: chi router, `html/template` pages, htmx partials, SSE endpoint.

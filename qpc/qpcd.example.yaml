@@ -1,0 +1,13 @@
+# qpcd config: one qpc.Variant. Copy to qpcd.yaml and adjust.
+# Any OpenAI-compatible chat-completions endpoint works; this is local Ollama.
+base_url: http://localhost:11434/v1
+# api_key: ${QPC_API_KEY}   # sent as a bearer token; Ollama needs none
+model: qwen3.5:4b
+prompt: v1                  # built-in name (qpc/prompts/v1.tmpl) or a path to a .tmpl file
+temperature: 0
+max_tokens: 512
+bio_max_chars: 6000
+format: schema              # schema | json | none
+timeout: 2m
+extra:
+  reasoning_effort: none    # Ollama /v1: turns thinking off (qwen3.5, gemma4); "think: false" is ignored there

@@ -47,8 +47,8 @@ where it stands today.
   processing.** Suggestion done: `qsldetermine` suggests with confidence and
   reason. Since 2026-10-01 it informs yes/no in the Inbox and preselects the
   route at the Desk (B4, partial). "Other
-  sources" beyond QRZ (LLM bio interpretation) sits behind the `qsl-eval`
-  gate (roadmap v2).
+  sources" beyond QRZ (LLM bio interpretation) sits behind the `qpc` eval
+  gate (`cmd/qpc-lab`, roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
   each QSO, or in a batch later. Done in the 2026-09-30 build, reshaped
   2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
@@ -141,7 +141,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
-| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM stays behind the `qsl-eval` gate (roadmap v2) |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM experiment `qpc` + `cmd/qpc-lab` started 2026-10-02, stays behind its gate (roadmap v2) |
 
 ### 2.6 Invariants carried over
 
@@ -173,10 +173,13 @@ radio. Here the route is chosen.
   mind, at the Desk (B6). It means *no paper card* for any reason
   (electronic-only, refused, or the operator's choice), not a silent no-op:
   `desired_method=N`, status `skipped`, reopenable from Done.
-- LLM-based determination (`internal/llmqsl`, `cmd/qsl-eval`, local Ollama)
-  stays an offline calibration effort. If it beats the heuristic on the eval
-  set it may become a second suggestion source; it does not enter the app
-  before that gate.
+- LLM-based determination (`qpc`: classifier library, backend `cmd/qpcd`,
+  eval harness `cmd/qpc-lab`; any OpenAI-compatible endpoint, local Ollama)
+  stays an offline calibration effort. If it beats the heuristic on the
+  operator-labelled sample it may become a second suggestion source; it does
+  not enter the app before that gate. Labels: a route (bureau, direct, oqrs,
+  unclear, no-paper, unknown) plus a separate via callsign (manager or home
+  call); rules in `qpc/LABELS.md`.
 
 ## 4. Fulfillment: print or handwrite
 
@@ -319,9 +322,9 @@ Remaining gaps (v2 / later):
 - Windows exe icon/version embedding: config ready in `winres/winres.json`;
   the one-step `go run github.com/tc-hib/go-winres@latest make` is left to
   the operator.
-- `qsl-eval`, `qsl-eval.jsonl`, and `ww` in the repo root are scratch output
-  from the method-determination calibration effort; they are not shipped
-  artifacts.
+- `qsl-eval`, `qsl-eval.jsonl`, and `ww` in the repo root are leftovers of
+  the retired `qsl-eval` tool; calibration data now lives in the git-ignored
+  `eval/` directory. None of it is a shipped artifact.
 - Everything in section 8 marked v2.
 
 ## 8. Roadmap
@@ -365,7 +368,7 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 15. CouchDB store backend + migration command.
 16. Phone app: photograph incoming cards, OCR, book with minimal taps (E1).
 17. LLM route suggestion from QRZ free text, at low cost, behind the eval
-    gate (only if `qsl-eval` shows it beats the heuristic) (E2).
+    gate (only if `qpc-lab` shows it beats the heuristic) (E2).
 
 ## 9. Decision log
 
@@ -473,3 +476,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   Risks accepted: glaze is young (v0.0.x, one maintainer) and uses an
   undocumented WebView2 export - mitigated by the browser fallback and a
   backend that only loads a URL.
+- **2026-10-02 — LLM route classifier `qpc` replaces `llmqsl`/`qsl-eval`.**
+  The old tool never produced a result. `qpc` is a standalone package and
+  backend (`cmd/qpcd`, OpenAI-compatible API) that imports nothing from
+  `internal/`; `cmd/qpc-lab` samples real stations, takes blind manual labels
+  and compares model x prompt variants with the heuristic. Labels are a route
+  plus a separate via callsign; a manager with no stated route is `unclear`
+  (the manager's own instructions are a later phase). First model choice:
+  `qwen3.5:4b` (multilingual, JSON schema), thinking off.
