@@ -187,3 +187,77 @@ func TestStaleCurrent(t *testing.T) {
 		t.Fatal("dropped after the TTL")
 	}
 }
+
+// TestDecisionDuringTheQSO: "card" and "no card" decided during the QSO are
+// booked on the QSO when it is logged - also one the qualifier did not queue.
+func TestDecisionDuringTheQSO(t *testing.T) {
+	st := openStore(t)
+	tr := NewTracker(st, nil, nil)
+
+	tr.Set(Contact{Call: "VU2ATN"})
+	tr.MarkDecision("VU2ATN", Yes)
+	yes := logQSO(t, st, "VU2ATN", "20m", true)
+	tr.QSOLogged(yes)
+	if it, _ := st.QueueGet(yes.QSLKey); it == nil || it.Status != "decided" || it.DesiredMethod != "" {
+		t.Fatalf("yes: the card waits at the Desk, route open: %+v", it)
+	}
+	if a := tr.LastApplied(); a == nil || a.Decision != Yes || a.Err != "" {
+		t.Fatalf("applied = %+v", a)
+	}
+
+	tr.Set(Contact{Call: "DL1ABC"})
+	tr.MarkDecision("DL1ABC", No)
+	no := logQSO(t, st, "DL1ABC", "40m", false) // not queued (digital mode, ...)
+	tr.QSOLogged(no)
+	it, _ := st.QueueGet(no.QSLKey)
+	if it == nil || it.Status != "skipped" || it.DesiredMethod != "N" || it.OverrideReason != ReasonDecided {
+		t.Fatalf("no: recorded as a decision, not left to the qualifier: %+v", it)
+	}
+	if len(tr.Pending()) != 0 || tr.Current() != nil {
+		t.Fatalf("after logging: pending %v, current %+v", tr.Pending(), tr.Current())
+	}
+
+	tr.MarkDecision("K1ABC", Yes) // a decision is replaced by the next one for the call
+	tr.MarkDecision("K1ABC", No)
+	if p := tr.Pending(); len(p) != 1 || p[0].Decision != No {
+		t.Fatalf("pending = %+v", p)
+	}
+}
+
+// TestDecisionForAQSONeverLogged: the QSO may never be logged - nothing is
+// stored meanwhile, the decision can be dropped, expires by itself, and an
+// expired one books nothing on a later QSO with the station.
+func TestDecisionForAQSONeverLogged(t *testing.T) {
+	st := openStore(t)
+	now := time.Now().UTC()
+	tr := NewTracker(st, nil, nil)
+	tr.now = func() time.Time { return now }
+
+	tr.Set(Contact{Call: "VU2ATN"})
+	tr.MarkDecision("VU2ATN", No)
+	tr.Clear() // the operator emptied the entry field: the QSO was not logged
+	if tr.Current() != nil || len(tr.Pending()) != 1 {
+		t.Fatalf("the decision stays visible (to undo) after the field is cleared: pending %v", tr.Pending())
+	}
+	if items, _ := st.QueueList("queued", "decided", "sent", "skipped", "requested"); len(items) != 0 {
+		t.Fatalf("nothing is stored for an unlogged QSO, got %d queue items", len(items))
+	}
+
+	tr.Cancel("VU2ATN")
+	if len(tr.Pending()) != 0 {
+		t.Fatal("undo drops it")
+	}
+	q := logQSO(t, st, "VU2ATN", "20m", true)
+	tr.QSOLogged(q)
+	if it, _ := st.QueueGet(q.QSLKey); it.Status != "queued" {
+		t.Fatalf("a dropped decision must not be booked: %+v", it)
+	}
+
+	tr.MarkDecision("K1ABC", No)
+	now = now.Add(PendingTTL + time.Minute)
+	q2 := logQSO(t, st, "K1ABC", "20m", true)
+	tr.QSOLogged(q2)
+	if it, _ := st.QueueGet(q2.QSLKey); it.Status != "queued" {
+		t.Fatalf("an expired decision must not be booked: %+v", it)
+	}
+}

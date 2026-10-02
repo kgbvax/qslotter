@@ -89,6 +89,8 @@ type HistoryLine struct {
 // QSL statements, the history with the station and what happened to its cards.
 type Research struct {
 	Badges     []Badge
+	Prior      int      // earlier QSOs with the station (the history query's newest 12)
+	LastDate   string   // date of the newest of them
 	History    []HistoryLine
 	Others     int      // other cards of this station awaiting a decision or production
 	BioExcerpt string   // the QSL-relevant lines of the QRZ bio
@@ -306,6 +308,9 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 			continue
 		}
 		prior++
+		if prior == 1 {
+			res.LastDate = fmtDate(q.QSODate)
+		}
 		line := HistoryLine{Date: fmtDate(q.QSODate), Time: fmtTime(q.TimeOn), Call: q.Call, Band: q.Band, Mode: q.Mode,
 			LoTW: q.LoTWQSLRcvd == "Y", Queue: queueStateText(h.QueueStatus, h.DesiredMethod, h.Manager)}
 		if sent, method, date := q.EffectiveSent(); sent {
@@ -339,6 +344,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 			}
 		}
 	}
+	res.Prior = prior
 	if prior == 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "first", Text: i18n.M("first QSO")})
 	} else {

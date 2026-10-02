@@ -1,6 +1,6 @@
 {{define "row_cells_compact"}}<td class="c-date">{{fmtDate .QSO.QSODate}}</td>
 <td><span class="call">{{.QSO.Call}}</span></td>
-<td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
+<td class="c-bm">{{.QSO.Band}}<br>{{.QSO.Mode}}</td>
 <td class="c-name">{{.QSO.Name}}</td>
 <td class="c-method" title="{{with .Sig}}{{if .Suggest}}{{tm .Why}}{{else}}{{tm .Note}}{{end}}{{end}} | {{t "RST"}} {{.QSO.RSTSent}}">{{template "row_suggestion" .}}</td>
 <td class="actions">{{template "row_yesno" .}}</td>{{end}}
