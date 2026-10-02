@@ -90,7 +90,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"paper|no-paper|unknown|unclear", `"bureau", "direct", "oqrs"`, "Direct needs a full postal address", "the note is always in English"} {
+	for _, want := range []string{"paper|no-paper|unknown|unclear", `"bureau", "direct", "oqrs"`, "needs a full postal address", "the note is English"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
@@ -100,7 +100,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 			t.Errorf("user prompt lacks %q:\n%s", want, user)
 		}
 	}
-	if !strings.HasPrefix(c.PromptID(), "v7@") {
+	if !strings.HasPrefix(c.PromptID(), DefaultPrompt+"@") {
 		t.Errorf("prompt ID %q", c.PromptID())
 	}
 	_, user, _, _ = c.Messages(Station{Call: "K1A"})
@@ -114,7 +114,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 		t.Error("v1 changed")
 	}
 	if v1.prompt.Answer != "label" || c.prompt.Answer != "routes-contribution" {
-		t.Errorf("answer formats: v1 %s, v7 %s", v1.prompt.Answer, c.prompt.Answer)
+		t.Errorf("answer formats: v1 %s, default %s", v1.prompt.Answer, c.prompt.Answer)
 	}
 }
 

@@ -47,7 +47,7 @@ func TestHandler(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"prompt":"v7@`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"prompt":"`+qpc.DefaultPrompt+`@`) {
 		t.Errorf("healthz: %d %s", rec.Code, rec.Body)
 	}
 }
