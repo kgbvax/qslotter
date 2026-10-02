@@ -31,7 +31,7 @@
   "medium": "mittel",
   "low": "niedrig",
   "Queued because: %s": "Aufgenommen, weil: %s",
-  "What QRZ says": "Laut QRZ",
+  "QRZ:": "QRZ:",
   "QRZ lookups are off - add credentials under Settings": "QRZ-Abfragen sind aus - Zugangsdaten unter Einstellungen eintragen",
   "looking up...": "wird abgefragt…",
   "station not on QRZ": "Station nicht bei QRZ",
