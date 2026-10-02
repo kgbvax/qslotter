@@ -158,6 +158,19 @@ func TestAssessSignalsStayVisible(t *testing.T) {
 	}
 }
 
+func TestLooksLikeCallsign(t *testing.T) {
+	for _, ok := range []string{"DL1ABC", "dl2xyz", "W1AW", "4X4AA", "K1ABC/P", "VK9/DL1ABC", "EA8/DL1ABC/P", "OK1XYZ"} {
+		if !LooksLikeCallsign(ok) {
+			t.Errorf("%q should look like a callsign", ok)
+		}
+	}
+	for _, bad := range []string{"", "VIA", "LOTW", "ONLY", "DIRECT", "BUREAU", "eQSL", "ABC", "12345", "DL1ABC VIA", "via bureau"} {
+		if LooksLikeCallsign(bad) {
+			t.Errorf("%q should not look like a callsign", bad)
+		}
+	}
+}
+
 // Assess must survive whatever a bio contains.
 func FuzzAssess(f *testing.F) {
 	for _, s := range []string{"", "no", "no no no", "via", "via via", "QSL via", "(((", "e.qsl e-qsl e qsl", "\x00\xff", "only only only direct"} {

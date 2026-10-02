@@ -697,3 +697,25 @@ func isSelf(call, self string) bool {
 	}
 	return false
 }
+
+// flag normalizes a QRZ yes/no flag: QRZ sends 1/0, older data and tests Y/N.
+func flag(v string) (yes, no bool) {
+	switch strings.ToUpper(strings.TrimSpace(v)) {
+	case "1", "Y", "YES", "TRUE":
+		return true, false
+	case "0", "N", "NO", "FALSE":
+		return false, true
+	}
+	return false, false
+}
+
+// callsignRe matches an amateur callsign, optionally with a country prefix
+// ("VK9/DL1ABC") and/or a portable suffix ("DL1ABC/P"): 1-3 prefix chars, one
+// digit, 0-3 more chars, a final letter.
+var callsignRe = regexp.MustCompile(`^([A-Z0-9]{1,3}/)?[A-Z0-9]{1,3}[0-9][A-Z0-9]{0,3}[A-Z](/[A-Z0-9]{1,4})?$`)
+
+// LooksLikeCallsign reports whether s (case-insensitive) has the shape of an
+// amateur callsign. Free text such as "VIA BUREAU" or "LOTW" does not.
+func LooksLikeCallsign(s string) bool {
+	return callsignRe.MatchString(strings.ToUpper(strings.TrimSpace(s)))
+}

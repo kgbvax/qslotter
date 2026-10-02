@@ -23,17 +23,17 @@ func TestIsValidMethod(t *testing.T) {
 func TestMapHeuristic(t *testing.T) {
 	cases := []struct {
 		name string
-		in   qsldetermine.Result
+		in   qsldetermine.Assessment
 		want Method
 	}{
-		{"bureau", qsldetermine.Result{Method: "B"}, MethodBuero},
-		{"direct", qsldetermine.Result{Method: "D"}, MethodDirect},
-		{"electronic", qsldetermine.Result{Method: "E"}, MethodNone},
-		{"manager direct", qsldetermine.Result{Method: "M", Manager: "XX1ABC", Reason: "QSL via manager"}, MethodManagerDirect},
-		{"manager buero", qsldetermine.Result{Method: "M", Manager: "XX1ABC", Reason: "QSL via bureau"}, MethodManagerBuero},
-		{"manager no reason", qsldetermine.Result{Method: "M", Manager: "XX1ABC"}, MethodManagerDirect},
-		{"no method refuse", qsldetermine.Result{RefusePaper: true}, MethodNone},
-		{"no method no signal", qsldetermine.Result{}, MethodNone},
+		{"bureau", qsldetermine.Assessment{Suggest: "B"}, MethodBuero},
+		{"direct", qsldetermine.Assessment{Suggest: "D"}, MethodDirect},
+		{"stated refusal", qsldetermine.Assessment{Suggest: "N"}, MethodNone},
+		{"manager direct", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC", ManagerVia: "D"}, MethodManagerDirect},
+		{"manager buero", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC", ManagerVia: "B"}, MethodManagerBuero},
+		{"manager way not stated", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC"}, MethodManagerDirect},
+		{"manager without a call", qsldetermine.Assessment{Suggest: "M"}, MethodUnknown},
+		{"nothing stated is not a refusal", qsldetermine.Assessment{Note: qsldetermine.NoteElectronicOnly}, MethodUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -196,9 +196,9 @@ func TestDefaultPromptRender(t *testing.T) {
 			QSLMgr:  "XX1ABC",
 		},
 		Bio: "QSL via bureau.",
-		HeuristicResult: qsldetermine.Result{
-			Method: "B",
-			Reason: "mqsl=Y",
+		Heuristic: qsldetermine.Assessment{
+			Suggest: "B",
+			Signals: []qsldetermine.Signal{{Kind: qsldetermine.KindBureau, Source: "qslmgr", Quote: "mqsl=Y", Decisive: true}},
 		},
 	})
 	if err != nil {
