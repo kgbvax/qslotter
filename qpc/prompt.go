@@ -20,7 +20,7 @@ var builtinPrompts embed.FS
 // {{define "system"}} and {{define "user"}}, rendered with PromptData.
 type Prompt struct {
 	Name string // file name without extension
-	Hash string // first 8 hex digits of the file's SHA-256
+	Hash string // first 8 hex digits of the SHA-256 of the file (and Rules, if used)
 	tmpl *template.Template
 }
 
@@ -61,7 +61,13 @@ func LoadPrompt(nameOrPath string) (*Prompt, error) {
 			return nil, fmt.Errorf("prompt %q: no {{define %q}} block", nameOrPath, block)
 		}
 	}
-	sum := sha256.Sum256(src)
+	// A template using {{.Rules}} includes LABELS.md; hashing it too means an
+	// edit there yields a new prompt ID.
+	hashed := src
+	if bytes.Contains(src, []byte(".Rules")) {
+		hashed = append(append(append([]byte{}, src...), 0), Rules...)
+	}
+	sum := sha256.Sum256(hashed)
 	return &Prompt{Name: name, Hash: hex.EncodeToString(sum[:])[:8], tmpl: t}, nil
 }
 

@@ -12,6 +12,7 @@ package qpc
 
 import (
 	_ "embed"
+	"strings"
 	"time"
 )
 
@@ -49,16 +50,28 @@ func (l Label) Valid() bool {
 var Rules string
 
 // Station is the classifier's input: the parts of a QRZ record that bear on
-// the QSL route. It deliberately carries no postal address or e-mail.
+// the QSL route. The postal address is part of it (no address, no direct
+// card); name and e-mail are not.
 type Station struct {
 	Call    string `json:"call"`
 	Country string `json:"country,omitempty"`
 	DXCC    string `json:"dxcc,omitempty"`
 	QSLMgr  string `json:"qslmgr,omitempty"`
-	MQSL    string `json:"mqsl,omitempty"` // "will return paper QSL": 1, 0 or empty
-	EQSL    string `json:"eqsl,omitempty"` // accepts eQSL: 1, 0 or empty
-	LoTW    string `json:"lotw,omitempty"` // uses LoTW: 1, 0 or empty
-	Bio     string `json:"bio,omitempty"`  // QRZ bio page as plain text
+	MQSL    string `json:"mqsl,omitempty"`  // "will return paper QSL": 1, 0 or empty
+	EQSL    string `json:"eqsl,omitempty"`  // accepts eQSL: 1, 0 or empty
+	LoTW    string `json:"lotw,omitempty"`  // uses LoTW: 1, 0 or empty
+	Addr1   string `json:"addr1,omitempty"` // street
+	Addr2   string `json:"addr2,omitempty"` // city
+	State   string `json:"state,omitempty"`
+	Zip     string `json:"zip,omitempty"`
+	Bio     string `json:"bio,omitempty"` // QRZ bio page as plain text
+}
+
+// HasFullAddress reports whether the QRZ postal address has at least a street
+// and a city, enough to send a card direct. An address written only in the bio
+// does not count here.
+func (s Station) HasFullAddress() bool {
+	return strings.TrimSpace(s.Addr1) != "" && strings.TrimSpace(s.Addr2) != ""
 }
 
 // Result is one classification. Label is empty when the model's answer could
@@ -77,7 +90,8 @@ type Result struct {
 	FinishReason     string `json:"finish_reason,omitempty"` // "length" = the answer was cut off
 	Truncated        bool   `json:"truncated,omitempty"`     // the bio was cut to BioMaxChars
 	ParseError       string `json:"parse_error,omitempty"`
-	Raw              string `json:"raw,omitempty"` // the model's answer as received
+	Guard            string `json:"guard,omitempty"` // a code check changed the model's label (Variant.AddressGuard)
+	Raw              string `json:"raw,omitempty"`   // the model's answer as received
 }
 
 func msSince(t time.Time) int64 { return time.Since(t).Milliseconds() }

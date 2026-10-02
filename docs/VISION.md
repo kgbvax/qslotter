@@ -482,5 +482,8 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   `internal/`; `cmd/qpc-lab` samples real stations, takes blind manual labels
   and compares model x prompt variants with the heuristic. Labels are a route
   plus a separate via callsign; a manager with no stated route is `unclear`
-  (the manager's own instructions are a later phase). First model choice:
-  `qwen3.5:4b` (multilingual, JSON schema), thinking off.
+  (the manager's own instructions are a later phase). Direct needs a full
+  postal address (QRZ or bio); without one the next accepted route, else
+  `unclear` - the model sees the address, and a code check (`address_guard`)
+  is compared as a variant. First model choice: `qwen3.5:4b` (multilingual,
+  JSON schema), thinking off.

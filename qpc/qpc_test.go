@@ -65,22 +65,53 @@ func TestBuiltinPromptRenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sys, user, _, err := c.Messages(Station{Call: "EA8/DL1ABC", MQSL: "1", Bio: "QSL via DL1ABC"})
+	sys, user, _, err := c.Messages(Station{Call: "EA8/DL1ABC", MQSL: "1", Addr2: "Adeje", Country: "Canary Islands", Bio: "QSL via DL1ABC"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Route labels:", "bureau|direct|oqrs|unclear|no-paper|unknown"} {
+	for _, want := range []string{"Route labels:", "bureau|direct|oqrs|unclear|no-paper|unknown", "Direct needs a full postal address"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt lacks %q", want)
 		}
 	}
-	for _, want := range []string{"Station: EA8/DL1ABC", "mqsl: 1", "qslmgr: (empty)", "QSL via DL1ABC"} {
+	for _, want := range []string{"Station: EA8/DL1ABC", "mqsl: 1", "qslmgr: (empty)", "street: (empty)\ncity: Adeje", "QSL via DL1ABC"} {
 		if !strings.Contains(user, want) {
 			t.Errorf("user prompt lacks %q:\n%s", want, user)
 		}
 	}
-	if !strings.HasPrefix(c.PromptID(), "v1@") {
+	if !strings.HasPrefix(c.PromptID(), "v2@") {
 		t.Errorf("prompt ID %q", c.PromptID())
+	}
+	_, user, _, _ = c.Messages(Station{Call: "K1A"})
+	if !strings.Contains(user, "QRZ postal address: (none)") {
+		t.Errorf("no address:\n%s", user)
+	}
+	// v1 is frozen: no address, the original rules.
+	v1, _ := New(Variant{Model: "m", Prompt: "v1"})
+	sys, user, _, _ = v1.Messages(Station{Call: "K1A", Addr1: "Main St 1", Addr2: "Town"})
+	if strings.Contains(sys, "postal address") || strings.Contains(user, "Main St") {
+		t.Error("v1 must not mention the address")
+	}
+}
+
+func TestAddressGuard(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"message":{"content":"{\"label\":\"direct\",\"via\":\"\"}"}}]}`)
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	guarded, _ := New(Variant{BaseURL: srv.URL, Model: "m", AddressGuard: true})
+	r, _ := guarded.Classify(ctx, Station{Call: "K1A", Addr2: "Town"})
+	if r.Label != Unclear || r.Guard == "" {
+		t.Errorf("no street: %+v", r)
+	}
+	r, _ = guarded.Classify(ctx, Station{Call: "K1A", Addr1: "Main St 1", Addr2: "Town"})
+	if r.Label != Direct || r.Guard != "" {
+		t.Errorf("full address: %+v", r)
+	}
+	plain, _ := New(Variant{BaseURL: srv.URL, Model: "m"})
+	if r, _ := plain.Classify(ctx, Station{Call: "K1A"}); r.Label != Direct {
+		t.Errorf("guard off: %+v", r)
 	}
 }
 
@@ -106,7 +137,7 @@ func TestVariantOver(t *testing.T) {
 	half := 0.5
 	def := Variant{BaseURL: "http://a/v1", Model: "m1", Extra: map[string]any{"think": false, "keep": 1}}
 	v := Variant{Name: "x", Model: "m2", Temperature: &half, Extra: map[string]any{"think": nil, "new": "y"}}.Over(def).WithDefaults()
-	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v1" {
+	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v2" {
 		t.Errorf("merge: %+v", v)
 	}
 	if _, ok := v.Extra["think"]; ok || v.Extra["keep"] != 1 || v.Extra["new"] != "y" {

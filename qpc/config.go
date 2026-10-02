@@ -35,12 +35,16 @@ type Variant struct {
 	// key set by the defaults.
 	Extra   map[string]any `yaml:"extra" json:"extra,omitempty"`
 	Timeout time.Duration  `yaml:"timeout" json:"timeout,omitempty"`
+	// AddressGuard checks the model's answer in code: direct without a full
+	// QRZ postal address becomes unclear. It cannot see an address written in
+	// the bio or other routes the record accepts.
+	AddressGuard bool `yaml:"address_guard" json:"address_guard,omitempty"`
 }
 
 // Defaults applied by WithDefaults.
 const (
 	DefaultBaseURL     = "http://localhost:11434/v1"
-	DefaultPrompt      = "v1"
+	DefaultPrompt      = "v2"
 	DefaultMaxTokens   = 512
 	DefaultBioMaxChars = 6000
 	DefaultTimeout     = 2 * time.Minute
@@ -86,6 +90,7 @@ func (v Variant) Over(def Variant) Variant {
 	if v.Timeout != 0 {
 		out.Timeout = v.Timeout
 	}
+	out.AddressGuard = def.AddressGuard || v.AddressGuard
 	if len(def.Extra) > 0 || len(v.Extra) > 0 {
 		out.Extra = map[string]any{}
 		for k, x := range def.Extra {

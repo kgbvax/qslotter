@@ -83,5 +83,8 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	}
 	r.PromptTokens, r.CompletionTokens, r.FinishReason = ans.PromptTokens, ans.CompletionTokens, ans.FinishReason
 	parseAnswer(ans.Content, &r)
+	if c.v.AddressGuard && r.Label == Direct && r.Via == "" && !st.HasFullAddress() {
+		r.Label, r.Guard = Unclear, "direct without a full QRZ postal address -> unclear"
+	}
 	return r, nil
 }

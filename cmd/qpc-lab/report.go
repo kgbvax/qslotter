@@ -79,7 +79,8 @@ func cmdReport(args []string) error {
 			g := gold[it.Call]
 			p := pair{Call: it.Call, Gold: g.Label, GoldVia: g.Via, Pred: res.Label, PredVia: res.Via,
 				Conf: res.Confidence, Evidence: res.Evidence, LatencyMS: res.LatencyMS,
-				Tokens: res.PromptTokens, Truncated: res.Truncated, CutOff: res.FinishReason == "length"}
+				Tokens: res.PromptTokens, Truncated: res.Truncated, CutOff: res.FinishReason == "length",
+				Guarded: res.Guard != ""}
 			if p.Pred == "" {
 				p.Pred = unreadable
 			}
@@ -222,6 +223,9 @@ func writeRunDetail(w io.Writer, r *run) {
 			v.Model, v.BaseURL, r.Info.PromptID, v.Format, temp, v.BioMaxChars, v.Extra)
 		fmt.Fprintf(w, "High+medium confidence: %s of stations, label accuracy %s. Bio cut: %d. Answer cut off (max_tokens): %d. Mean prompt tokens: %d.\n",
 			pct(m.HighMedCov), pct(m.HighMedAcc), m.Truncated, m.CutOff, m.TokensMean)
+		if v.AddressGuard {
+			fmt.Fprintf(w, "Address guard changed %d answers (direct -> unclear); %d of them now match your label.\n", m.Guarded, m.GuardedOK)
+		}
 	}
 	if r.Missing > 0 {
 		fmt.Fprintf(w, "\n**%d labelled stations have no result yet** (rerun `qpc-lab run`).\n", r.Missing)

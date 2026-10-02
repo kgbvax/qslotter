@@ -74,6 +74,7 @@
       <tr><td>mqsl</td><td id="mqsl"></td><td class="hint">1 = will return paper QSL</td></tr>
       <tr><td>eqsl</td><td id="eqsl"></td><td class="hint">1 = accepts eQSL (not paper)</td></tr>
       <tr><td>lotw</td><td id="lotw"></td><td class="hint">1 = uses LoTW (not paper)</td></tr>
+      <tr><td>address</td><td id="addr"></td><td class="hint" id="addrHint"></td></tr>
     </table>
     <div class="bio" id="bio"></div>
   </section>
@@ -148,6 +149,11 @@ function render() {
   $('qrz').href = 'https://www.qrz.com/db/' + encodeURIComponent(st.call);
   $('country').textContent = [st.country, st.dxcc && 'DXCC ' + st.dxcc].filter(Boolean).join(' · ');
   show('qslmgr', st.qslmgr); show('mqsl', st.mqsl); show('eqsl', st.eqsl); show('lotw', st.lotw);
+  const addr = [st.addr1, st.addr2, [st.state, st.zip].filter(Boolean).join(' '), st.country].filter(Boolean);
+  $('addr').innerHTML = (st.addr1 || st.addr2 || st.zip) ? addr.map(esc).join('<br>') : '<span class="empty">(none)</span>';
+  const full = !!(st.addr1 && st.addr2);
+  $('addrHint').textContent = full ? 'street + city: direct possible' : 'no street + city: no direct (unless the bio has an address)';
+  $('addrHint').style.color = full ? '' : '#b3261e';
   renderBio();
   $('bio').scrollTop = 0;
   document.querySelectorAll('input[name=label]').forEach(r => r.checked = !!g && r.value === g.label);

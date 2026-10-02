@@ -24,6 +24,7 @@ type pair struct {
 	Tokens    int
 	Truncated bool
 	CutOff    bool // finish_reason "length"
+	Guarded   bool // the address guard changed the model's label
 }
 
 func (p pair) labelOK() bool { return p.Gold == p.Pred }
@@ -44,6 +45,7 @@ type metrics struct {
 	MacroF1, Kappa         float64
 	Unreadable, Truncated  int
 	CutOff                 int
+	Guarded, GuardedOK     int
 	PerClass               []classStats
 	Confusion              map[qpc.Label]map[qpc.Label]int // gold -> pred -> count
 	// Confidence: share of stations answered with that confidence or higher,
@@ -86,6 +88,12 @@ func computeMetrics(ps []pair) metrics {
 		}
 		if p.CutOff {
 			m.CutOff++
+		}
+		if p.Guarded {
+			m.Guarded++
+			if p.labelOK() {
+				m.GuardedOK++
+			}
 		}
 		if p.Conf == "high" {
 			high++

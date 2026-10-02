@@ -1,0 +1,36 @@
+{{/*
+  v2: v1 plus the QRZ postal address and the address rule (LABELS.md rules
+  5 and 6). Uses the current LABELS.md through {{.Rules}}; the prompt ID
+  hashes the rules too, so an edit there yields a new ID.
+*/}}
+{{define "system" -}}
+You help a radio amateur decide how to send paper QSL cards. A QSL card is a postcard confirming a radio contact.
+
+{{.Rules}}
+Answer with one JSON object and nothing else:
+{"evidence": "<the words from the record that decided it, quoted exactly and briefly, or empty>", "label": "<{{range $i, $l := .Labels}}{{if $i}}|{{end}}{{$l}}{{end}}>", "via": "<callsign or empty>", "confidence": "<high|medium|low>"}
+{{- end}}
+
+{{define "user" -}}
+Station: {{.Call}}
+Country: {{or .Country "(not stated)"}}
+
+QRZ fields:
+qslmgr: {{or .QSLMgr "(empty)"}}
+mqsl: {{or .MQSL "(empty)"}}
+eqsl: {{or .EQSL "(empty)"}}
+lotw: {{or .LoTW "(empty)"}}
+
+QRZ postal address:
+{{- if or .Addr1 .Addr2 .State .Zip}}
+street: {{or .Addr1 "(empty)"}}
+city: {{or .Addr2 "(empty)"}}
+state: {{or .State "(empty)"}}
+zip: {{or .Zip "(empty)"}}
+country: {{or .Country "(empty)"}}
+{{- else}} (none)
+{{- end}}
+
+QRZ bio{{if .Truncated}} (cut, too long){{end}}:
+{{or .Bio "(no bio)"}}
+{{- end}}

@@ -47,9 +47,6 @@ func cmdSample(args []string) error {
 	if *out == "" {
 		*out = filepath.Join(*dir, "dataset.jsonl")
 	}
-	if *cfgPath == "" {
-		return errors.New("-config (the qslotter config with QRZ credentials) is required")
-	}
 	if _, err := os.Stat(*out); err == nil && !*force {
 		return fmt.Errorf("%s exists (labels may refer to it); use -out or -force", *out)
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -58,15 +55,8 @@ func cmdSample(args []string) error {
 	if _, err := os.Stat(*db); err != nil {
 		return fmt.Errorf("database copy: %w", err)
 	}
-	cfg, err := config.Load(*cfgPath)
+	qc, err := qrzClient(*cfgPath)
 	if err != nil {
-		return err
-	}
-	if cfg.QRZ.Username == "" || cfg.QRZ.Password == "" {
-		return errors.New("no QRZ credentials in " + *cfgPath)
-	}
-	qc := qrz.New(cfg.QRZ.Username, cfg.QRZ.Password, cfg.QRZ.Agent)
-	if err := qc.CheckCredentials(); err != nil {
 		return err
 	}
 
@@ -139,6 +129,75 @@ func cmdSample(args []string) error {
 	return nil
 }
 
+// qrzClient logs in to QRZ with the credentials from a qslotter config.
+func qrzClient(cfgPath string) (*qrz.Client, error) {
+	if cfgPath == "" {
+		return nil, errors.New("-config (the qslotter config with QRZ credentials) is required")
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.QRZ.Username == "" || cfg.QRZ.Password == "" {
+		return nil, errors.New("no QRZ credentials in " + cfgPath)
+	}
+	qc := qrz.New(cfg.QRZ.Username, cfg.QRZ.Password, cfg.QRZ.Agent)
+	return qc, qc.CheckCredentials()
+}
+
+// cmdEnrich adds the QRZ postal address to an existing dataset without
+// touching anything else (bio and QSL fields stay as labelled). Datasets
+// sampled before the address became part of qpc.Station need it once.
+func cmdEnrich(args []string) error {
+	fl := flag.NewFlagSet("enrich", flag.ExitOnError)
+	dir := fl.String("dir", dirFlagDefault(), "working directory")
+	cfgPath := fl.String("config", "", "qslotter config.yaml (QRZ credentials only)")
+	pause := fl.Duration("pause", 500*time.Millisecond, "pause between QRZ lookups")
+	fl.Parse(args)
+	path := filepath.Join(*dir, "dataset.jsonl")
+	items, err := loadDataset(path)
+	if err != nil {
+		return err
+	}
+	qc, err := qrzClient(*cfgPath)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		it := &items[i]
+		call := it.Call
+		if it.QRZCall != "" {
+			call = it.QRZCall
+		}
+		cs, err := qc.Lookup(call)
+		if err != nil {
+			return fmt.Errorf("%s: %w (dataset unchanged)", call, err)
+		}
+		if cs == nil {
+			log.Printf("%-12s no longer on QRZ, address left empty", call)
+			continue
+		}
+		it.Addr1, it.Addr2, it.State, it.Zip = cs.Addr1, cs.Addr2, cs.State, cs.Zip
+		full := "full"
+		if !it.HasFullAddress() {
+			full = "NOT full"
+		}
+		log.Printf("%3d/%d %-12s address %s", i+1, len(items), it.Call, full)
+		time.Sleep(*pause)
+	}
+	backup := strings.TrimSuffix(path, ".jsonl") + ".before-enrich.jsonl"
+	if err := os.Rename(path, backup); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := appendJSONL(path, it); err != nil {
+			return err
+		}
+	}
+	log.Printf("addresses added to %s (previous version: %s)", path, backup)
+	return nil
+}
+
 // drawOrder shuffles the QSOs with seed and keeps the first QSO of every
 // station (by base call): random QSOs, each station at most once. As with
 // drawing QSOs, a station's chance grows with its number of QSOs.
@@ -177,7 +236,8 @@ func fetchStation(qc *qrz.Client, q *store.QSO) (item, bool, error) {
 	it := item{
 		Station: qpc.Station{
 			Call: call, Country: cs.Country, DXCC: cs.DXCC, QSLMgr: cs.QSLMgr,
-			MQSL: cs.MQSL, EQSL: cs.EQSL, LoTW: cs.LoTW, Bio: bio,
+			MQSL: cs.MQSL, EQSL: cs.EQSL, LoTW: cs.LoTW,
+			Addr1: cs.Addr1, Addr2: cs.Addr2, State: cs.State, Zip: cs.Zip, Bio: bio,
 		},
 		QSOKey:    q.QSLKey,
 		FetchedAt: time.Now().UTC().Format(time.RFC3339),
