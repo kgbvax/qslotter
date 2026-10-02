@@ -200,7 +200,7 @@ var (
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
 	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)`)
-	noDirectRe       = regexp.MustCompile(`no (qsl )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
+	noDirectRe       = regexp.MustCompile(`no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
 	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
 )
@@ -248,12 +248,15 @@ func (s signals) result(electronicHint bool) (Result, bool) {
 		return Result{Method: "B", Confidence: "medium", Reason: "QSL via bureau"}, true
 	case s.direct:
 		return Result{Method: "D", Confidence: "medium", Reason: "QSL direct"}, true
-	case s.noBureau:
-		return Result{Method: "D", Confidence: "low", Reason: "no bureau, so direct"}, true
+	case s.noBureau && s.noDirect:
+		return Result{RefusePaper: true, Confidence: "medium", Reason: "no bureau and no direct - no paper card"}, true
 	case s.noPaper:
 		return Result{RefusePaper: true, Confidence: "medium", Reason: "no paper QSL"}, true
 	case s.electronicOnly:
 		return Result{RefusePaper: true, Confidence: "medium", Reason: "electronic only (eQSL/LoTW) - no paper card"}, true
+	case s.noBureau:
+		// Only when nothing refuses paper: "NO Paper NO Bureau" is not direct.
+		return Result{Method: "D", Confidence: "low", Reason: "no bureau, so direct"}, true
 	case electronicHint && s.electronic:
 		return Result{RefusePaper: true, Confidence: "low", Reason: "only electronic confirmations (eQSL/LoTW) mentioned - no paper card"}, true
 	}

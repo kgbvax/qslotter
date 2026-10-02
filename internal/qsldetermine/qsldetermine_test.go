@@ -114,6 +114,14 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"BURO - LOTW - DIRECT -eQSL", "B", false},
 		{"BUREAU- LOTW - DIRECT", "B", false},
 		{"All paper QSL cards received will be 100% replied.", "", false},
+		// "no bureau" means direct only while nothing refuses paper.
+		{"QRZ Logbook Only (No Buro, No Direct, No QSL Manager)", "", true},
+		{"LoTW, QRZ&Clublog (NO BUREAU, NO DIRECT, NO E-MAIL)", "", true},
+		{"QRZ - HRDLOG - LOTW - EQSL - CLUBLOG - NO Paper NO Bureau", "", true},
+		{"LoTW, QRZ.com, eQSL, Clublog. No paper or cards and no Bureau.", "", true},
+		{"Only eQSL / No QSL Paper Direct or Office please", "", true},
+		{"No bureau", "D", false},
+		{"No bureau, SASE please", "D", false},
 	}
 	for _, c := range cases {
 		r := Determine(&qrz.Callsign{Call: "XX1XX", QSLMgr: c.mgr}, "")

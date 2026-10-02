@@ -555,3 +555,14 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   heuristic's numbers are somewhat optimistic. Asking qwen for the flag
   cost it about 3 points on the main answer (v6 71% -> v7 68% fully right
   on the fresh sample) - the heuristic is the better source for the flag.
+- **2026-10-02 — Third sample, unlabelled: heuristic vs qpc.** 200 more
+  stations (`qpc-lab compare`): the heuristic and qwen3.5:4b (v7) give the
+  same status, routes and via on 70%. On the two labelled samples such
+  agreement was right 91% of the time, while a disagreement was a coin toss
+  (heuristic right 25, qwen 22, neither 15 of 62), so agreement is the
+  useful confidence signal, not either classifier alone. The comparison
+  exposed a heuristic bug: "no bureau" was read as "so direct" even in
+  "No Buro, No Direct" or "NO Paper NO Bureau"; fixed (refusals first),
+  which took the heuristic to 75% fully right on the fresh sample (was 72%;
+  qwen v7 68%) and the third-sample agreement to 72%. qwen's typical slip
+  there: mqsl 0 overriding an explicit "VIA BUREAU" in qslmgr (rule 7).
