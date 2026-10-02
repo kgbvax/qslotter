@@ -232,31 +232,19 @@ func mapHeuristic(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
 }
 
 func mapMethod(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
-	switch h.Method {
-	case "B":
-		if bothRe.MatchString(h.Reason) {
-			return qpc.Paper, []qpc.Route{qpc.Bureau, qpc.Direct}, ""
-		}
-		return qpc.Paper, []qpc.Route{qpc.Bureau}, ""
-	case "D":
-		return qpc.Paper, []qpc.Route{qpc.Direct}, ""
-	case "M":
-		// The reason quotes the qslmgr field or the bio match; the manager
-		// call itself never contains these words.
-		rest := strings.Replace(h.Reason, h.Manager, "", 1)
-		var routes []qpc.Route
-		if bureauWordRe.MatchString(rest) {
-			routes = append(routes, qpc.Bureau)
-		}
-		if directWordRe.MatchString(rest) {
-			routes = append(routes, qpc.Direct)
-		}
-		if len(routes) == 0 {
-			return qpc.Unclear, nil, h.Manager
-		}
-		return qpc.Paper, routes, h.Manager
+	var routes []qpc.Route
+	if h.Bureau {
+		routes = append(routes, qpc.Bureau)
 	}
-	if h.RefusePaper {
+	if h.Direct {
+		routes = append(routes, qpc.Direct)
+	}
+	switch {
+	case h.Method == "M" && len(routes) == 0:
+		return qpc.Unclear, nil, h.Manager
+	case h.Method != "":
+		return qpc.Paper, routes, h.Manager
+	case h.RefusePaper:
 		return qpc.NoPaper, nil, ""
 	}
 	return qpc.Unknown, nil, ""

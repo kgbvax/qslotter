@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/qpc"
@@ -70,23 +71,28 @@ func TestMapHeuristic(t *testing.T) {
 		routes string
 		via    string
 	}{
-		{qsldetermine.Result{Method: "B", Reason: "QSL via bureau"}, qpc.Paper, "[bureau]", ""},
-		{qsldetermine.Result{Method: "B", Reason: "bio: bureau and direct both accepted, bureau is cheaper"}, qpc.Paper, "[bureau direct]", ""},
-		{qsldetermine.Result{Method: "D"}, qpc.Paper, "[direct]", ""},
-		{qsldetermine.Result{Method: "M", Manager: "EA5GL", Reason: "qslmgr field: EA5GL"}, qpc.Unclear, "[]", "EA5GL"},
-		{qsldetermine.Result{Method: "M", Manager: "K2ABC", Reason: "qslmgr field: K2ABC (bureau only)"}, qpc.Paper, "[bureau]", "K2ABC"},
-		{qsldetermine.Result{Method: "M", Manager: "IQ3BM", Reason: "qslmgr field: IQ3BM via bureau or direct"}, qpc.Paper, "[bureau direct]", "IQ3BM"},
+		{qsldetermine.Result{Method: "B", Bureau: true}, qpc.Paper, "[bureau]", ""},
+		{qsldetermine.Result{Method: "B", Bureau: true, Direct: true}, qpc.Paper, "[bureau direct]", ""},
+		{qsldetermine.Result{Method: "D", Direct: true}, qpc.Paper, "[direct]", ""},
+		{qsldetermine.Result{Method: "M", Manager: "EA5GL"}, qpc.Unclear, "[]", "EA5GL"},
+		{qsldetermine.Result{Method: "M", Manager: "K2ABC", Bureau: true}, qpc.Paper, "[bureau]", "K2ABC"},
+		{qsldetermine.Result{Method: "M", Manager: "IQ3BM", Bureau: true, Direct: true}, qpc.Paper, "[bureau direct]", "IQ3BM"},
 		{qsldetermine.Result{RefusePaper: true}, qpc.NoPaper, "[]", ""},
 		{qsldetermine.Result{}, qpc.Unknown, "[]", ""},
-		{qsldetermine.Result{Method: "D", OQRS: true}, qpc.Paper, "[direct oqrs]", ""},
+		{qsldetermine.Result{Method: "D", Direct: true, OQRS: true}, qpc.Paper, "[direct oqrs]", ""},
 		{qsldetermine.Result{OQRS: true}, qpc.Paper, "[oqrs]", ""},
-		{qsldetermine.Result{Method: "M", Manager: "SQ2RAD", Reason: "qslmgr field: SQ2RAD", OQRS: true}, qpc.Paper, "[oqrs]", "SQ2RAD"},
+		{qsldetermine.Result{Method: "M", Manager: "SQ2RAD", OQRS: true}, qpc.Paper, "[oqrs]", "SQ2RAD"},
 	}
 	for _, c := range cases {
 		st, routes, via := mapHeuristic(c.r)
 		if st != c.status || fmt.Sprint(routes) != c.routes || via != c.via {
 			t.Errorf("%+v -> %s %v %q", c.r, st, routes, via)
 		}
+	}
+	// End to end: the manager's routes come from the qslmgr text.
+	h := qsldetermine.Determine(&qrz.Callsign{Call: "II3IARU", QSLMgr: "IQ3BM via bureau or direct"}, "")
+	if st, routes, via := mapHeuristic(h); st != qpc.Paper || fmt.Sprint(routes) != "[bureau direct]" || via != "IQ3BM" {
+		t.Errorf("IQ3BM: %s %v %s", st, routes, via)
 	}
 }
 

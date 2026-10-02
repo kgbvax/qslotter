@@ -197,6 +197,32 @@ func TestOQRS(t *testing.T) {
 	}
 }
 
+func TestPostalDOKAndInlineManager(t *testing.T) {
+	for _, c := range []struct {
+		call, mgr, bio  string
+		method, manager string
+		bureau, direct  bool
+	}{
+		{"KP4AF", "VIA EQSL ,LOTW , QRZ.COM ,BURO,IQSL, VIA MAIL.", "", "B", "", true, true},
+		{"M0LOW", "VIA THE BUREAU OR TO THE ABOVE ADDRESS.", "", "B", "", true, true},
+		{"LZ591MK", "via Bureau or P.O.Box 36", "", "B", "", true, true},
+		{"DM1SV", "no QSL cards via Mail please", "", "", "", false, false},
+		{"XX1XX", "Direct only or via e-mail", "", "D", "", false, true},
+		{"DN9DPA", "O 52", "", "B", "", true, false},
+		{"DL0AH", "Bureau / eQSL / DOK F01", "", "B", "", true, false},
+		{"S79VU", "ALL QSL's via N4GNR Direct Only", "", "M", "N4GNR", false, true},
+		{"DL0DC", "VIA BUREAU OR VIA DH3UN ADDRESS, PSE NO E-QSL", "", "M", "DH3UN", true, true},
+		// Routes are read only from the bio's sentences about cards.
+		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
+		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},
+	} {
+		r := Determine(&qrz.Callsign{Call: c.call, QSLMgr: c.mgr}, c.bio)
+		if r.Method != c.method || r.Manager != c.manager || r.Bureau != c.bureau || r.Direct != c.direct {
+			t.Errorf("%s %q %q: %+v", c.call, c.mgr, c.bio, r)
+		}
+	}
+}
+
 func TestManagerWithRoute(t *testing.T) {
 	// A lead-in word is not a route: "QSL MGR EA5GL" names no route.
 	r := Determine(&qrz.Callsign{QSLMgr: "QSL MGR EA5GL", Addr1: "Street 1", Addr2: "Town"}, "")

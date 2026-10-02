@@ -15,11 +15,14 @@ import (
 
 // Result is the determination outcome.
 type Result struct {
-	Method      string // "B","D","M" or "" if skipped (E is not a paper-card decision)
-	Manager     string // manager callsign if Method=="M", else ""
-	RefusePaper bool   // explicit "NO QSL", eQSL/LoTW-only, etc.
-	Confidence  string // "high" (structured field), "medium" (explicit bio), "low" (fallback)
-	Reason      string
+	Method  string // "B","D","M" or "" if skipped (E is not a paper-card decision)
+	Manager string // manager callsign if Method=="M", else ""
+	// Bureau, Direct: the routes the station accepts (with a manager: the
+	// routes named for it). Method is the cheapest of them.
+	Bureau, Direct bool
+	RefusePaper    bool   // explicit "NO QSL", eQSL/LoTW-only, etc.
+	Confidence     string // "high" (structured field), "medium" (explicit bio), "low" (fallback)
+	Reason         string
 	// Contribution: "required" when the station asks for something in
 	// return for a card (SAE/SASE, IRC, green stamps, money, PayPal, a fee or
 	// donation), "not-needed" when it waives that explicitly, "" otherwise.
@@ -68,14 +71,25 @@ func determineRoute(c *qrz.Callsign, bio string, oqrs bool) Result {
 	// 1. Structured qslmgr field. A callsign there is a manager (highest
 	// confidence). Anything else is free text people type into the field
 	// ("VIA BUREAU", "ONLY DIRECT ( SAE + $6 )"): read it for its meaning
-	// instead of mistaking its first word for a callsign.
+	// instead of mistaking its first word for a callsign; a manager named
+	// inside it ("ALL QSL's via N4GNR Direct Only") still counts.
+	own := strings.TrimSpace(c.Call)
+	bioSig := readSignals(qslSentences(bio))
 	mgr := strings.TrimSpace(c.QSLMgr)
 	if mgr != "" && !strings.EqualFold(mgr, "NONE") {
 		// The station's own call is not a manager ("QSL via PD3JWB (bureau)"
 		// on PD3JWB's record); its home call for a portable call is.
-		if call, ok := managerCall(mgr); ok && !strings.EqualFold(call, strings.TrimSpace(c.Call)) {
-			return Result{Method: "M", Manager: call, Confidence: "high",
-				Reason: "qslmgr field: " + mgr}
+		call, ok := managerCall(mgr)
+		conf := "high"
+		if !ok || strings.EqualFold(call, own) {
+			call, ok, conf = managerInText(mgr, own), false, "medium"
+			ok = call != ""
+		}
+		if ok {
+			r := Result{Method: "M", Manager: call, Confidence: conf, Reason: "qslmgr field: " + mgr}
+			sig := readSignals(strings.Replace(strings.ToLower(mgr), strings.ToLower(call), " ", 1))
+			r.Bureau, r.Direct = sig.bureau, sig.direct
+			return r
 		}
 		if r, ok := classify(mgr); ok {
 			r.Reason = "qslmgr text \"" + mgr + "\": " + r.Reason
@@ -83,14 +97,13 @@ func determineRoute(c *qrz.Callsign, bio string, oqrs bool) Result {
 		}
 	}
 
-	// 2. Bio text.
-	sig := readSignals(bio)
-	refusePaper := sig.noPaper
-	if m := viaManagerRe.FindStringSubmatch(bio); m != nil && LooksLikeCallsign(m[1]) && !strings.EqualFold(m[1], strings.TrimSpace(c.Call)) {
+	// 2. Bio text: its sentences about QSL cards.
+	refusePaper := bioSig.noPaper
+	if m := viaManagerRe.FindStringSubmatch(bio); m != nil && LooksLikeCallsign(m[1]) && !strings.EqualFold(m[1], own) {
 		return Result{Method: "M", Manager: strings.ToUpper(m[1]),
 			Confidence: "medium", Reason: "bio: QSL via " + m[1], RefusePaper: refusePaper}
 	}
-	if r, ok := sig.result(); ok {
+	if r, ok := bioSig.result(); ok {
 		r.Reason = "bio: " + r.Reason
 		if refusePaper && !r.RefusePaper {
 			r.RefusePaper = true
@@ -114,10 +127,10 @@ func determineRoute(c *qrz.Callsign, bio string, oqrs bool) Result {
 		return Result{RefusePaper: true, Confidence: "low",
 			Reason: "mqsl=no and no route in the text - no paper card"}
 	case fullAddress:
-		return Result{Method: "D", Confidence: "low",
+		return Result{Method: "D", Direct: true, Confidence: "low",
 			Reason: "postal address on QRZ and no other instructions - direct"}
 	case mqslYes:
-		return Result{Method: "B", Confidence: "low",
+		return Result{Method: "B", Bureau: true, Confidence: "low",
 			Reason: "mqsl=yes but no full postal address - bureau"}
 	}
 
@@ -251,7 +264,12 @@ type signals struct {
 
 var (
 	bureauWordRe = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
-	directWordRe = regexp.MustCompile(`\bdirect(o|a|ly|ement)?([^a-z]|$)|\bdirekt`) // "Direct3$", not "direction"
+	directWordRe = regexp.MustCompile(`\bdirect(o|a|ly|ement)?([^a-z]|$)|\bdirekt|\bdirett[ao]\b`) // "Direct3$", not "direction"
+	// postalRe: a card by post in other words ("VIA MAIL", "to the above
+	// address", "P.O.Box 36"); "e-mail" is not one.
+	postalRe = regexp.MustCompile(`\b(by|via|per) (post|snail ?mail|mail|address)\b|snail ?mail|above address|\bp\.? ?o\.? ?box\b|\bpostbox\b|sent by mail`)
+	// dokRe: a DARC DOK ("O 52", "DOK F01") means cards via the DARC bureau.
+	dokRe = regexp.MustCompile(`^\s*(dok:?\s*)?[a-z]\s?\d{2}\s*$|\bdok:?\s*[a-z]\s?\d{2}\b`)
 	// returnPostageRe: asking for return postage means a card by post
 	// ("LOTW or SASE"); see asked for waivers.
 	returnPostageRe = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?`)
@@ -262,7 +280,7 @@ var (
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
 	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer`)
-	noDirectRe       = regexp.MustCompile(`no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
+	noDirectRe       = regexp.MustCompile(`no (qsl )?(cards? )?(via |by )(post|snail ?mail|mail)\b|no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
 	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
 )
@@ -272,10 +290,10 @@ var apostrophes = strings.NewReplacer("´", "'", "’", "'", "`", "'")
 // readSignals scans free text for route hints. Negations are read first so
 // "no bureau" never counts as a bureau mention.
 func readSignals(text string) signals {
-	lc := apostrophes.Replace(strings.ToLower(text))
+	lc := strings.Join(strings.Fields(apostrophes.Replace(strings.ToLower(text))), " ")
 	var s signals
-	s.bureauWord = bureauWordRe.MatchString(lc)
-	s.directWord = directWordRe.MatchString(lc) || returnPostageRe.MatchString(asked(lc))
+	s.bureauWord = bureauWordRe.MatchString(lc) || dokRe.MatchString(lc)
+	s.directWord = directWordRe.MatchString(lc) || returnPostageRe.MatchString(asked(lc)) || postalRe.MatchString(strings.ReplaceAll(lc, "e-mail", "email"))
 	s.electronicOnly = electronicOnlyRe.MatchString(lc)
 	s.onlyDirect = onlyDirectRe.MatchString(lc)
 	s.onlyBureau = onlyBureauRe.MatchString(lc)
@@ -300,15 +318,15 @@ func readSignals(text string) signals {
 func (s signals) result() (Result, bool) {
 	switch {
 	case s.onlyDirect || (s.direct && s.noBureau && !s.bureau):
-		return Result{Method: "D", Confidence: "medium", Reason: "direct only"}, true
+		return Result{Method: "D", Direct: true, Confidence: "medium", Reason: "direct only"}, true
 	case s.onlyBureau || (s.bureau && s.noDirect && !s.direct):
-		return Result{Method: "B", Confidence: "medium", Reason: "bureau only"}, true
+		return Result{Method: "B", Bureau: true, Confidence: "medium", Reason: "bureau only"}, true
 	case s.bureau && s.direct:
-		return Result{Method: "B", Confidence: "medium", Reason: "bureau and direct both accepted, bureau is cheaper"}, true
+		return Result{Method: "B", Bureau: true, Direct: true, Confidence: "medium", Reason: "bureau and direct both accepted, bureau is cheaper"}, true
 	case s.bureau:
-		return Result{Method: "B", Confidence: "medium", Reason: "QSL via bureau"}, true
+		return Result{Method: "B", Bureau: true, Confidence: "medium", Reason: "QSL via bureau"}, true
 	case s.direct:
-		return Result{Method: "D", Confidence: "medium", Reason: "QSL direct"}, true
+		return Result{Method: "D", Direct: true, Confidence: "medium", Reason: "QSL direct"}, true
 	case s.noBureau && s.noDirect:
 		return Result{RefusePaper: true, Confidence: "medium", Reason: "no bureau and no direct - no paper card"}, true
 	case s.noPaper:
@@ -317,9 +335,40 @@ func (s signals) result() (Result, bool) {
 		return Result{RefusePaper: true, Confidence: "medium", Reason: "electronic only (eQSL/LoTW) - no paper card"}, true
 	case s.noBureau:
 		// Only when nothing refuses paper: "NO Paper NO Bureau" is not direct.
-		return Result{Method: "D", Confidence: "low", Reason: "no bureau, so direct"}, true
+		return Result{Method: "D", Direct: true, Confidence: "low", Reason: "no bureau, so direct"}, true
 	}
 	return Result{}, false
+}
+
+var (
+	// qslSentenceRe marks the bio sentences that talk about QSL cards; routes
+	// are read only there ("directly on the HamAward website" is not one).
+	qslSentenceRe = regexp.MustCompile(`qsl|card|karte|tarjeta|carte|bureau|buro|b\x{fc}ro|bur\x{f3}|s\.?a\.?s?\.?e\b|\birc\b|green ?stamp|stamps|envelope|postage|oqrs|manager|\bmgr\b`)
+	bioSentenceRe = regexp.MustCompile(`\n+|[.!?;]\s+`)
+	// textManagerRe: a callsign the cards go via or to, inside free text.
+	textManagerRe = regexp.MustCompile(`(?i)\b(?:via|to|mgr|manager:?)\s+([a-z0-9/]{3,12})\b`)
+)
+
+// qslSentences returns the sentences of a bio that talk about QSL cards.
+func qslSentences(bio string) string {
+	var keep []string
+	for _, s := range bioSentenceRe.Split(bio, -1) {
+		if qslSentenceRe.MatchString(strings.ToLower(s)) {
+			keep = append(keep, s)
+		}
+	}
+	return strings.Join(keep, ". ")
+}
+
+// managerInText finds a manager callsign anywhere in free text ("ALL QSL's
+// via N4GNR Direct Only"), never the station's own call; "" if none.
+func managerInText(text, own string) string {
+	for _, m := range textManagerRe.FindAllStringSubmatch(text, -1) {
+		if c := strings.Trim(m[1], "/"); LooksLikeCallsign(c) && !strings.EqualFold(c, own) {
+			return strings.ToUpper(c)
+		}
+	}
+	return ""
 }
 
 // classify reads a short free-text value (a qslmgr field).
