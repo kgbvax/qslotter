@@ -13,6 +13,7 @@
 //	gold.jsonl           manual labels, append-only, the last entry per call wins
 //	runs/<variant>/      results.jsonl + run.json per classifier variant
 //	report.md            the comparison
+//	compare.md           two runs side by side, without labels (compare)
 //
 // Workflow:
 //
@@ -20,6 +21,7 @@
 //	qpc-lab label                                    # http://127.0.0.1:8475, blind
 //	qpc-lab run -experiment qpc/experiments/round1.yaml
 //	qpc-lab report
+//	qpc-lab compare -calibrate eval/qpc,eval/qpc2    # unlabelled: where two runs differ
 //
 // Labels and rules: qpc/LABELS.md.
 package main
@@ -37,12 +39,13 @@ func main() {
 		usage()
 	}
 	cmds := map[string]func([]string) error{
-		"sample": cmdSample,
-		"enrich": cmdEnrich,
-		"label":  cmdLabel,
-		"notes":  cmdNotes,
-		"run":    cmdRun,
-		"report": cmdReport,
+		"sample":  cmdSample,
+		"enrich":  cmdEnrich,
+		"label":   cmdLabel,
+		"notes":   cmdNotes,
+		"run":     cmdRun,
+		"report":  cmdReport,
+		"compare": cmdCompare,
 	}
 	cmd, ok := cmds[os.Args[1]]
 	if !ok {
@@ -54,6 +57,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|notes|run|report [flags]   (-h for flags)")
+	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|notes|run|report|compare [flags]   (-h for flags)")
 	os.Exit(2)
 }

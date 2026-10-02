@@ -236,6 +236,47 @@ func TestReportSmoke(t *testing.T) {
 	}
 }
 
+func TestCompare(t *testing.T) {
+	dir := t.TempDir()
+	// K1A: both bureau, right. K2B: they differ, the model is right. K3C:
+	// both unknown, the label says direct.
+	for _, it := range []item{{Station: qpc.Station{Call: "K1A", MQSL: "1"}}, {Station: qpc.Station{Call: "K2B", QSLMgr: "EA5GL"}}, {Station: qpc.Station{Call: "K3C"}}} {
+		appendJSONL(filepath.Join(dir, "dataset.jsonl"), it)
+	}
+	ds, _ := fileHash(filepath.Join(dir, "dataset.jsonl"))
+	items, _ := loadDataset(filepath.Join(dir, "dataset.jsonl"))
+	if err := runVariant(context.Background(), qpc.Variant{Name: "heuristic", Kind: "heuristic"}, items, ds, filepath.Join(dir, "runs", "heuristic"), false); err != nil {
+		t.Fatal(err)
+	}
+	llm := filepath.Join(dir, "runs", "llm")
+	os.MkdirAll(llm, 0o755)
+	writeJSON(filepath.Join(llm, "run.json"), runInfo{Variant: qpc.Variant{Name: "llm", Model: "m"}, Dataset: ds})
+	appendJSONL(filepath.Join(llm, "results.jsonl"), qpc.Result{Call: "K1A", Status: qpc.Paper, Routes: []qpc.Route{qpc.Bureau}})
+	appendJSONL(filepath.Join(llm, "results.jsonl"), qpc.Result{Call: "K2B", Status: qpc.Paper, Routes: []qpc.Route{qpc.Direct}, Via: "EA5GL", Contribution: qpc.ContributionRequired, Evidence: "via EA5GL direct"})
+	appendJSONL(filepath.Join(llm, "results.jsonl"), qpc.Result{Call: "K3C", Status: qpc.Unknown})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K1A", Status: qpc.Paper, Routes: []qpc.Route{qpc.Bureau}})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K2B", Status: qpc.Paper, Routes: []qpc.Route{qpc.Direct}, Via: "EA5GL"})
+	appendJSONL(filepath.Join(dir, "gold.jsonl"), goldLabel{Call: "K3C", Status: qpc.Paper, Routes: []qpc.Route{qpc.Direct}})
+
+	out := filepath.Join(dir, "compare.md")
+	if err := cmdCompare([]string{"-dir", dir, "-b", "llm", "-calibrate", dir, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(out)
+	for _, want := range []string{
+		"| **status + routes + via** | 2 of 3 | 67% |",
+		"| " + dir + " | 3 | 33% | 67% | 2 | 50% | 1 | 0 | 1 | 0 |",
+		"### status unclear → paper (1)",
+		"| K2B | unclear via EA5GL | direct via EA5GL | EA5GL | –/–/– | none | via EA5GL direct |",
+		"| K2B | not stated | required |",
+		"-calls K2B",
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("compare lacks %q:\n%s", want, b)
+		}
+	}
+}
+
 func TestNotesReview(t *testing.T) {
 	gold := filepath.Join(t.TempDir(), "gold.jsonl")
 	appendJSONL(gold, goldLabel{Call: "K1A", Status: qpc.Paper, Routes: []qpc.Route{qpc.Direct}, Comment: "mine", At: "x"})
