@@ -47,9 +47,10 @@ where it stands today.
   processing.** Suggestion done: `qsldetermine` suggests with confidence and
   reason. Since 2026-10-01 it informs yes/no in the Inbox and preselects the
   route at the Desk (B4, partial). "Other
-  sources" beyond QRZ (LLM bio interpretation): the `qpc` classifier passed
-  its eval gate on 2026-10-02 (decision log) and may become a second
-  suggestion source next to `qsldetermine`; not integrated yet (roadmap v2).
+  sources" beyond QRZ (LLM bio interpretation): the `qpc` classifier beat
+  the old heuristic but only ties the heuristic as improved on 2026-10-02
+  (decision log); its own value is the note (preferences, conditions,
+  requirements) and free-text qslmgr fields. Not integrated (roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
   each QSO, or in a batch later. Done in the 2026-09-30 build, reshaped
   2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
@@ -142,7 +143,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
-| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM classifier `qpc` (qwen3.5:4b, prompt v5) passed the gate 2026-10-02 on a fresh blind sample: 59% of stations fully right vs 48% for the heuristic; integration open (roadmap v2) |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30 and 2026-10-02 (address-only rule); LLM classifier `qpc` (qwen3.5:4b) beat the old heuristic on a fresh blind sample (59% vs 48% fully right) but ties the improved one (71% vs 72%); its distinct value is the note and free-text qslmgr; integration open (roadmap v2) |
 
 ### 2.6 Invariants carried over
 
@@ -176,10 +177,13 @@ radio. Here the route is chosen.
   `desired_method=N`, status `skipped`, reopenable from Done.
 - LLM-based determination (`qpc`: classifier library, backend `cmd/qpcd`,
   eval harness `cmd/qpc-lab`; any OpenAI-compatible endpoint, local Ollama)
-  passed its gate on 2026-10-02: it beat the heuristic on a fresh,
-  operator-labelled sample (decision log). It may become a second suggestion
-  source - shown with its evidence quote and note, never acted on - but it
-  is not wired into the app yet. Answer: status (paper, no-paper, unknown,
+  beat the heuristic on a fresh, operator-labelled sample, until the
+  operator's address-only rule went into the heuristic as well; since then
+  both get about 72% of stations fully right, failing on different ones
+  (decision log). Its distinct value is the note (preferences, conditions,
+  requirements) and free-text qslmgr fields; whether that is worth a second
+  suggestion source - shown with its evidence quote, never acted on - is
+  open. Not wired into the app. Answer: status (paper, no-paper, unknown,
   unclear), every accepted route (bureau, direct, oqrs), the preferred route,
   a via callsign (manager or home call) and an English note; rules in
   `qpc/LABELS.md`.
@@ -371,9 +375,9 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 15. CouchDB store backend + migration command.
 16. Phone app: photograph incoming cards, OCR, book with minimal taps (E1).
 17. LLM route suggestion from QRZ free text, at low cost, behind the eval
-    gate (only if `qpc-lab` shows it beats the heuristic) (E2). Gate passed
-    2026-10-02 (qwen3.5:4b via `qpcd`); next: integration as a second
-    suggestion next to the heuristic.
+    gate (only if `qpc-lab` shows it beats the heuristic) (E2). 2026-10-02:
+    beat the old heuristic, ties the improved one; open whether its notes
+    and free-text reading justify integration (qwen3.5:4b via `qpcd`).
 
 ## 9. Decision log
 
@@ -524,3 +528,15 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   (was only with eqsl/lotw). Cached station info keeps the old suggestion
   until its next refresh. `qpc/LABELS.md` rule 6 and prompt v6 carry it;
   prompts v1-v5 are frozen with the rules they were evaluated with.
+- **2026-10-02 — With that rule the heuristic catches up with qpc.** Labels
+  re-checked under the rule (18 stations changed over both samples, applied
+  mechanically to records with nothing about QSL - this slightly favours
+  the heuristic, which implements exactly that rule). Fresh sample: heuristic
+  72% fully right (was 48%), qwen3.5:4b + v6 71% (discordant 14:13, no
+  difference); first sample 75% vs 77%. They fail on different stations
+  (both wrong: 15). Split by what the heuristic based its answer on, qpc is
+  better on free-text qslmgr fields (+3 on each sample), the heuristic on
+  flags/address-only records; "qpc for free-text qslmgr, heuristic
+  otherwise" - chosen on the first sample - gives 75% on the fresh one, not
+  significant. qpc's distinct value is the note, which the heuristic cannot
+  produce.
