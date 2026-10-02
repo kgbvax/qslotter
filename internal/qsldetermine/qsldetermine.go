@@ -94,10 +94,23 @@ func determineRoute(c *qrz.Callsign, bio string) Result {
 var (
 	// contributionRe: something asked in return for a card.
 	contributionRe = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?|\bgs\b|return postage|postage|\busd\b|us ?\$|\$ ?\d|\d ?\$|\d ?(eur|euro|€)|€ ?\d|\beuros?\b|dollars?|paypal|donation|contribution|\bfee\b`)
-	// noContributionRe: the same, waived ("no SASE needed", "IRC not
+	// noContributionRes: a contribution waived ("no SASE needed", "IRC not
 	// necessary", "free of charge"). Matched spans are removed before
 	// contributionRe looks, so "no green stamps, IRC only" still asks for one.
-	noContributionRe = regexp.MustCompile(`(no|without|don'?t (send|need)|no need (for|of|to send)) (\w+ )?(s\.?a\.?s?\.?e\b|irc'?s?|green ?stamps?|postage|money|dollars?|contribution|donation|fee)( (is|are))?( (needed|necessary|required))?|(sase|sae|irc'?s?|green ?stamps?|postage|money) (is |are )?not (needed|necessary|required)|free of charge`)
+	noContributionRes = []*regexp.Regexp{
+		regexp.MustCompile(`(\bno|without|no need (for|of|to send)) (\w+ )?(s\.?a\.?s?\.?e\b|irc'?s?|green ?stamps?|postage|money|dollars?|contributions?|donations?|fees?)( (is|are))?( (needed|necessary|required))?`),
+		regexp.MustCompile(`(sase|sae|irc'?s?|green ?stamps?|postage|money) (is |are )?not (needed|necessary|required)|free of charge`),
+	}
+	// noContributionSpans: clauses that waive whatever they name; they count
+	// only when they name a contribution ("no bureau needed" does not).
+	noContributionSpans = []*regexp.Regexp{
+		regexp.MustCompile(`\bno\b[^.,;!\n]{0,30}?\b(needed|necessary|required)\b`),
+		regexp.MustCompile(`(do not|don'?t|does not|doesn'?t|never) (need|want|require|ask for|expect)[^.;!\n]{0,60}`),
+		regexp.MustCompile(`(do not|don'?t|never|please no) (send|include|add|enclose)[^.;!\n]{0,40}`),
+	}
+	// ignoreContributionRe: mentions that neither ask nor waive ("I will not
+	// answer paper QSL even with green stamps").
+	ignoreContributionRe = regexp.MustCompile(`even with [^.;!\n]{0,40}`)
 	// qslContextRe marks the sentences of a bio that talk about cards;
 	// money elsewhere ("my book costs $5") is not a contribution.
 	qslContextRe = regexp.MustCompile(`qsl|card|direct|postage|return|envelope|oqrs|bureau|buro|mail|sase|\bsae\b|\birc\b`)
@@ -115,9 +128,21 @@ func contribution(qslmgr, bio string) string {
 	}
 	waived := false
 	for _, p := range parts {
-		if noContributionRe.MatchString(p) {
-			waived = true
-			p = noContributionRe.ReplaceAllString(p, " ")
+		p = ignoreContributionRe.ReplaceAllString(p, " ")
+		for _, re := range noContributionSpans {
+			p = re.ReplaceAllStringFunc(p, func(m string) string {
+				if contributionRe.MatchString(m) {
+					waived = true
+					return " "
+				}
+				return m // about something else ("no bureau needed")
+			})
+		}
+		for _, re := range noContributionRes {
+			if re.MatchString(p) {
+				waived = true
+				p = re.ReplaceAllString(p, " ")
+			}
 		}
 		if contributionRe.MatchString(p) {
 			return "required"

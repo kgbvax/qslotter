@@ -217,6 +217,12 @@ func TestContribution(t *testing.T) {
 		{"", "My new book costs $5.\nQSL via bureau.", ""},
 		{"VIA BUREAU", "", ""},
 		{"", "QSL free of charge via the bureau", "not-needed"},
+		{"", "still love analog qsl cards...no $ or sase needed", "not-needed"},
+		{"", "I do not need any kind of fees or contributions to return QSL", "not-needed"},
+		{"", "Please do not send me dollars for QSL", "not-needed"},
+		{"", "I will not answer to paper QSL even with green stamps", ""},
+		{"", "No bureau needed, direct QSL with SASE only", "required"},
+		{"", "Direct QSL: SASE required. No IRC needed.", "required"},
 	}
 	for _, c := range cases {
 		if got := contribution(c.qslmgr, c.bio); got != c.want {
