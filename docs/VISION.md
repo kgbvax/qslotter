@@ -235,9 +235,10 @@ stays the only source of truth.
   details on the other; deciding in the detail pane moves the selection to the
   next card down (A6). Same pattern for the Desk (B2). Built 2026-10-01
   (`/queue`, `/work`); the card-by-card pages `/decide`, `/work/card` stay.
-- The station page grown up: full QRZ picture — `qslmgr`, eqsl/mqsl/lotw
-  flags, email, address, bio text — and the signals QRZ states, with the
-  suggestion and its quoted reason.
+- The research panel (it superseded the old station page, removed
+  2026-10-02): full QRZ picture — `qslmgr`, eqsl/mqsl/lotw flags, email,
+  address, bio text — the signals QRZ states, with the suggestion and its
+  quoted reason, and a Refresh that looks the station up on QRZ again.
 - Decision controls: yes / no / written now via bureau or direct (A6), plus
   context: previous QSOs with this station, cards sent/received.
 - This is where the hard *whether* cases get decided (refuses paper, already
@@ -434,6 +435,14 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   is **Mark as received**; "No reply" is **Not now**; "Requested..." is
   **Request their card...**; Print / Written say they mark the card as sent.
   Stored values (`desired_method`, `note = "written now"`) are unchanged.
+- **2026-10-02 — The station page is gone.** `/station/<call>` predated the
+  master-detail views and showed less than the research panel next to every
+  card (no bio, no card history, raw QRZ flags), plus a second set of Inbox
+  buttons that missed cards already at the Desk. Its one unique function, the
+  forced QRZ re-lookup, is now the **Refresh** button in the panel's "QRZ:"
+  header (shown while QRZ lookups are possible). Callsigns in lists and
+  cards are plain text. Lost on purpose: a QRZ/history view for a station with
+  no open card (from Log and Done).
 - **2026-10-01 — The Inbox decides *whether*, the Desk decides *how*.** Inbox:
   yes (route-less) / no / written now. The route (bureau, direct, via manager
   direct, via manager bureau) is chosen at the Desk when the card is written

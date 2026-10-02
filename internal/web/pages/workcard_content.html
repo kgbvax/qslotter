@@ -17,7 +17,7 @@
   </div>
 {{else}}{{$c := .Card}}{{$skip := .Skip}}
   {{$act := printf "view=work&filter=%s&md=%s&next=%s&prev=%s" .Filter (mdflag .MD) (q .Down) (q .Up)}}
-  <p class="decide-head"><span class="pos">{{tm .Pos}}</span> <a href="/station/{{$c.Call}}">{{t "station details"}}</a>
+  <p class="decide-head"><span class="pos">{{tm .Pos}}</span>
     {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <div id="cardform">
@@ -25,7 +25,7 @@
   <article class="qslcard">
     <div class="airmail"></div>
     <p class="confirm">{{if $c.Extra}}{{t "Confirming %d two-way QSOs with" (len $c.Rows)}}{{else}}{{t "Confirming two-way QSO with"}}{{end}}{{if gt $c.Prints 1}} <span class="muted">{{t "(prints as %d cards: the template holds fewer rows)" $c.Prints}}</span>{{end}}</p>
-    <p class="call"><a href="/station/{{$c.Call}}">{{$c.Call}}</a>{{if $c.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{$c.Name}}</span>{{end}}</p>
+    <p class="call">{{$c.Call}}{{if $c.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{$c.Name}}</span>{{end}}</p>
     <table class="cardqsos">
       <thead><tr>{{if $c.Extra}}<th title="{{t "On this card"}}">{{t "on card"}}</th>{{end}}<th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST sent"}}</th><th>{{t "RST rcvd"}}</th><th>{{t "Freq"}}</th><th>{{t "Notes"}}</th></tr></thead>
       <tbody>{{range $c.Rows}}<tr>
@@ -51,8 +51,8 @@
         <address id="addr">{{if .Name}}{{.Name}}<br>{{else if $c.Name}}{{$c.Name}}<br>{{end}}{{if .Attn}}{{.Attn}}<br>{{end}}{{if .Addr1}}{{.Addr1}}<br>{{end}}{{if .Addr2}}{{.Addr2}}<br>{{end}}{{if or .Zip .State}}{{.State}} {{.Zip}}<br>{{end}}{{.Country}}</address>
         <p><button type="button" class="mini" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('addr').innerText)">{{t "Copy address"}}</button>
            {{if .Email}}<span class="flags">{{t "mail: %s" .Email}}</span>{{end}}</p>
-        {{else}}<p class="why">{{t "No address on QRZ - open the"}} <a href="/station/{{$c.Call}}">{{t "station page"}}</a> {{t "and refresh."}}</p>{{end}}
-        {{else}}<p class="why">{{t "No address on file yet - open the"}} <a href="/station/{{$c.Call}}">{{t "station page"}}</a> {{t "and refresh from QRZ."}}</p>{{end}}
+        {{else}}<p class="why">{{t "No address on QRZ - Refresh in the QRZ section below looks it up again."}}</p>{{end}}
+        {{else}}<p class="why">{{t "No address on file yet - see the QRZ section below."}}</p>{{end}}
       </div>
       <div class="for-M">
         <h4>{{t "Send via manager"}}</h4>

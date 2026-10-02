@@ -24,7 +24,7 @@
     <tbody>
     {{range .Rows}}<tr id="row-{{.Row.Item.QSLKey}}">
       <td class="c-date">{{fmtDate .Row.QSO.QSODate}}</td>
-      <td><a class="call" href="/station/{{.Row.QSO.Call}}">{{.Row.QSO.Call}}</a></td>
+      <td><span class="call">{{.Row.QSO.Call}}</span></td>
       <td class="c-bm">{{.Row.QSO.Band}}</td>
       <td class="c-bm">{{.Row.QSO.Mode}}</td>
       <td>{{tm .Outcome}}</td>

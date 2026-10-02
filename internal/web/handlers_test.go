@@ -7,12 +7,15 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/printer"
+	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/station"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -144,9 +147,6 @@ func TestQueuePagesRender(t *testing.T) {
 	}
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)+"&compact=1"); r.Code != 200 || strings.Contains(r.Body.String(), "/queue/written") {
 		t.Fatalf("/queue/row compact = %d: %s", r.Code, r.Body)
-	}
-	if r := get(t, h, "/station/DL1ABC"); r.Code != 200 || !strings.Contains(r.Body.String(), "DL1ABC") {
-		t.Fatalf("/station/DL1ABC = %d", r.Code)
 	}
 	for _, p := range []string{"/work", "/work/card", "/done", "/decide", "/nav"} {
 		if r := get(t, h, p); r.Code != 200 {
@@ -626,25 +626,83 @@ func TestNavShowsCounts(t *testing.T) {
 	}
 }
 
-// TestPortableCallStationPage: callsigns containing "/" must reach the
-// station page and its decision panel.
-func TestPortableCallStationPage(t *testing.T) {
+// fakeQRZ serves the QRZ XML API for any callsign (address included); with
+// down set, lookups fail.
+func fakeQRZ(t *testing.T, down *atomic.Bool) *qrz.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.RawQuery
+		switch {
+		case strings.Contains(q, "username="):
+			_, _ = w.Write([]byte(`<QRZDatabase><Session><Key>k</Key></Session></QRZDatabase>`))
+		case down.Load():
+			http.Error(w, "boom", http.StatusInternalServerError)
+		case strings.Contains(q, "callsign="):
+			call, _ := url.QueryUnescape(q[strings.Index(q, "callsign=")+len("callsign="):])
+			_, _ = w.Write([]byte(`<QRZDatabase><Session><Key>k</Key></Session><Callsign><call>` + call +
+				`</call><addr1>1 Main St</addr1><country>Spain</country></Callsign></QRZDatabase>`))
+		default: // bio
+			_, _ = w.Write([]byte(`<html><body>QSL via bureau.</body></html>`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl := qrz.New("u", "p", "qslotter/test")
+	cl.BaseURL = srv.URL + "/"
+	cl.HTTP = srv.Client()
+	return cl
+}
+
+// TestStationRefresh: the research panel's Refresh forces a QRZ re-lookup
+// (portable calls too: the call travels in the query) and answers 204 - the
+// station_updated event reloads the open panels. Without QRZ there is no
+// button and the endpoint says why; a failed lookup keeps the cache.
+func TestStationRefresh(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	h := srv.Routes()
-	q := &store.QSO{QSLKey: "EA8/DL1ABC|20240102|130000|20m", Call: "EA8/DL1ABC",
-		QSODate: "20240102", TimeOn: "130000", Band: "20m", Mode: "SSB", Hash: "h2"}
-	if _, _, err := st.UpsertQSO(q); err != nil {
+	if r := postForm(t, h, "/station/refresh?call=DL1ABC", nil); r.Code != http.StatusServiceUnavailable {
+		t.Fatalf("refresh without QRZ = %d, want 503", r.Code)
+	}
+	if b := get(t, h, "/decide").Body.String(); strings.Contains(b, "/station/refresh") {
+		t.Fatal("Refresh offered while QRZ lookups are off")
+	}
+
+	// A fresh cache entry: rendering the card starts no background lookup.
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", FetchedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
-		t.Fatal(err)
+	var down atomic.Bool
+	srv.refresher = station.New(st, fakeQRZ(t, &down), srv.broker, time.Hour)
+	if b := get(t, h, "/decide").Body.String(); !strings.Contains(b, `hx-post="/station/refresh?call=DL1ABC"`) {
+		t.Fatalf("research panel without Refresh:\n%s", b)
 	}
-	r := get(t, h, "/station/EA8/DL1ABC")
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "EA8/DL1ABC") {
-		t.Fatalf("/station/EA8/DL1ABC = %d", r.Code)
+	if r := postForm(t, h, "/station/refresh", nil); r.Code != http.StatusBadRequest {
+		t.Fatalf("refresh without call = %d, want 400", r.Code)
 	}
-	if !strings.Contains(r.Body.String(), "row-"+q.QSLKey) {
-		t.Fatalf("station page missing decision panel row for %s", q.QSLKey)
+
+	evs, cancel := srv.broker.Subscribe()
+	defer cancel()
+	if r := postForm(t, h, "/station/refresh?call="+url.QueryEscape("ea8/dl1abc"), nil); r.Code != http.StatusNoContent {
+		t.Fatalf("refresh = %d: %s", r.Code, r.Body)
+	}
+	si, err := st.GetStation("EA8/DL1ABC")
+	if err != nil || si == nil || si.Addr1 != "1 Main St" {
+		t.Fatalf("station after refresh = %+v, %v", si, err)
+	}
+	select {
+	case ev := <-evs:
+		if ev.Type != "station_updated" || ev.Data != "EA8/DL1ABC" {
+			t.Fatalf("event = %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no station_updated event")
+	}
+
+	down.Store(true)
+	if r := postForm(t, h, "/station/refresh?call="+url.QueryEscape("EA8/DL1ABC"), nil); r.Code != http.StatusBadGateway {
+		t.Fatalf("refresh with QRZ down = %d, want 502", r.Code)
+	}
+	if si, _ := st.GetStation("EA8/DL1ABC"); si == nil || si.Addr1 != "1 Main St" {
+		t.Fatalf("cache lost after a failed lookup: %+v", si)
 	}
 }
 

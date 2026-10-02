@@ -239,7 +239,6 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/receive/book", s.htmxReceiveBook)        // key=... per QSO the card confirms
 	r.Post("/receive/reply", s.htmxReceiveReply)      // key=..., how=written|print|later
 	r.Get("/receive/research", s.htmxReceiveResearch) // key=... of a reply card (live QRZ refresh)
-	r.Get("/station/*", s.pageStation)                // wildcard: portable calls contain "/" (EA8/DL1ABC)
 	r.Get("/settings", s.pageSettings)
 	r.Post("/settings/save", s.saveSettings)
 	// Card actions take ?key=... (form/query value): keys contain "|" and

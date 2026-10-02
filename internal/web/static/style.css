@@ -212,7 +212,6 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
   font: 700 44px/1.1 'IBM Plex Mono', monospace; letter-spacing: 0.02em;
   margin: 2px 0 10px;
 }
-.entry .call a, .qslcard .call a { color: var(--ink); }
 
 .loggrid {
   display: grid; grid-template-columns: repeat(5, 1fr);
@@ -253,10 +252,7 @@ kbd {
   button:active { transform: none; }
 }
 
-/* --- station / settings / misc --- */
-
-.station-info p { margin: 4px 0; }
-.station-info { border-left: 3px solid var(--rule); padding-left: 14px; }
+/* --- settings / misc --- */
 
 .settings-form { max-width: 480px; }
 .settings-form h3 { margin-top: 20px; }
