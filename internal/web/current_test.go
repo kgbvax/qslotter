@@ -32,7 +32,7 @@ func TestCurrentContactBox(t *testing.T) {
 			t.Fatalf("/queue misses %q:\n%s", want, page)
 		}
 	}
-	if c := get(t, h, "/queue?compact=1").Body.String(); !strings.Contains(c, `class="current compact"`) || strings.Contains(c, "What QRZ says") {
+	if c := get(t, h, "/queue?compact=1").Body.String(); !strings.Contains(c, `class="current compact"`) || strings.Contains(c, "QRZ:") {
 		t.Fatalf("compact box: slim, no research panel:\n%s", c)
 	}
 	// Stale page: the call moved on.

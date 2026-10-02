@@ -97,7 +97,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 
 	// Station info cache
-	si := &StationInfo{Callsign: "DL1ABC", QSLMgr: "DL2DEF", QSLMethod: "M", QSLRoute: "DL2DEF"}
+	si := &StationInfo{Callsign: "DL1ABC", QSLMgr: "DL2DEF", Name: "Hans Meier"}
 	if err := st.PutStation(si); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got == nil || got.QSLMethod != "M" {
+	if got == nil || got.QSLMgr != "DL2DEF" || got.Name != "Hans Meier" {
 		t.Fatalf("GetStation = %+v", got)
 	}
 }
@@ -305,12 +305,12 @@ func TestMigrateFromV1Schema(t *testing.T) {
 	if err := st.SetQSLSentLocal(q.QSLKey, "B"); err != nil {
 		t.Fatal(err)
 	}
-	si := &StationInfo{Callsign: "DL1ABC", QSLConfidence: "high", QSLReason: "qslmgr field"}
+	si := &StationInfo{Callsign: "DL1ABC", QSLMgr: "direct"}
 	if err := st.PutStation(si); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.GetStation("DL1ABC")
-	if got == nil || got.QSLConfidence != "high" || got.QSLReason != "qslmgr field" {
+	if got == nil || got.QSLMgr != "direct" {
 		t.Fatalf("GetStation after migration = %+v", got)
 	}
 }

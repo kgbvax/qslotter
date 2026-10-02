@@ -35,26 +35,26 @@ import (
 const version = "0.1.0"
 
 var (
-	adifFlag     = flag.String("adif", "", "input ADIF file (mutually exclusive with -call/-calls-file)")
-	callFlag     = flag.String("call", "", "single callsign to evaluate")
-	callsFlag    = flag.String("calls", "", "comma-separated callsign whitelist")
-	callsFileFlag = flag.String("calls-file", "", "path to file with one callsign per line")
-	configFlag   = flag.String("config", "config.yaml", "path to qslotter config.yaml")
-	outFlag      = flag.String("out", "qsl-eval.jsonl", "output JSONL file")
-	ollamaURLFlag = flag.String("ollama-url", "http://localhost:11434", "Ollama base URL")
-	modelFlag    = flag.String("model", "ministral-3b", "Ollama model name")
-	promptFlag   = flag.String("prompt", "", "path to custom prompt template file")
-	qrzWorkersFlag = flag.Int("qrz-workers", 1, "concurrent QRZ lookups (must be 1 because qrz.Client is not goroutine-safe)")
-	llmWorkersFlag = flag.Int("llm-workers", 1, "concurrent LLM evaluations")
-	qrzSleepFlag = flag.Duration("qrz-sleep", 1*time.Second, "delay between QRZ requests")
-	qrzTimeoutFlag = flag.Duration("qrz-timeout", 30*time.Second, "per-QRZ-lookup timeout")
-	timeoutFlag  = flag.Duration("timeout", 2*time.Minute, "per-LLM-request timeout")
+	adifFlag        = flag.String("adif", "", "input ADIF file (mutually exclusive with -call/-calls-file)")
+	callFlag        = flag.String("call", "", "single callsign to evaluate")
+	callsFlag       = flag.String("calls", "", "comma-separated callsign whitelist")
+	callsFileFlag   = flag.String("calls-file", "", "path to file with one callsign per line")
+	configFlag      = flag.String("config", "config.yaml", "path to qslotter config.yaml")
+	outFlag         = flag.String("out", "qsl-eval.jsonl", "output JSONL file")
+	ollamaURLFlag   = flag.String("ollama-url", "http://localhost:11434", "Ollama base URL")
+	modelFlag       = flag.String("model", "ministral-3b", "Ollama model name")
+	promptFlag      = flag.String("prompt", "", "path to custom prompt template file")
+	qrzWorkersFlag  = flag.Int("qrz-workers", 1, "concurrent QRZ lookups (must be 1 because qrz.Client is not goroutine-safe)")
+	llmWorkersFlag  = flag.Int("llm-workers", 1, "concurrent LLM evaluations")
+	qrzSleepFlag    = flag.Duration("qrz-sleep", 1*time.Second, "delay between QRZ requests")
+	qrzTimeoutFlag  = flag.Duration("qrz-timeout", 30*time.Second, "per-QRZ-lookup timeout")
+	timeoutFlag     = flag.Duration("timeout", 2*time.Minute, "per-LLM-request timeout")
 	temperatureFlag = flag.Float64("temperature", 0, "LLM sampling temperature")
 	skipCompareFlag = flag.Bool("skip-compare", false, "omit heuristic baseline")
-	sampleFlag   = flag.Int("sample", 0, "limit to first N unique callsigns")
-	formatFlag   = flag.String("format", "jsonl", "output format: jsonl, pretty, or text")
-	dryRunFlag   = flag.Bool("dry-run", false, "fetch QRZ but skip Ollama calls")
-	redactFlag   = flag.Bool("redact", false, "remove PII fields from output")
+	sampleFlag      = flag.Int("sample", 0, "limit to first N unique callsigns")
+	formatFlag      = flag.String("format", "jsonl", "output format: jsonl, pretty, or text")
+	dryRunFlag      = flag.Bool("dry-run", false, "fetch QRZ but skip Ollama calls")
+	redactFlag      = flag.Bool("redact", false, "remove PII fields from output")
 )
 
 func main() {
@@ -143,13 +143,13 @@ func run() error {
 		promptHash = hashFilePath(*promptFlag)
 	}
 	meta := runMeta{
-		Version:   version,
-		Model:     *modelFlag,
-		OllamaURL: *ollamaURLFlag,
+		Version:    version,
+		Model:      *modelFlag,
+		OllamaURL:  *ollamaURLFlag,
 		PromptHash: promptHash,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		DryRun:    *dryRunFlag,
-		Redacted:  *redactFlag,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		DryRun:     *dryRunFlag,
+		Redacted:   *redactFlag,
 	}
 
 	writer := bufio.NewWriter(out)
@@ -180,7 +180,7 @@ func run() error {
 				e.bio = si.BioText
 			}
 			if !*skipCompareFlag {
-				e.heuristic = qsldetermine.Determine(e.cs, e.bio)
+				e.heuristic = qsldetermine.Assess(qsldetermine.Input{Call: e.call, QSLMgr: e.cs.QSLMgr, MQSL: e.cs.MQSL, EQSL: e.cs.EQSL, LoTW: e.cs.LoTW, Bio: e.bio})
 			}
 			enrichedCh <- e
 			if i < len(calls)-1 {
@@ -372,19 +372,19 @@ type recordError struct {
 }
 
 type outputRecord struct {
-	Meta      runMeta              `json:"meta"`
-	Callsign  string               `json:"callsign"`
-	QRZData   *qrz.Callsign        `json:"qrz_data,omitempty"`
-	BioText   string               `json:"bio_text,omitempty"`
-	Heuristic *heuristicRecord     `json:"heuristic,omitempty"`
-	Prompt    string               `json:"prompt"`
-	LLM       *llmqsl.EvalResult   `json:"llm,omitempty"`
-	Error     *recordError         `json:"error,omitempty"`
+	Meta      runMeta            `json:"meta"`
+	Callsign  string             `json:"callsign"`
+	QRZData   *qrz.Callsign      `json:"qrz_data,omitempty"`
+	BioText   string             `json:"bio_text,omitempty"`
+	Heuristic *heuristicRecord   `json:"heuristic,omitempty"`
+	Prompt    string             `json:"prompt"`
+	LLM       *llmqsl.EvalResult `json:"llm,omitempty"`
+	Error     *recordError       `json:"error,omitempty"`
 }
 
 type heuristicRecord struct {
-	Raw    qsldetermine.Result `json:"raw"`
-	Mapped llmqsl.Method       `json:"mapped"`
+	Raw    qsldetermine.Assessment `json:"raw"`
+	Mapped llmqsl.Method           `json:"mapped"`
 }
 
 func buildRecord(e enriched, evaluator *llmqsl.Evaluator, meta runMeta) outputRecord {
@@ -411,10 +411,10 @@ func buildRecord(e enriched, evaluator *llmqsl.Evaluator, meta runMeta) outputRe
 	}
 
 	input := llmqsl.EvalInput{
-		Callsign:        e.call,
-		QRZ:             e.cs,
-		Bio:             e.bio,
-		HeuristicResult: e.heuristic,
+		Callsign:  e.call,
+		QRZ:       e.cs,
+		Bio:       e.bio,
+		Heuristic: e.heuristic,
 	}
 	prompt, err := evaluator.Prompt.Render(input)
 	if err != nil {
@@ -472,7 +472,7 @@ func formatText(r outputRecord) string {
 		fmt.Fprintf(&sb, "Bio:\n%s\n", strings.TrimSpace(r.BioText))
 	}
 	if r.Heuristic != nil {
-		fmt.Fprintf(&sb, "Heuristic: %s (mapped: %s)\n", r.Heuristic.Raw.Method, r.Heuristic.Mapped)
+		fmt.Fprintf(&sb, "Heuristic: %s (mapped: %s)\n", r.Heuristic.Raw.Suggest, r.Heuristic.Mapped)
 	}
 	fmt.Fprintf(&sb, "Prompt:\n%s\n", r.Prompt)
 	if r.LLM != nil {
@@ -507,6 +507,6 @@ type enriched struct {
 	info      *store.StationInfo
 	cs        *qrz.Callsign
 	bio       string
-	heuristic qsldetermine.Result
+	heuristic qsldetermine.Assessment
 	qrzErr    string
 }

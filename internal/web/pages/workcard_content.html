@@ -1,5 +1,5 @@
 {{define "mgr_block"}}{{if eq .State "none"}}<p class="why">{{t "Type the manager's callsign above."}}</p>
-{{else}}<p><b>{{.Call}}</b> <a href="https://www.qrz.com/db/{{.Call}}" target="_blank" rel="noopener">QRZ</a>{{if eq .State "pending"}} <span class="muted">{{t "looking up the address..."}}</span>{{else if eq .State "notfound"}} <span class="muted">{{t "not on QRZ - no address"}}</span>{{else if eq .State "off"}} <span class="muted">{{t "QRZ lookups are off (Settings) - no address"}}</span>{{else if eq .State "failed"}} <span class="muted">{{t "QRZ lookup failed - try again in a few minutes"}}</span>{{end}}</p>
+{{else}}<p><b>{{.Call}}</b> <a href="https://www.qrz.com/db/{{.Call}}" target="_qrz" rel="noopener">QRZ</a>{{if eq .State "pending"}} <span class="muted">{{t "looking up the address..."}}</span>{{else if eq .State "notfound"}} <span class="muted">{{t "not on QRZ - no address"}}</span>{{else if eq .State "off"}} <span class="muted">{{t "QRZ lookups are off (Settings) - no address"}}</span>{{else if eq .State "failed"}} <span class="muted">{{t "QRZ lookup failed - try again in a few minutes"}}</span>{{end}}</p>
 {{if eq .State "ok"}}{{with .Info}}<address id="mgr-address">{{if .Name}}{{.Name}}<br>{{end}}{{if .Attn}}{{.Attn}}<br>{{end}}{{if .Addr1}}{{.Addr1}}<br>{{end}}{{if .Addr2}}{{.Addr2}}<br>{{end}}{{if or .Zip .State}}{{.State}} {{.Zip}}<br>{{end}}{{.Country}}</address>
 <p><button type="button" class="mini" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('mgr-address').innerText)">{{t "Copy address"}}</button>{{if .Email}} <span class="flags">{{t "mail: %s" .Email}}</span>{{end}}</p>{{end}}{{end}}{{end}}{{end}}
 
@@ -51,8 +51,8 @@
         <address id="addr">{{if .Name}}{{.Name}}<br>{{else if $c.Name}}{{$c.Name}}<br>{{end}}{{if .Attn}}{{.Attn}}<br>{{end}}{{if .Addr1}}{{.Addr1}}<br>{{end}}{{if .Addr2}}{{.Addr2}}<br>{{end}}{{if or .Zip .State}}{{.State}} {{.Zip}}<br>{{end}}{{.Country}}</address>
         <p><button type="button" class="mini" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('addr').innerText)">{{t "Copy address"}}</button>
            {{if .Email}}<span class="flags">{{t "mail: %s" .Email}}</span>{{end}}</p>
-        {{else}}<p class="why">{{t "No address on QRZ - Refresh under \"What QRZ says\" below looks it up again."}}</p>{{end}}
-        {{else}}<p class="why">{{t "No address on file yet - see \"What QRZ says\" below."}}</p>{{end}}
+        {{else}}<p class="why">{{t "No address on QRZ - Refresh in the QRZ section below looks it up again."}}</p>{{end}}
+        {{else}}<p class="why">{{t "No address on file yet - see the QRZ section below."}}</p>{{end}}
       </div>
       <div class="for-M">
         <h4>{{t "Send via manager"}}</h4>

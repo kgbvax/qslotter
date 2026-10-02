@@ -366,7 +366,7 @@ func TestWorkQueue(t *testing.T) {
 	km := addQueued(t, st, "DL3YYY", "20240104")
 	kb := addQueued(t, st, "DL4WWW", "20240105")
 	for call, info := range map[string]*store.StationInfo{
-		"DL2ZZZ": {QSLMethod: "D"}, "DL3YYY": {QSLMethod: "M", QSLRoute: "K2ABC"}, "DL4WWW": {QSLMethod: "B"},
+		"DL2ZZZ": {QSLMgr: "direct"}, "DL3YYY": {QSLMgr: "K2ABC"}, "DL4WWW": {QSLMgr: "bureau"},
 	} {
 		info.Callsign = call
 		if err := st.PutStation(info); err != nil {
@@ -390,7 +390,7 @@ func TestWorkQueue(t *testing.T) {
 
 	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "suggested: by QRZ", "/work/print?view=work", `data-key="p"`, "What QRZ says"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "suggested: by QRZ", "/work/print?view=work", `data-key="p"`, "QRZ:"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -865,8 +865,7 @@ func TestDecideCardShowsResearch(t *testing.T) {
 	other := addQueued(t, st, "DL1ABC", "20240102")
 	_ = other
 	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "VIA BUREAU, DIRECT. LotW.",
-		MQSL: "1", EQSL: "0", LoTW: "1", QSLMethod: "B", QSLConfidence: "medium",
-		QSLReason: "qslmgr text: bureau and direct both accepted", Name: "Hans Meier",
+		MQSL: "1", EQSL: "0", LoTW: "1", Name: "Hans Meier",
 		Addr1: "Hauptstr. 1", Addr2: "Berlin", Country: "Germany", Zip: "10115",
 		BioText:   "Hello and welcome!\nI love CW.\nQSL via bureau is fine, direct needs SAE + 2 IRC.\nLoTW uploaded daily.",
 		FetchedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
@@ -881,7 +880,6 @@ func TestDecideCardShowsResearch(t *testing.T) {
 		"LoTW confirmed",
 		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table
-		"a hint, not a decision",    // suggestion is tentative
 		"VIA BUREAU, DIRECT. LotW.", // raw qslmgr text shown verbatim
 		"paper (mQSL): yes",         // QRZ 1/0 flags read
 		"eQSL: no",

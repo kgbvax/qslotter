@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/qsldetermine"
 )
 
 //go:embed default_prompt.txt
@@ -62,10 +63,23 @@ func makeTmplData(input EvalInput) promptData {
 		QRZ:             input.QRZ,
 		Bio:             input.Bio,
 		HasQRZ:          input.QRZ != nil,
-		HeuristicMethod: input.HeuristicResult.Method,
-		HeuristicReason: input.HeuristicResult.Reason,
-		HeuristicMapped: MapHeuristic(input.HeuristicResult),
+		HeuristicMethod: coalesce(input.Heuristic.Suggest, "(nothing stated)"),
+		HeuristicReason: heuristicReason(input.Heuristic),
+		HeuristicMapped: MapHeuristic(input.Heuristic),
 	}
+}
+
+// heuristicReason quotes the words the assessment rests on, or says why it
+// suggests nothing.
+func heuristicReason(a qsldetermine.Assessment) string {
+	var q []string
+	for _, s := range a.Decisive() {
+		q = append(q, s.Source+": "+s.Quote)
+	}
+	if len(q) > 0 {
+		return strings.Join(q, "; ")
+	}
+	return string(a.Note)
 }
 
 // coalesce returns the first non-empty string argument.

@@ -36,12 +36,14 @@ function qslTr(text) {
   });
 })();
 
-// In the desktop app window (glaze sets window.__webview__) a target=_blank
-// link has nowhere to go: hand it to the system browser via the server.
+// In the desktop app window (glaze sets window.__webview__) a link with its own
+// window name (target=_blank, target=_qrz) has nowhere to go: hand it to the
+// system browser via the server.
 (function () {
   document.addEventListener('click', function (ev) {
     if (!window.__webview__) return;
-    var a = ev.target.closest && ev.target.closest('a[target="_blank"]');
+    var a = ev.target.closest && ev.target.closest('a[target]');
+    if (a && /^_(self|top|parent)$/.test(a.target)) return;
     if (!a || !a.href) return;
     ev.preventDefault();
     var body = new URLSearchParams({ url: a.href });

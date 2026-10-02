@@ -1215,58 +1215,49 @@ func (s *SQLiteStore) AppendEvent(e *Event) error {
 // --- station info cache ---
 
 type StationInfo struct {
-	Callsign      string
-	QSLMgr        string
-	EQSL          string
-	MQSL          string
-	LoTW          string
-	Email         string
-	Addr1         string
-	Addr2         string
-	State         string
-	Zip           string
-	Country       string
-	DXCC          string
-	BioText       string
-	QSLMethod     string
-	QSLRoute      string
-	RefusePaper   bool
-	QSLConfidence string // high/medium/low (from qsldetermine)
-	QSLReason     string
-	Name          string // QRZ first + last name
-	Attn          string // QRZ "attn" line
-	NotFound      bool   // QRZ has no record of this call (negative cache entry)
-	FetchedAt     string
+	Callsign  string
+	QSLMgr    string
+	EQSL      string
+	MQSL      string
+	LoTW      string
+	Email     string
+	Addr1     string
+	Addr2     string
+	State     string
+	Zip       string
+	Country   string
+	DXCC      string
+	BioText   string
+	Name      string // QRZ first + last name
+	Attn      string // QRZ "attn" line
+	NotFound  bool   // QRZ has no record of this call (negative cache entry)
+	FetchedAt string
 }
 
 func (s *SQLiteStore) GetStation(callsign string) (*StationInfo, error) {
 	callsign = strings.ToUpper(callsign)
 	si := &StationInfo{Callsign: callsign}
-	var refuse, notFound int
+	var notFound int
+	// The qsl_method / qsl_route / refuse_paper / qsl_confidence / qsl_reason
+	// columns are legacy: the suggestion is computed on read from the raw
+	// fields (internal/qsldetermine), never stored.
 	err := s.db.QueryRow(`SELECT callsign, qslmgr, eqsl, mqsl, lotw, email, addr1, addr2,
-		state, zip, country, dxcc, bio_text, qsl_method, qsl_route, refuse_paper,
-		qsl_confidence, qsl_reason, COALESCE(name,''), COALESCE(attn,''), COALESCE(not_found,0), fetched_at
+		state, zip, country, dxcc, bio_text, COALESCE(name,''), COALESCE(attn,''), COALESCE(not_found,0), fetched_at
 		FROM station_info WHERE callsign=?`, callsign).Scan(
 		&si.Callsign, &si.QSLMgr, &si.EQSL, &si.MQSL, &si.LoTW, &si.Email, &si.Addr1, &si.Addr2,
-		&si.State, &si.Zip, &si.Country, &si.DXCC, &si.BioText, &si.QSLMethod, &si.QSLRoute, &refuse,
-		&si.QSLConfidence, &si.QSLReason, &si.Name, &si.Attn, &notFound, &si.FetchedAt)
+		&si.State, &si.Zip, &si.Country, &si.DXCC, &si.BioText, &si.Name, &si.Attn, &notFound, &si.FetchedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	si.RefusePaper = refuse != 0
 	si.NotFound = notFound != 0
 	return si, nil
 }
 
 func (s *SQLiteStore) PutStation(si *StationInfo) error {
 	si.Callsign = strings.ToUpper(si.Callsign)
-	r := 0
-	if si.RefusePaper {
-		r = 1
-	}
 	if si.FetchedAt == "" {
 		si.FetchedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -1274,20 +1265,21 @@ func (s *SQLiteStore) PutStation(si *StationInfo) error {
 	if si.NotFound {
 		nf = 1
 	}
+	// The five legacy suggestion columns are still written (empty): they are
+	// nullable without defaults, and an older binary scanning NULLs into
+	// strings would fail the whole row after a rollback.
 	_, err := s.db.Exec(`INSERT INTO station_info (callsign, qslmgr, eqsl, mqsl, lotw, email,
 		addr1, addr2, state, zip, country, dxcc, bio_text, qsl_method, qsl_route, refuse_paper,
 		qsl_confidence, qsl_reason, name, attn, not_found, fetched_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, '', '', 0, '', '', ?,?,?,?)
 		ON CONFLICT(callsign) DO UPDATE SET
 			qslmgr=excluded.qslmgr, eqsl=excluded.eqsl, mqsl=excluded.mqsl, lotw=excluded.lotw,
 			email=excluded.email, addr1=excluded.addr1, addr2=excluded.addr2, state=excluded.state,
 			zip=excluded.zip, country=excluded.country, dxcc=excluded.dxcc, bio_text=excluded.bio_text,
-			qsl_method=excluded.qsl_method, qsl_route=excluded.qsl_route,
-			refuse_paper=excluded.refuse_paper, qsl_confidence=excluded.qsl_confidence,
-			qsl_reason=excluded.qsl_reason, name=excluded.name, attn=excluded.attn,
+			qsl_method='', qsl_route='', refuse_paper=0, qsl_confidence='', qsl_reason='',
+			name=excluded.name, attn=excluded.attn,
 			not_found=excluded.not_found, fetched_at=excluded.fetched_at`,
 		si.Callsign, si.QSLMgr, si.EQSL, si.MQSL, si.LoTW, si.Email, si.Addr1, si.Addr2,
-		si.State, si.Zip, si.Country, si.DXCC, si.BioText, si.QSLMethod, si.QSLRoute, r,
-		si.QSLConfidence, si.QSLReason, si.Name, si.Attn, nf, si.FetchedAt)
+		si.State, si.Zip, si.Country, si.DXCC, si.BioText, si.Name, si.Attn, nf, si.FetchedAt)
 	return err
 }

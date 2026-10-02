@@ -129,13 +129,8 @@ func preselectRoute(c *DeskCard) (code, from, manager string) {
 			return code, "your earlier choice", manager
 		}
 	}
-	switch c.Lead.Suggested {
-	case "B", "D":
-		return c.Lead.Suggested, "by QRZ", manager
-	case "M":
-		if manager != "" {
-			return "MD", "by QRZ", manager
-		}
+	if code, m := routeFromAssessment(c.Lead); code != "" {
+		return code, "by QRZ", m
 	}
 	return "", "", manager
 }

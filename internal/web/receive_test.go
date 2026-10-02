@@ -254,7 +254,7 @@ func TestReceiveReplyRecoverableAndPrintFailure(t *testing.T) {
 	if b := postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {key}}).Body.String(); !strings.Contains(b, `id="reply-0"`) {
 		t.Fatalf("ticking it again opens the reply:\n%s", b)
 	}
-	if r := get(t, h, "/receive/research?key="+url.QueryEscape(key)); r.Code != 200 || !strings.Contains(r.Body.String(), "What QRZ says") {
+	if r := get(t, h, "/receive/research?key="+url.QueryEscape(key)); r.Code != 200 || !strings.Contains(r.Body.String(), "QRZ:") {
 		t.Fatalf("/receive/research = %d", r.Code)
 	}
 	srv.printer = &fakePrinter{err: errPrinterGone}

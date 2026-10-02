@@ -1,0 +1,21 @@
+{
+  "Bureau only": "Nur Büro",
+  "Direct only": "Nur direkt",
+  "No bureau": "Kein Büro",
+  "No direct": "Nicht direkt",
+  "Manager %s": "Manager %s",
+  "Electronic only": "Nur elektronisch",
+  "No paper QSL": "Keine Papier-QSL",
+  "Paper QSL": "Papier-QSL",
+  "OQRS": "OQRS",
+  "bio": "Bio",
+  "qslmgr field": "qslmgr-Feld",
+  "%s: \"%s\"": "%s: „%s“",
+  "%s: \"%s\" - limited to a case, not used": "%s: „%s“ - gilt nur für einen Fall, nicht verwendet",
+  "bureau and direct both listed - bureau is cheaper": "Büro und direkt genannt - das Büro ist billiger",
+  "Only electronic confirmations listed - no paper route stated.": "Nur elektronische Bestätigungen genannt - kein Weg für die Papierkarte angegeben.",
+  "Paper QSL accepted, no route stated.": "Papier-QSL willkommen, kein Versandweg angegeben.",
+  "qslmgr and bio contradict each other - nothing suggested.": "qslmgr und Bio widersprechen sich - kein Vorschlag.",
+  "A refusal limited to a case (see the chip) - nothing suggested.": "Eine Absage nur für einen Fall (siehe Chip) - kein Vorschlag.",
+  "No QSL route found in QRZ's qslmgr or bio.": "Kein QSL-Weg in qslmgr oder Bio bei QRZ gefunden."
+}

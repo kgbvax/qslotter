@@ -9,7 +9,6 @@ package llmqsl
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/qrz"
@@ -20,7 +19,8 @@ import (
 type Method string
 
 const (
-	MethodNone          Method = "none"
+	MethodNone          Method = "none"    // a stated refusal of paper
+	MethodUnknown       Method = "unknown" // nothing stated: no route, no refusal
 	MethodDirect        Method = "direct"
 	MethodBuero         Method = "buero"
 	MethodManagerBuero  Method = "manager-buero"
@@ -29,6 +29,7 @@ const (
 
 var allMethods = []Method{
 	MethodNone,
+	MethodUnknown,
 	MethodDirect,
 	MethodBuero,
 	MethodManagerBuero,
@@ -38,7 +39,7 @@ var allMethods = []Method{
 // IsValid reports whether m is one of the allowed method values.
 func IsValidMethod(m Method) bool {
 	switch m {
-	case MethodNone, MethodDirect, MethodBuero, MethodManagerBuero, MethodManagerDirect:
+	case MethodNone, MethodUnknown, MethodDirect, MethodBuero, MethodManagerBuero, MethodManagerDirect:
 		return true
 	}
 	return false
@@ -46,10 +47,10 @@ func IsValidMethod(m Method) bool {
 
 // EvalInput is everything the prompt template needs to render a query.
 type EvalInput struct {
-	Callsign        string
-	QRZ             *qrz.Callsign
-	Bio             string
-	HeuristicResult qsldetermine.Result
+	Callsign  string
+	QRZ       *qrz.Callsign
+	Bio       string
+	Heuristic qsldetermine.Assessment
 }
 
 // EvalResult is the parsed LLM determination.
@@ -71,11 +72,6 @@ type LLMClient interface {
 // PromptRenderer renders an EvalInput into the prompt string sent to the LLM.
 type PromptRenderer interface {
 	Render(input EvalInput) (string, error)
-}
-
-// Determiner computes the heuristic baseline for a station.
-type Determiner interface {
-	Determine(callsign string, qrz *qrz.Callsign, bio string) qsldetermine.Result
 }
 
 // Evaluator ties together prompt rendering, LLM querying, and response parsing.
@@ -103,29 +99,25 @@ func (e *Evaluator) Evaluate(ctx context.Context, input EvalInput) (EvalResult, 
 	return res, nil
 }
 
-// MapHeuristic maps the existing qsldetermine.Result to the LLM-facing Method
-// vocabulary. The raw heuristic result is preserved in the output for comparison.
-func MapHeuristic(r qsldetermine.Result) Method {
-	switch r.Method {
+// MapHeuristic maps the qsldetermine assessment to the LLM-facing Method
+// vocabulary. "Nothing stated" stays distinct from "no paper": only an explicit
+// refusal is none.
+func MapHeuristic(a qsldetermine.Assessment) Method {
+	switch a.Suggest {
 	case "B":
 		return MethodBuero
 	case "D":
 		return MethodDirect
-	case "E":
+	case "N":
 		return MethodNone
 	case "M":
-		if r.Manager == "" {
-			return MethodNone
+		if a.Manager == "" {
+			return MethodUnknown
 		}
-		lc := strings.ToLower(r.Reason)
-		if strings.Contains(lc, "bureau") || strings.Contains(lc, "buro") {
+		if a.ManagerVia == "B" {
 			return MethodManagerBuero
 		}
 		return MethodManagerDirect
 	}
-	// Method is empty.
-	if r.RefusePaper {
-		return MethodNone
-	}
-	return MethodNone
+	return MethodUnknown
 }

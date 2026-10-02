@@ -44,9 +44,10 @@ where it stands today.
   marker (`qualify.override_marker`) force-includes a QSO.
 - **Smart method determination from QRZ and other sources — none, "no paper
   please", direct, bureau, manager — accurate enough for semi-automatic
-  processing.** Suggestion done: `qsldetermine` suggests with confidence and
-  reason. Since 2026-10-01 it informs yes/no in the Inbox and preselects the
-  route at the Desk (B4, partial). "Other
+  processing.** Suggestion done: `qsldetermine` reads what QRZ *states*
+  (signals with their quoted words) and suggests only from that (2026-10-02).
+  It informs yes/no in the Inbox and preselects the route at the Desk when QRZ
+  states one (B4, partial). "Other
   sources" beyond QRZ (LLM bio interpretation) sits behind the `qsl-eval`
   gate (roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
@@ -160,10 +161,15 @@ radio. Here the route is chosen.
 
 ## 3. Decision model: suggestion ≠ decision
 
-- The heuristic ladder in `internal/qsldetermine` (QRZ structured fields + bio
-  regexes) produces a *suggestion*: method, manager, refuse-paper, confidence,
-  reason.
-- The suggestion is displayed, never silently acted on.
+- `internal/qsldetermine` reads the QRZ qslmgr field and bio into *signals*
+  (bureau, direct, only/no..., manager, refuses/accepts paper, OQRS,
+  electronic), each with its source and the quoted words. A *suggestion* (B, D,
+  M, N) exists only when those signals state a route or a refusal. Flags
+  (mQSL/eQSL/LoTW) and mere mentions of eQSL/LoTW are facts shown as chips,
+  never a reason to suggest. No confidence rating: either QRZ states it or it
+  does not.
+- The suggestion is displayed, never silently acted on. Where QRZ states no
+  route the Desk preselects nothing.
 - Two decisions: the Inbox decision (yes / no card / written now) is recorded
   on the queue item and survives queue recompute; the route (bureau, direct,
   via manager direct, via manager bureau) - or "requested (OQRS)" - is
@@ -231,8 +237,8 @@ stays the only source of truth.
   (`/queue`, `/work`); the card-by-card pages `/decide`, `/work/card` stay.
 - The research panel (it superseded the old station page, removed
   2026-10-02): full QRZ picture — `qslmgr`, eqsl/mqsl/lotw flags, email,
-  address, bio text — the suggestion with confidence and reason, and a
-  Refresh that looks the station up on QRZ again.
+  address, bio text — the signals QRZ states, with the suggestion and its
+  quoted reason, and a Refresh that looks the station up on QRZ again.
 - Decision controls: yes / no / written now via bureau or direct (A6), plus
   context: previous QSOs with this station, cards sent/received.
 - This is where the hard *whether* cases get decided (refuses paper, already
@@ -294,7 +300,7 @@ covered by tests; the browser flow was walked end to end.
 | Work queue: decided cards, one at a time, Print or Written, next appears | **done** | `/work`, `/work/card`; `QueuePrinted` only after a successful print |
 | Done view + undo (Back, Reopen) | **done** | `/done`, `QueueBack`, `QueueReopen` (warns if Clublog already has it) |
 | Correct push-back (`QSL_SENT_VIA` / `QSL_VIA`) | **done**: `QSL_SENT_VIA` = B/D for every card, plus `QSL_VIA` = the manager for manager routes (2026-10-01) | `sync.PushBack`; the old `QSL_SENT_AS` is not an ADIF field |
-| Suggestions that mislead less | **done** | `qsldetermine`: callsign-only manager, free-text keywords, QRZ 1/0 flags, negations |
+| Suggestions that mislead less | **done** (redesigned 2026-10-02) | `qsldetermine.Assess`: stated evidence only, signals with quotes, computed on read, golden corpus of real QRZ records |
 | Compact decision window, tray launcher, background loop | **done** (compact rows still carry B/D/M/-/Written; yes/no only is open, A5) | unchanged from 2026-09-29 |
 
 Open after the operator walkthrough of 2026-10-01 (section 2, status
@@ -408,6 +414,17 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   opens the Inbox, no separate start page. Inbox and Desk get master-detail
   views (the list selects, the detail pane decides); the Inbox also keeps a
   compact list for operating.
+- **2026-10-02 — QSL suggestion: evidence, not verdict.** A QRZ entry with
+  qslmgr "LOTW, QRZ, EQSL, QSL Card" and mQSL=yes was suggested as "No card"
+  because eQSL/LoTW were merely mentioned. In real QRZ data the flags and
+  eQSL/LoTW are nearly always set and say nothing about how to send a card.
+  So: the suggestion rests only on stated evidence (a manager callsign, bureau
+  / direct words with negations, an explicit "no QSL" / "eQSL only"); a stated
+  route beats a refusal, qslmgr beats the bio, contradictions suggest nothing;
+  electronic-only lists and mQSL give a fact, not a suggestion; both bureau and
+  direct stated = bureau (cheaper). Computed on read from the stored raw
+  fields (the `qsl_*` columns are legacy and no longer filled). With no stated
+  route the Desk preselects nothing ("Not chosen yet").
 - **2026-10-02 — UI wording review (EN + DE).** The first area is called
   **New QSOs / Neue QSOs** in the UI: an inbox holds mail that arrived, and
   that is Incoming QSLs / Posteingang (Eingang vs Posteingang collided in
@@ -422,8 +439,8 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   master-detail views and showed less than the research panel next to every
   card (no bio, no card history, raw QRZ flags), plus a second set of Inbox
   buttons that missed cards already at the Desk. Its one unique function, the
-  forced QRZ re-lookup, is now the **Refresh** button in the panel's "What QRZ
-  says" header (shown while QRZ lookups are possible). Callsigns in lists and
+  forced QRZ re-lookup, is now the **Refresh** button in the panel's "QRZ:"
+  header (shown while QRZ lookups are possible). Callsigns in lists and
   cards are plain text. Lost on purpose: a QRZ/history view for a station with
   no open card (from Log and Done).
 - **2026-10-01 — The Inbox decides *whether*, the Desk decides *how*.** Inbox:

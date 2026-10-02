@@ -489,3 +489,15 @@ main { padding-top: 22px; }
 
 /* reply panel (Incoming) is short: its action row needs no sticky bar */
 .reply .decide-actions { position: static; border-top: 0; background: transparent; padding: 0; margin: 10px 0 6px; }
+
+/* The QRZ heading links to the station's QRZ.com page (always the same window: target="_qrz"). */
+.pref h4 a.qrzlink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.pref h4 a.qrzlink:hover { color: var(--blue); }
+
+/* Signal strip: what QRZ states about QSL cards, as separate facts. The ones the suggestion rests on are solid. */
+.pref p.sigs { margin: 4px 0 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+.chip.decisive { border-color: var(--ink); background: var(--ink); color: #fff; font-weight: 600; }
+.chip.scoped { border-style: dashed; color: var(--ink-soft); }
+.chip.sig-electronic, .chip.sig-oqrs { color: var(--ink-soft); }
+.chip.sig-refuses-paper { border-color: var(--red); color: var(--red); }
+.chip.sig-refuses-paper.decisive { background: var(--red); color: #fff; }
