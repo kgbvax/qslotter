@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/store"
@@ -41,8 +42,7 @@ func TestGermanComplete(t *testing.T) {
 	// history (sent, received, LoTW), a Desk card with two QSOs, a request,
 	// a sent card, a backlog card, an expected card.
 	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", Name: "Hans", Addr1: "Str. 1", Country: "Germany",
-		QSLMethod: "M", QSLRoute: "K2ABC", QSLMgr: "K2ABC OQRS", BioText: "QSL via OQRS or direct\nLoTW yes", MQSL: "1", LoTW: "1", EQSL: "0",
-		QSLConfidence: "high", QSLReason: "manager field"}); err != nil {
+		QSLMgr: "K2ABC OQRS", BioText: "QSL via OQRS or direct\nLoTW yes", MQSL: "1", LoTW: "1", EQSL: "0"}); err != nil {
 		t.Fatal(err)
 	}
 	old := addQSO(t, st, "DL1ABC", "20230101", "40m")
@@ -62,6 +62,21 @@ func TestGermanComplete(t *testing.T) {
 	}
 	postForm(t, h, "/work/requested", url.Values{"key": {req}, "channel": {"OQRS"}, "note": {"2 USD"}})
 	postForm(t, h, "/work/written", url.Values{"key": {sent}, "route": {"MB"}, "manager": {"K2ABC"}})
+	// One station per way the signal strip can look (chips, hint, every note).
+	for call, in := range map[string][2]string{
+		"DL6AAA": {"LoTW - eQSL", ""}, "DL6BBB": {"", "No paper QSL for FT8."}, "DL6CCC": {"direct", "No paper QSL."},
+		"DL6DDD": {"bureau only, no direct, QSL Card, SAE", ""}, "DL6EEE": {"BUREAU, DIRECT", ""},
+		"DL6FFF": {"direct only, no bureau", ""}, "DL6GGG": {"eQSL only", ""}, "DL6HHH": {"", ""},
+		"DL6III": {"K2ABC (bureau only)", ""},
+	} {
+		if err := st.PutStation(&store.StationInfo{Callsign: call, QSLMgr: in[0], BioText: in[1], MQSL: "1",
+			FetchedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+			t.Fatal(err)
+		}
+		k := addQueued(t, st, call, "20240108")
+		requestDE(t, h, http.MethodGet, "/decide?key="+url.QueryEscape(k), nil)
+		requestDE(t, h, http.MethodGet, "/station/"+call, nil)
+	}
 	backlog := addQueued(t, st, "DL5VVV", "20200101")
 	if _, err := st.QueueDiscardBacklog("20210101"); err != nil {
 		t.Fatal(err)

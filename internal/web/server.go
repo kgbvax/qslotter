@@ -21,6 +21,7 @@ import (
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/printer"
+	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/station"
 	"github.com/dl9et/qslotter/internal/store"
@@ -37,16 +38,18 @@ var pagesFS embed.FS
 var staticFS embed.FS
 
 type Server struct {
-	cfgMu     sync.RWMutex
-	cfg       *config.Config
-	cfgPath   string
-	store     store.Store
-	broker    *events.Broker
-	rules     *qualify.Rules
-	refresher *station.Refresher // shared with main (also used by the UDP listener)
-	printer   printer.Printer
-	tmpls     map[string]*template.Template // per UI language
-	i18n      *i18n.Bundle
+	cfgMu      sync.RWMutex
+	cfg        *config.Config
+	cfgPath    string
+	store      store.Store
+	broker     *events.Broker
+	rules      *qualify.Rules
+	refresher  *station.Refresher // shared with main (also used by the UDP listener)
+	printer    printer.Printer
+	tmpls      map[string]*template.Template // per UI language
+	assessMu   sync.Mutex
+	assessMemo map[string]*qsldetermine.Assessment // see assessFor
+	i18n       *i18n.Bundle
 
 	// OpenExternal opens a URL in the system browser; set by main in the
 	// desktop app (nil: the endpoint answers 501).

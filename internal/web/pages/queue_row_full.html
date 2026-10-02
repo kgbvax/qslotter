@@ -14,7 +14,7 @@
   </span>
 </td>{{end}}
 
-{{define "row_suggestion"}}{{if .Suggested}}<span class="sug">{{if eq .Suggested "N"}}{{t "none"}}{{else}}{{.Suggested}}{{end}}</span> <span class="badge">QRZ</span>{{else}}<span class="muted">?</span>{{end}}{{end}}
+{{define "row_suggestion"}}{{if .Suggested}}<span class="sug">{{if eq .Suggested "N"}}{{t "no card"}}{{else}}{{.Suggested}}{{end}}</span> <span class="badge">QRZ</span>{{else}}<span class="muted">?</span>{{end}}{{end}}
 
 {{define "queue_row_full.html"}}<tr id="row-{{.Item.QSLKey}}">
   <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
@@ -23,7 +23,7 @@
   <td class="c-bm">{{.QSO.Mode}}</td>
   <td class="c-bm">{{.QSO.RSTSent}}</td>
   <td>{{.QSO.Name}}</td>
-  <td class="method" title="{{if and .Info .Info.QSLConfidence}}{{t "%s confidence: %s" (t .Info.QSLConfidence) .Info.QSLReason}}{{end}}">{{template "row_suggestion" .}}</td>
+  <td class="method" title="{{with .Sig}}{{if .Suggest}}{{tm .Why}}{{else}}{{tm .Note}}{{end}}{{end}}">{{template "row_suggestion" .}}</td>
   <td>{{.MgrPrefill}}</td>
   {{template "row_actions" .}}
 </tr>{{end}}

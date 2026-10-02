@@ -13,7 +13,6 @@ import (
 
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/qrz"
-	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -191,29 +190,23 @@ func (r *Refresher) refresh(ctx context.Context, callsign string) error {
 			bio = ""
 		}
 	}
-	res := qsldetermine.Determine(cs, bio)
 	si := &store.StationInfo{
-		Callsign:      callsign,
-		QSLMgr:        fieldStr(cs, func() string { return cs.QSLMgr }),
-		EQSL:          fieldStr(cs, func() string { return cs.EQSL }),
-		MQSL:          fieldStr(cs, func() string { return cs.MQSL }),
-		LoTW:          fieldStr(cs, func() string { return cs.LoTW }),
-		Email:         fieldStr(cs, func() string { return cs.Email }),
-		Addr1:         fieldStr(cs, func() string { return cs.Addr1 }),
-		Addr2:         fieldStr(cs, func() string { return cs.Addr2 }),
-		State:         fieldStr(cs, func() string { return cs.State }),
-		Zip:           fieldStr(cs, func() string { return cs.Zip }),
-		Country:       fieldStr(cs, func() string { return cs.Country }),
-		DXCC:          fieldStr(cs, func() string { return cs.DXCC }),
-		Name:          fieldStr(cs, func() string { return strings.TrimSpace(cs.FName + " " + cs.Name) }),
-		Attn:          fieldStr(cs, func() string { return cs.Attn }),
-		NotFound:      cs == nil,
-		BioText:       bio,
-		QSLMethod:     res.Method,
-		QSLRoute:      res.Manager,
-		RefusePaper:   res.RefusePaper,
-		QSLConfidence: res.Confidence,
-		QSLReason:     res.Reason,
+		Callsign: callsign,
+		QSLMgr:   fieldStr(cs, func() string { return cs.QSLMgr }),
+		EQSL:     fieldStr(cs, func() string { return cs.EQSL }),
+		MQSL:     fieldStr(cs, func() string { return cs.MQSL }),
+		LoTW:     fieldStr(cs, func() string { return cs.LoTW }),
+		Email:    fieldStr(cs, func() string { return cs.Email }),
+		Addr1:    fieldStr(cs, func() string { return cs.Addr1 }),
+		Addr2:    fieldStr(cs, func() string { return cs.Addr2 }),
+		State:    fieldStr(cs, func() string { return cs.State }),
+		Zip:      fieldStr(cs, func() string { return cs.Zip }),
+		Country:  fieldStr(cs, func() string { return cs.Country }),
+		DXCC:     fieldStr(cs, func() string { return cs.DXCC }),
+		Name:     fieldStr(cs, func() string { return strings.TrimSpace(cs.FName + " " + cs.Name) }),
+		Attn:     fieldStr(cs, func() string { return cs.Attn }),
+		NotFound: cs == nil,
+		BioText:  bio,
 	}
 	if err := r.store.PutStation(si); err != nil {
 		return err

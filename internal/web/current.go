@@ -63,7 +63,7 @@ func (s *Server) currentView(compact bool) CurrentView {
 	if v.Cur != nil {
 		v.Info, _ = s.store.GetStation(v.Cur.Call)
 		row := &QueueRow{QSO: &store.QSO{Call: v.Cur.Call}, Info: v.Info}
-		row.Suggested = suggestFor(v.Info)
+		s.applyAssessment(row)
 		s.researchFor(row)
 		// The decide card's "with a yes they share one card" badges do not
 		// fit here: a card written now books only the QSO being logged.

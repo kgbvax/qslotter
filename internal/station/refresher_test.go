@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,16 +125,6 @@ func TestRefresherLookupAndCache(t *testing.T) {
 	if si.QSLMgr != "K2ABC" {
 		t.Fatalf("QSLMgr = %q, want K2ABC", si.QSLMgr)
 	}
-	// The QRZ qslmgr field should drive the determination to M (manager).
-	if si.QSLMethod != "M" {
-		t.Fatalf("QSLMethod = %q, want M", si.QSLMethod)
-	}
-	if si.QSLRoute != "K2ABC" {
-		t.Fatalf("QSLRoute = %q, want K2ABC", si.QSLRoute)
-	}
-	if si.RefusePaper {
-		t.Fatal("RefusePaper should be false for qslmgr present")
-	}
 
 	// Second lookup: cache hit (within TTL) -> no new HTTP request expected.
 	// We verify by checking the fetched_at timestamp is unchanged.
@@ -189,12 +180,9 @@ func TestRefresherDeterminationFromBio(t *testing.T) {
 	if si == nil {
 		t.Fatal("nil station info")
 	}
-	// Bio says "QSL via bureau" -> Method B.
-	if si.QSLMethod != "B" {
-		t.Fatalf("QSLMethod = %q, want B (from bio)", si.QSLMethod)
-	}
-	if si.RefusePaper {
-		t.Fatal("RefusePaper should be false for bureau QSL")
+	// The raw bio is stored; what it means is read on demand (internal/qsldetermine).
+	if !strings.Contains(si.BioText, "QSL via bureau") {
+		t.Fatalf("BioText = %q, want the raw bio", si.BioText)
 	}
 }
 
@@ -236,8 +224,8 @@ func TestRefresherNoPaper(t *testing.T) {
 	if si == nil {
 		t.Fatal("nil")
 	}
-	if !si.RefusePaper {
-		t.Fatal("RefusePaper should be true for 'NO PAPER QSL'")
+	if !strings.Contains(si.BioText, "NO PAPER QSL") {
+		t.Fatalf("BioText = %q, want the raw bio", si.BioText)
 	}
 }
 

@@ -372,18 +372,8 @@ func (s *Server) replyCards(booked []*RcvdLine) ([]*ReplyCard, error) {
 	return cards, nil
 }
 
-// suggestedRoute is the route a reply starts with: the QRZ suggestion.
-func suggestedRoute(row *QueueRow) (code, manager string) {
-	switch row.Suggested {
-	case "B", "D":
-		return row.Suggested, row.MgrPrefill
-	case "M":
-		if row.MgrPrefill != "" {
-			return "MD", row.MgrPrefill
-		}
-	}
-	return "", row.MgrPrefill
-}
+// suggestedRoute is the route a reply starts with: the one QRZ states.
+func suggestedRoute(row *QueueRow) (code, manager string) { return routeFromAssessment(row) }
 
 // htmxReceiveResearch renders the research panel of a reply card again
 // (live refresh when the station's QRZ data lands).

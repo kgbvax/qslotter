@@ -2,7 +2,7 @@
   <td class="c-date">{{fmtDate .QSO.QSODate}}<br><span class="muted">{{fmtTime .QSO.TimeOn}}</span></td>
   <td><span class="call">{{.QSO.Call}}</span><br><span class="muted">{{.QSO.Name}}</span></td>
   <td class="c-bm">{{.QSO.Band}}<br>{{.QSO.Mode}}</td>
-  <td class="method" title="{{if and .Info .Info.QSLConfidence}}{{t "%s confidence: %s" (t .Info.QSLConfidence) .Info.QSLReason}}{{end}}">{{template "row_suggestion" .}}</td>
+  <td class="method" title="{{with .Sig}}{{if .Suggest}}{{tm .Why}}{{else}}{{tm .Note}}{{end}}{{end}}">{{template "row_suggestion" .}}</td>
 </tr>{{end}}{{if not .Rows}}<tr class="md-empty"><td colspan="4" class="muted">{{t "Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged."}}</td></tr>{{end}}{{end}}
 
 {{define "queue.html"}}<!DOCTYPE html>

@@ -60,9 +60,11 @@ type QueueRow struct {
 	Item       *store.QueueItem
 	QSO        *store.QSO
 	Info       *store.StationInfo
-	Suggested  string // method suggestion from qsldetermine ("N" when paper refused); never a decision
-	Chosen     string // the operator's recorded decision (empty while undecided)
-	MgrPrefill string // manager callsign for the manager routes (recorded, else a valid suggested route)
+	Suggested  string   // what QRZ states ("B", "D", "M", "N"; empty = nothing stated); never a decision
+	Chosen     string   // the operator's recorded decision (empty while undecided)
+	MgrPrefill string   // manager callsign for the manager routes (recorded, else the one QRZ states)
+	MgrVia     string   // how QRZ says to reach that manager: "B", "D" or ""
+	Sig        *SigView // the stated facts, for the research panel and tooltips
 
 	// Research, filled by researchFor for the card views only (lists stay light).
 	Research *Research
@@ -96,17 +98,6 @@ type Research struct {
 	WhyQueued  string   // override reason, when a normally filtered QSO was forced in
 }
 
-// suggestFor maps cached station info to the suggestion value.
-func suggestFor(info *store.StationInfo) string {
-	if info == nil {
-		return ""
-	}
-	if info.RefusePaper {
-		return "N"
-	}
-	return info.QSLMethod
-}
-
 // queueRowFor assembles the full row data for one QSO. Best-effort: missing
 // station info or queue item yields a row with empty suggestion. QSO is nil
 // when the QSO row is gone.
@@ -128,15 +119,24 @@ func (s *Server) buildRow(key string, refresh bool) *QueueRow {
 		}
 	}
 	row := &QueueRow{Item: item, QSO: qso, Info: info}
-	row.Suggested = suggestFor(info)
+	s.applyAssessment(row)
 	if item != nil {
 		row.Chosen = item.DesiredMethod
-		row.MgrPrefill = item.Manager
-	}
-	if row.MgrPrefill == "" && row.Suggested == "M" && info != nil && qsldetermine.LooksLikeCallsign(info.QSLRoute) {
-		row.MgrPrefill = strings.ToUpper(info.QSLRoute)
+		if item.Manager != "" {
+			row.MgrPrefill = item.Manager
+		}
 	}
 	return row
+}
+
+// applyAssessment fills the QRZ-derived fields of a row from its station info.
+func (s *Server) applyAssessment(row *QueueRow) {
+	a := s.assessFor(row.Info)
+	if a == nil {
+		return
+	}
+	row.Suggested, row.MgrPrefill, row.MgrVia = a.Suggest, a.Manager, a.ManagerVia
+	row.Sig = sigViewFor(a)
 }
 
 // routeCode is the form value of a route: B, D, MD (via manager, direct) or MB
@@ -663,7 +663,7 @@ func (s *Server) pageStation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, r, "station.html", map[string]any{
-		"Call": call, "Info": info, "QSOs": qsos, "Rows": rows,
+		"Call": call, "Info": info, "Sig": sigViewFor(s.assessFor(info)), "QSOs": qsos, "Rows": rows,
 	})
 }
 
@@ -688,7 +688,7 @@ func (s *Server) htmxStationRefresh(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": nil})
 		return
 	}
-	s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": info})
+	s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": info, "Sig": sigViewFor(s.assessFor(info))})
 }
 
 // --- card actions (htmx) ---

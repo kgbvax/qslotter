@@ -32,13 +32,6 @@
   </table>
   {{end}}
 
-  {{if .Info}}
-  <h3>{{t "QSL preference reasoning"}}</h3>
-  <p><b>{{t "Suggestion:"}}</b> {{if .Info.QSLMethod}}{{.Info.QSLMethod}}{{if .Info.QSLRoute}} ({{.Info.QSLRoute}}){{end}}{{else if .Info.RefusePaper}}{{t "no paper"}}{{else}}-{{end}}
-     · <b>{{t "Confidence:"}}</b> {{if .Info.QSLConfidence}}{{t .Info.QSLConfidence}}{{else}}-{{end}}</p>
-  <p class="muted">{{if .Info.QSLReason}}{{.Info.QSLReason}}{{end}}</p>
-  {{end}}
-
   <h3>{{t "Recent QSOs"}}</h3>
   <table>
     <thead><tr><th>{{t "Date"}}</th><th>{{t "Time"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST"}}</th><th>{{t "QSL Sent"}}</th><th>{{t "QSL Rcvd"}}</th></tr></thead>

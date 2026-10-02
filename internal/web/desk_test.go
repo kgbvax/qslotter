@@ -177,7 +177,7 @@ func TestDeskNoCardAndBack(t *testing.T) {
 func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMethod: "M", QSLRoute: "K2ABC", QSLMgr: "K2ABC", BioText: "QSL via OQRS only"}); err != nil {
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "K2ABC", BioText: "QSL via OQRS only"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PutStation(&store.StationInfo{Callsign: "K2ABC", Name: "Joe Manager", Addr1: "1 Main St", Addr2: "Springfield", Country: "USA"}); err != nil {
@@ -253,7 +253,7 @@ func TestDeskStaleAfterBack(t *testing.T) {
 func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMethod: "D"}); err != nil {
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "direct"}); err != nil {
 		t.Fatal(err)
 	}
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})

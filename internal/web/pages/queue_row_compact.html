@@ -2,7 +2,7 @@
 <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
 <td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
 <td class="c-name">{{.QSO.Name}}</td>
-<td class="c-method" title="{{if and .Info .Info.QSLConfidence}}{{t "%s confidence: %s" (t .Info.QSLConfidence) .Info.QSLReason}}{{end}} | {{t "RST"}} {{.QSO.RSTSent}}">{{template "row_suggestion" .}}</td>
+<td class="c-method" title="{{with .Sig}}{{if .Suggest}}{{tm .Why}}{{else}}{{tm .Note}}{{end}}{{end}} | {{t "RST"}} {{.QSO.RSTSent}}">{{template "row_suggestion" .}}</td>
 <td class="actions">{{template "row_yesno" .}}</td>{{end}}
 
 {{define "queue_row_compact.html"}}<tr id="row-{{.Item.QSLKey}}">
