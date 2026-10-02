@@ -7,6 +7,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -77,6 +78,7 @@ type browserEnv struct {
 	t    *testing.T
 	srv  *Server
 	st   store.Store
+	hs   *httptest.Server
 	base string
 	tab  context.Context
 
@@ -98,6 +100,7 @@ func newBrowserEnv(t *testing.T, setup ...func(*Server)) *browserEnv {
 	t.Cleanup(func() { st.Close() })
 	cfg := &config.Config{}
 	cfg.Clublog.Call = "DL9ET"
+	cfg.UI.Language = "en" // not the language of the machine's Chrome
 	srv, err := New(cfg, st, events.New(), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +113,7 @@ func newBrowserEnv(t *testing.T, setup ...func(*Server)) *browserEnv {
 	t.Cleanup(func() { hs.CloseClientConnections(); hs.Close() })
 	tab, cancel := chromedp.NewContext(bctx)
 	t.Cleanup(cancel) // first: the tab and its event stream go before the server
-	e := &browserEnv{t: t, srv: srv, st: st, base: hs.URL, tab: tab}
+	e := &browserEnv{t: t, srv: srv, st: st, hs: hs, base: hs.URL, tab: tab}
 	chromedp.ListenTarget(tab, func(ev any) {
 		if ex, ok := ev.(*runtime.EventExceptionThrown); ok {
 			e.mu.Lock()
@@ -213,6 +216,22 @@ func (e *browserEnv) key(keys string, mods ...input.Modifier) {
 			e.t.Fatal(err)
 		}
 	}
+}
+
+// run evaluates JavaScript for its effect.
+func (e *browserEnv) run(expr string) {
+	e.t.Helper()
+	if err := chromedp.Run(e.tab, chromedp.Evaluate(expr, nil)); err != nil {
+		e.t.Fatalf("%s: %v", expr, err)
+	}
+}
+
+// stopServer takes the server away under the open page: no new connections
+// first, so the event stream cannot reconnect and hold Close up.
+func (e *browserEnv) stopServer() {
+	e.hs.Listener.Close()
+	e.hs.CloseClientConnections()
+	e.hs.Close()
 }
 
 func (e *browserEnv) click(sel string) {
@@ -539,4 +558,100 @@ func TestLiveCurrentContact(t *testing.T) {
 	e.waitFor("the station being worked", call+` === 'DL7XYZ'`)
 	tracker.Clear()
 	e.waitFor("the box to clear", call+` === ''`)
+}
+
+// --- Incoming QSLs: the reply keys (receive.html) ---
+
+// receiveBooked opens Incoming QSLs for call, ticks keys and books their
+// card with Enter on the focused "Mark as received"; the reply panel takes
+// the focus.
+func (e *browserEnv) receiveBooked(call string, keys ...string) {
+	e.t.Helper()
+	e.open("/receive?call=" + url.QueryEscape(call))
+	e.waitFor("the booking button focused", `document.activeElement && document.activeElement.matches('#book button[type=submit]')`)
+	for _, k := range keys {
+		e.run(`document.querySelector('#book input[name=key][value=' + ` + js(strconv.Quote(k)) + ` + ']').checked = true`)
+	}
+	e.key(kb.Enter)
+	e.waitFor("the reply panel focused", `document.activeElement && document.activeElement.classList.contains('reply')`)
+}
+
+const (
+	replyArmed = `((document.querySelector('.reply button.armed') || {dataset: {}}).dataset.key || '')`
+	replyRoute = `((document.querySelector('.reply input[name=route]:checked') || {}).value || '')`
+)
+
+// TestReceiveReplyKeys: route keys pick at once, answers need their key
+// twice - so the next card's callsign typed over the open panel answers
+// nothing; after the answer the callsign field takes the next card.
+func TestReceiveReplyKeys(t *testing.T) {
+	e := newBrowserEnv(t)
+	k := addQueued(t, e.st, "DL1AAA", "20240101")
+	e.receiveBooked("DL1AAA", k)
+
+	e.key("DL7PX") // d picks direct, l/p/x only arm, 7 disarms
+	e.waitFor("x armed, route D", replyArmed+` === 'x' && `+replyRoute+` === 'D'`)
+	e.still("the open panel", `document.querySelector('.reply')`)
+	if it := status(t, e.st, k); it.Status != "queued" {
+		t.Fatalf("typing a callsign answered the card: %+v", it)
+	}
+
+	e.key("b")
+	e.waitFor("route B, disarmed", replyRoute+` === 'B' && `+replyArmed+` === ''`)
+	e.key("ww")
+	it := e.waitStatus(k, "sent")
+	if it.DesiredMethod != "B" {
+		t.Errorf("w w = %+v, want written, via the bureau", it)
+	}
+	e.waitFor("the callsign field for the next card", `document.activeElement.id === 'rcv-call'`)
+}
+
+// TestReceiveReplyLaterAndNotNow: l then Enter puts your card on the Desk;
+// x twice closes the panel and the card stays due.
+func TestReceiveReplyLaterAndNotNow(t *testing.T) {
+	e := newBrowserEnv(t)
+	a := addQueued(t, e.st, "DL2BBB", "20240102")
+	e.receiveBooked("DL2BBB", a)
+	e.key("l" + kb.Enter)
+	e.waitStatus(a, "decided")
+	e.waitFor("the callsign field for the next card", `document.activeElement.id === 'rcv-call'`)
+
+	b := addQueued(t, e.st, "DL3CCC", "20240103")
+	e.receiveBooked("DL3CCC", b)
+	e.key("xx")
+	e.waitFor("the panel closed", `!document.querySelector('.reply') && document.activeElement.id === 'rcv-call'`)
+	if it := status(t, e.st, b); it.Status != "queued" {
+		t.Errorf("x x must leave the card due: %+v", it)
+	}
+}
+
+// --- app.js ---
+
+// TestToastOnError: a failed action shows the server's message instead of
+// doing nothing, and a server that is gone says so - in the UI language.
+func TestToastOnError(t *testing.T) {
+	for _, c := range []struct{ lang, failed, offline string }{
+		{"en", "Error 500: ", "Network error - is the qslotter server running?"},
+		{"de", "Fehler 500: ", "Netzwerkfehler - läuft der qslotter-Server?"},
+	} {
+		t.Run(c.lang, func(t *testing.T) {
+			e := newBrowserEnv(t, func(srv *Server) {
+				srv.cfg.UI.Language = c.lang
+				srv.printer = &fakePrinter{err: errors.New("printer offline")}
+			})
+			k := e.decided("DL4DDD", "20240104")
+			e.open("/work/card?key=" + url.QueryEscape(k))
+			toast := `((document.querySelector('.toast.show') || {}).textContent || '')`
+
+			e.key("dp")
+			e.waitFor("the error toast", toast+` === `+js(c.failed+"printer offline"))
+			if it := status(t, e.st, k); it.Status != "decided" {
+				t.Errorf("a failed print moved the card: %+v", it)
+			}
+
+			e.stopServer()
+			e.key("w")
+			e.waitFor("the network error toast", toast+` === `+strconv.QuoteToASCII(c.offline))
+		})
+	}
 }

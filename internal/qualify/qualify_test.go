@@ -21,9 +21,9 @@ func newStore(t *testing.T) *store.SQLiteStore {
 
 func qso(call, date, time, band, mode string) *store.QSO {
 	return &store.QSO{
-		QSLKey:  call + "|" + date + "|" + time + "|" + band,
-		Call:    call, QSODate: date, TimeOn: time, Band: band, Mode: mode,
-		Hash:    "h-" + call + date + time + band,
+		QSLKey: call + "|" + date + "|" + time + "|" + band,
+		Call:   call, QSODate: date, TimeOn: time, Band: band, Mode: mode,
+		Hash: "h-" + call + date + time + band,
 	}
 }
 
@@ -185,6 +185,7 @@ func TestEnqueueAllOverride(t *testing.T) {
 
 // Ensure sql.NullString is referenced (kept in store.QSO; used by Eligible).
 var _ = sql.NullString{}
+
 // --- decision-queue intake ---
 
 func TestAlreadySentBeatsOverride(t *testing.T) {

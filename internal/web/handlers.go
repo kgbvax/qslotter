@@ -87,8 +87,8 @@ type HistoryLine struct {
 // QSL statements, the history with the station and what happened to its cards.
 type Research struct {
 	Badges     []Badge
-	Prior      int      // earlier QSOs with the station (the history query's newest 12)
-	LastDate   string   // date of the newest of them
+	Prior      int    // earlier QSOs with the station (the history query's newest 12)
+	LastDate   string // date of the newest of them
 	History    []HistoryLine
 	Others     int      // other cards of this station awaiting a decision or production
 	BioExcerpt string   // the QSL-relevant lines of the QRZ bio

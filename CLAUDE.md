@@ -27,9 +27,11 @@ Run all tests:
 
     go test ./...
 
-The browser tests (`internal/web/browser_test.go`: keys.js and live.js in
-headless Chrome via chromedp, against the real server) need Chrome installed
-and skip without it; `go test -short ./...` skips them too. Their helpers
+The browser tests (`internal/web/browser_test.go`: keys.js, live.js, the
+Incoming QSLs reply keys in receive.html and the app.js toasts in headless
+Chrome via chromedp, against the real server; UI language pinned to English
+unless a test sets one) need Chrome installed and skip without it;
+`go test -short ./...` skips them too. Their helpers
 type keys like a person (text on the keydown, only once htmx has settled) -
 chromedp's own `KeyEvent` sends the text separately, past a handler's
 `preventDefault`.

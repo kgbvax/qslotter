@@ -12,13 +12,13 @@ import (
 
 // OllamaClient calls a local Ollama server's /api/generate endpoint.
 type OllamaClient struct {
-	BaseURL    string
-	Model      string
-	Timeout    time.Duration
-	System     string
+	BaseURL     string
+	Model       string
+	Timeout     time.Duration
+	System      string
 	Temperature float64
-	JSONMode   bool // request format: "json" if true
-	HTTP       *http.Client
+	JSONMode    bool // request format: "json" if true
+	HTTP        *http.Client
 }
 
 func NewOllamaClient(baseURL, model string) *OllamaClient {

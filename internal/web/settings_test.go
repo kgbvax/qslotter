@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/dl9et/qslotter/internal/config"
-	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/events"
+	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
