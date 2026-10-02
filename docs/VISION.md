@@ -625,3 +625,20 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   offers); fully right now heuristic 80% / 82% / 80% against qwen v8
   80% / 72% / 74%. Still missed: the labelling convention that a card
   "requested via OQRS" for bureau or direct is an OQRS route only.
+- **2026-10-03 — Heuristic round 3; prompt v9 rejected; bwpc runs qpc.**
+  The heuristic now reads postal wording ("VIA MAIL", "to the above
+  address", "P.O.Box"), a DARC DOK as bureau, managers inside free text
+  ("ALL QSL's via N4GNR Direct Only", "via bureau DL8KAC") and in the bio
+  with their routes, email-only refusals, and routes only from the bio's
+  sentences about cards: status, routes and via right on 212 of the
+  operator's 250 labelled stations (was 205); fully right 85% / 82% / 84%
+  on samples 1, 2 and the holdout. A 60-station sample labelled by the
+  assistant (eval/qpc5, not reviewed by the operator) gives 87%. Tried and
+  dropped: adding the bio's routes to a qslmgr text (3 fixed, 6 broken)
+  and dropping direct without a full QRZ address (breaks 3 operator labels
+  that do not follow LABELS rule 5). Prompt v9 (the rules as an ordered
+  procedure: refusal, routes named, then flags and address) lost to v8 on
+  all three operator samples (78/71/70% vs 80/72/74%), won only on the
+  assistant's sample: v8 stays the default. qpc runs fine on bwpc's
+  Ollama (LAN, `qpc/experiments/bwpc.yaml`), about 1.5 s a station
+  against 2.5-3 s on the laptop.
