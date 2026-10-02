@@ -88,8 +88,8 @@
     es.addEventListener('station_updated', function (e) {
       var call = e.data.toUpperCase();
       body.querySelectorAll('tr').forEach(function (tr) {
-        var a = tr.querySelector('a[href^="/station/"]');
-        if (a && a.textContent.trim().toUpperCase() === call) put(tr.id.slice(4));
+        var c = tr.querySelector('.call');
+        if (c && c.textContent.trim().toUpperCase() === call) put(tr.id.slice(4));
       });
     });
     return;

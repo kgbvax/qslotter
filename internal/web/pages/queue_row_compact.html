@@ -1,5 +1,5 @@
 {{define "row_cells_compact"}}<td class="c-date">{{fmtDate .QSO.QSODate}}</td>
-<td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
+<td><span class="call">{{.QSO.Call}}</span></td>
 <td class="c-bm">{{.QSO.Band}} {{.QSO.Mode}}</td>
 <td class="c-name">{{.QSO.Name}}</td>
 <td class="c-method" title="{{if and .Info .Info.QSLConfidence}}{{t "%s confidence: %s" (t .Info.QSLConfidence) .Info.QSLReason}}{{end}} | {{t "RST"}} {{.QSO.RSTSent}}">{{template "row_suggestion" .}}</td>

@@ -70,7 +70,7 @@ func TestGermanComplete(t *testing.T) {
 
 	pages := []string{"/", "/queue", "/queue?compact=1", "/decide", "/decide?key=" + url.QueryEscape(key),
 		"/work", "/work/card", "/work/card?filter=O", "/done", "/log", "/settings", "/receive",
-		"/station/DL1ABC", "/nav", "/queue/list", "/work/list", "/work/manager?manager=K2ABC", "/work/manager?manager=",
+		"/nav", "/queue/list", "/work/list", "/work/manager?manager=K2ABC", "/work/manager?manager=",
 		"/receive?call=DL3YYY"}
 	for _, p := range pages {
 		if r := requestDE(t, h, http.MethodGet, p, nil); r.Code != 200 {

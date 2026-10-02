@@ -18,7 +18,7 @@
 
 {{define "queue_row_full.html"}}<tr id="row-{{.Item.QSLKey}}">
   <td class="c-date">{{fmtDate .QSO.QSODate}}</td>
-  <td><a class="call" href="/station/{{.QSO.Call}}">{{.QSO.Call}}</a></td>
+  <td><span class="call">{{.QSO.Call}}</span></td>
   <td class="c-bm">{{.QSO.Band}}</td>
   <td class="c-bm">{{.QSO.Mode}}</td>
   <td class="c-bm">{{.QSO.RSTSent}}</td>

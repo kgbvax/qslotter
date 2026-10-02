@@ -4,7 +4,7 @@
   <p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>
 {{end}}
 <div class="pref">
-  <h4>{{t "What QRZ says"}}{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "cached %s ago" .QRZAge}}{{end}}</span>{{end}}</h4>
+  <h4>{{t "What QRZ says"}}{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "cached %s ago" .QRZAge}}{{end}}</span>{{if .CanRefresh}} <button type="button" class="mini qrz-refresh" title="{{t "Look the station up on QRZ again now"}}" hx-post="/station/refresh?call={{q $row.QSO.Call}}" hx-swap="none" hx-disabled-elt="this">{{t "Refresh"}}</button>{{end}}{{end}}</h4>
   {{if and .Info (not .Info.NotFound)}}
     {{if .Suggested}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggested)))}}{{if .MgrPrefill}} {{.MgrPrefill}}{{end}}{{if .Info.QSLConfidence}} <span class="muted">({{t "%s confidence" (t .Info.QSLConfidence)}})</span>{{end}} <span class="muted">- {{t "a hint, not a decision"}}</span></p>{{end}}
     {{if .Info.QSLReason}}<p class="why">{{.Info.QSLReason}}</p>{{end}}

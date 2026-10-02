@@ -89,5 +89,6 @@
   "OK - logged in as %s": "OK - angemeldet als %s",
   "not configured (station info disabled)": "nicht eingerichtet (Stationsdaten abgeschaltet)",
   "OK (%s)": "OK (%s)",
-  "not configured (pull/push disabled)": "nicht eingerichtet (Abrufen/Übertragen abgeschaltet)"
+  "not configured (pull/push disabled)": "nicht eingerichtet (Abrufen/Übertragen abgeschaltet)",
+  "The QRZ lookup for %s failed - the cached data stays. Try again in a moment.": "Die QRZ-Abfrage für %s ist fehlgeschlagen - die gespeicherten Daten bleiben. Versuch es gleich noch einmal."
 }

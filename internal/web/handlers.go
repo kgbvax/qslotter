@@ -19,7 +19,6 @@ import (
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
-	"github.com/go-chi/chi/v5"
 )
 
 // The card lifecycle (queue status):
@@ -93,6 +92,7 @@ type Research struct {
 	BioExcerpt string   // the QSL-relevant lines of the QRZ bio
 	QRZState   string   // "off", "pending", "notfound", "ok"
 	QRZAge     i18n.Msg // how old the cached entry is ("3h")
+	CanRefresh bool     // QRZ lookups are possible: offer the forced re-lookup
 	WhyQueued  string   // override reason, when a normally filtered QSO was forced in
 }
 
@@ -273,13 +273,14 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	}
 
 	// QRZ state.
+	res.CanRefresh = s.refresher != nil && s.refresher.Configured()
 	switch {
 	case row.Info != nil && row.Info.NotFound:
 		res.QRZState = "notfound"
 	case row.Info != nil:
 		res.QRZState = "ok"
 		res.QRZAge = sinceMsg(row.Info.FetchedAt)
-	case s.refresher == nil || !s.refresher.Configured():
+	case !res.CanRefresh:
 		res.QRZState = "off"
 	default:
 		res.QRZState = "pending"
@@ -640,55 +641,31 @@ func (s *Server) htmxNav(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "nav", nil)
 }
 
-// --- station page ---
+// --- QRZ re-lookup ---
 
-func (s *Server) pageStation(w http.ResponseWriter, r *http.Request) {
-	// Route is /station/*: portable calls contain "/" (EA8/DL1ABC).
-	call := strings.ToUpper(strings.Trim(strings.TrimPrefix(r.URL.Path, "/station/"), "/"))
-	// Best-effort: fill a missing or stale cache entry before rendering (the
-	// "Refresh from QRZ" button forces a lookup). If QRZ isn't configured, show
-	// the cache.
-	if s.refresher != nil {
-		_, _ = s.refresher.Get(r.Context(), call)
-	}
-	info, _ := s.store.GetStation(call)
-	qsos, _ := s.store.RecentQSOsByCall(call, 20)
-	// Cards awaiting a decision for this call: the expanded (deliberation)
-	// view embeds the same decision controls as the queue rows.
-	queued, _ := s.store.QueueList("queued")
-	var rows []*QueueRow
-	for _, it := range queued {
-		if strings.EqualFold(callFromKey(it.QSLKey), call) {
-			rows = append(rows, s.queueRowFor(it.QSLKey))
-		}
-	}
-	s.render(w, r, "station.html", map[string]any{
-		"Call": call, "Info": info, "QSOs": qsos, "Rows": rows,
-	})
-}
-
-// htmxStationRefresh forces a QRZ re-lookup for a callsign and returns a
-// fresh station-info HTML fragment for htmx swap. The call comes from the
-// ?call= query (works for portable calls containing "/").
+// htmxStationRefresh forces a QRZ re-lookup for a callsign (the Refresh
+// button of the research panel). It answers 204; the station_updated event the
+// lookup publishes reloads every open panel for the call. The call comes from
+// the ?call= query (works for portable calls containing "/").
 func (s *Server) htmxStationRefresh(w http.ResponseWriter, r *http.Request) {
 	call := strings.ToUpper(strings.TrimSpace(r.FormValue("call")))
-	if call == "" {
-		call = strings.ToUpper(chi.URLParam(r, "call"))
-	}
 	if call == "" {
 		s.fail(w, r, http.StatusBadRequest, "missing call")
 		return
 	}
-	if s.refresher == nil {
-		s.fail(w, r, http.StatusServiceUnavailable, "QRZ not configured")
+	if s.refresher == nil || !s.refresher.Configured() {
+		s.fail(w, r, http.StatusServiceUnavailable, "QRZ lookups are off - add credentials under Settings")
 		return
 	}
-	info, err := s.refresher.Refresh(r.Context(), call)
-	if err != nil || info == nil {
-		s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": nil})
+	if _, err := s.refresher.Refresh(r.Context(), call); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, r, "station_info.html", map[string]any{"Call": call, "Info": info})
+	if s.refresher.RecentlyFailed(call) {
+		s.fail(w, r, http.StatusBadGateway, "The QRZ lookup for %s failed - the cached data stays. Try again in a moment.", call)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- card actions (htmx) ---
