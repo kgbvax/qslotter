@@ -566,3 +566,16 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   which took the heuristic to 75% fully right on the fresh sample (was 72%;
   qwen v7 68%) and the third-sample agreement to 72%. qwen's typical slip
   there: mqsl 0 overriding an explicit "VIA BUREAU" in qslmgr (rule 7).
+- **2026-10-02 — Jev-style decision model (tev1:4b) is far behind.** qpc can
+  now ask decision models through Ollama's `/v1/systemone` (variant kind
+  `decision`, specs in `qpc/decisions`; no note, no via). tev1:4b, a
+  Qwen3.5-4B fine-tune for scored choices, gets the status about as often
+  as the others (75-80%) but the routes badly: fully right 31-34% with
+  status plus a true/false per route (d1-split), 15-21% with one choice
+  over the whole answer (d1-single), against 75% for the heuristic and
+  68-76% for qwen3.5:4b (v7) on the same labelled samples. It does not
+  apply the conditional rules (address only = direct; "no bureau"), picks
+  bureau for most direct-only stations (split) or bureau+direct for
+  nearly everything (single), and names a preferred route where none is
+  stated. Keeping only a long bio's QSL sentences changed little. ~2.5 s
+  a station. Not pursued unless a stronger decision model appears.
