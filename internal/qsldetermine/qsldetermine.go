@@ -64,7 +64,7 @@ func determineRoute(c *qrz.Callsign, bio string) Result {
 		return Result{Method: "M", Manager: strings.ToUpper(m[1]),
 			Confidence: "medium", Reason: "bio: QSL via " + m[1], RefusePaper: refusePaper}
 	}
-	if r, ok := sig.result(false); ok {
+	if r, ok := sig.result(); ok {
 		r.Reason = "bio: " + r.Reason
 		if refusePaper && !r.RefusePaper {
 			r.RefusePaper = true
@@ -186,7 +186,7 @@ func flag(v string) (yes, no bool) {
 	return false, false
 }
 
-var managerLeadIn = map[string]bool{"via": true, "qsl": true, "mgr": true, "manager": true, "pse": true, "please": true}
+var managerLeadIn = map[string]bool{"via": true, "qsl": true, "mgr": true, "manager": true, "pse": true, "please": true, "only": true}
 
 // managerCall extracts a manager callsign from a qslmgr value such as
 // "K2ABC", "via K2ABC", "QSL MGR K2ABC" or "K2ABC (bureau only)". Free text
@@ -209,38 +209,41 @@ func managerCall(s string) (string, bool) {
 
 // signals are the QSL-route hints found in a piece of free text.
 type signals struct {
-	bureau, direct             bool // route mentioned as accepted
-	onlyBureau, onlyDirect     bool // "direct only", "bureau only"
-	noBureau, noDirect         bool // "no bureau", "not via direct"
-	noPaper                    bool // "no QSL", "no paper cards"
-	electronic, electronicOnly bool // eQSL / LoTW / Clublog mentioned; "eQSL only"
-	bureauWord, directWord     bool
+	bureau, direct         bool // route mentioned as accepted
+	onlyBureau, onlyDirect bool // "direct only", "bureau only"
+	noBureau, noDirect     bool // "no bureau", "not via direct"
+	noPaper                bool // "no QSL", "no paper cards"
+	electronicOnly         bool // "eQSL only", "only QRZ and LoTW"
+	bureauWord, directWord bool
 }
 
 var (
 	bureauWordRe = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
-	directWordRe = regexp.MustCompile(`direct|direkt|directo`)
+	directWordRe = regexp.MustCompile(`\bdirect(o|a|ly|ement)?([^a-z]|$)|\bdirekt`) // "Direct3$", not "direction"
 	// returnPostageRe: asking for return postage means a card by post
 	// ("LOTW or SASE"); see asked for waivers.
-	returnPostageRe  = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?`)
-	electronicRe     = regexp.MustCompile(`e-?\.?qsl|lotw|logbook of the world|clublog|hamaward`) // HamAward: digital only
-	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward)[^.]{0,20}\bonly\b|\bonly (via )?(e-?\.?qsl|lotw|electronic|hamaward)`)
+	returnPostageRe = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?`)
+	// electronicOnlyRe: confirmations stated to be electronic only. A mere
+	// list ("LoTW, eQSL, Club Log") is not a refusal: mqsl and the address
+	// decide then (operator, 2026-10-02). HamAward is digital only.
+	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log)[^.]{0,20}\bonly\b|\bonly (via )?(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
-	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)`)
+	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer`)
 	noDirectRe       = regexp.MustCompile(`no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
-	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper`)
+	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
 )
+
+var apostrophes = strings.NewReplacer("´", "'", "’", "'", "`", "'")
 
 // readSignals scans free text for route hints. Negations are read first so
 // "no bureau" never counts as a bureau mention.
 func readSignals(text string) signals {
-	lc := strings.ToLower(text)
+	lc := apostrophes.Replace(strings.ToLower(text))
 	var s signals
 	s.bureauWord = bureauWordRe.MatchString(lc)
 	s.directWord = directWordRe.MatchString(lc) || returnPostageRe.MatchString(asked(lc))
-	s.electronic = electronicRe.MatchString(lc)
 	s.electronicOnly = electronicOnlyRe.MatchString(lc)
 	s.onlyDirect = onlyDirectRe.MatchString(lc)
 	s.onlyBureau = onlyBureauRe.MatchString(lc)
@@ -260,11 +263,9 @@ func readSignals(text string) signals {
 }
 
 // result turns the signals into a suggestion. ok is false when the text held
-// no route information at all. electronicHint controls whether merely
-// mentioning eQSL/LoTW counts as "no paper": right for a short qslmgr field,
-// wrong for a free-form bio ("I upload to LoTW weekly"), where only an explicit
-// "eQSL only" does.
-func (s signals) result(electronicHint bool) (Result, bool) {
+// no route information at all. Mentioning eQSL/LoTW is none, in qslmgr too
+// ("LoTW, eQSL"): only an explicit "eQSL only" refuses paper.
+func (s signals) result() (Result, bool) {
 	switch {
 	case s.onlyDirect || (s.direct && s.noBureau && !s.bureau):
 		return Result{Method: "D", Confidence: "medium", Reason: "direct only"}, true
@@ -285,15 +286,13 @@ func (s signals) result(electronicHint bool) (Result, bool) {
 	case s.noBureau:
 		// Only when nothing refuses paper: "NO Paper NO Bureau" is not direct.
 		return Result{Method: "D", Confidence: "low", Reason: "no bureau, so direct"}, true
-	case electronicHint && s.electronic:
-		return Result{RefusePaper: true, Confidence: "low", Reason: "only electronic confirmations (eQSL/LoTW) mentioned - no paper card"}, true
 	}
 	return Result{}, false
 }
 
 // classify reads a short free-text value (a qslmgr field).
 func classify(text string) (Result, bool) {
-	return readSignals(text).result(true)
+	return readSignals(text).result()
 }
 
 // callsignRe matches an amateur callsign, optionally with a country prefix

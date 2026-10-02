@@ -595,3 +595,14 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   direct. Fixed; on the labelled samples the heuristic is now fully right
   on 75% / 77% (status, routes and via: 78% vs qwen v8 76%), and it agrees
   with qwen v8 on 76% of the third sample (was 74%).
+- **2026-10-02 — A list of electronic services is no refusal.** Operator's
+  rule: when qslmgr lists only electronic services ("LoTW, eQSL, Club
+  Log"), mqsl and the postal address decide as if nothing were said
+  (LABELS.md rule 8); only an explicit "eQSL only" / "LoTW only" refuses
+  paper. `qsldetermine` used to read such a list as no paper. Changing it
+  also exposed three bio-reading faults the old shortcut had hidden
+  ("direction"/"directive" read as direct, "I don't answer paper QSL
+  cards", "bureau ... no longer"), all fixed, plus "ONLY VIA EB7DX" as a
+  manager. Three labels were brought in line with the rule (SP8QC/P,
+  A61BG, UT5RB). Status, routes and via right on the labelled samples:
+  heuristic 81%, qwen3.5:4b v8 78%; fully right 78% / 80% against 79% / 72%.

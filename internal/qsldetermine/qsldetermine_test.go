@@ -99,16 +99,16 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"via eQSL, Bureau,LoTW, QRZ.com Log", "B", false},
 		{"via BUREAU / eQSL/ QRZ.com / Direct / LotW / DCL /Clublog /", "B", false},
 		{"eQSL LoTW QRZ. COM * DIREKT ADRES", "D", false},
-		{"eQSL & LoTW", "", true},
+		{"eQSL & LoTW", "", false}, // a list: mqsl decides,
 		{"direct", "D", false},
 		{"VIA BUREAU, DIRECT. LotW. SWL welcome.", "B", false},
 		{"VIA BUREAU", "B", false},
 		{"QRZ,EQSL,LOTW,BUREAU", "B", false},
 		{"ONLY DIRECT ( SAE + $6 or 5 euro )", "D", false},
-		{"LoTW - eQSL", "", true},
+		{"LoTW - eQSL", "", false}, // a list: mqsl decides,
 		{"LOTW- E-qsl also via BUREAU is OK", "B", false},
 		{"LOTW, DIRECT", "D", false},
-		{"LOTW and ClubLog.", "", true},
+		{"LOTW and ClubLog.", "", false}, // a list: mqsl decides,
 		{"DIRECT,e.QSL", "D", false},
 		{"DIRECT - BUREAU - LoTW", "B", false},
 		{"Bureau, eQSL", "B", false},
@@ -122,7 +122,11 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"LoTW, QRZ.com, eQSL, Clublog. No paper or cards and no Bureau.", "", true},
 		{"Only eQSL / No QSL Paper Direct or Office please", "", true},
 		{"QSL VIA HAMAWARD ONLY", "", true},
+		{"only QRZ and LoTW", "", true},
+		{"Via LoTW, eQSL and QRZ (Only Please, )", "", true},
 		{"LOTW or SASE", "D", false},
+		{"Direct3$", "D", false},
+		{"QSL directa", "D", false},
 		{"Bureau or IRC", "B", false}, // both accepted, bureau is cheaper
 		{"QSL VIA BUREAU, no SASE needed", "B", false},
 		{"ONLY LoTW. No paper QSL even with green stamps", "", true},
@@ -140,6 +144,29 @@ func TestQSLMgrFreeText(t *testing.T) {
 		}
 		if r.Confidence == "high" {
 			t.Errorf("qslmgr %q: free text must not be high confidence: %+v", c.mgr, r)
+		}
+	}
+}
+
+// A qslmgr field listing only electronic services is no refusal: mqsl and
+// the postal address decide (operator, 2026-10-02).
+func TestElectronicList(t *testing.T) {
+	for _, c := range []struct {
+		mqsl, method string
+		addr, refuse bool
+	}{
+		{"1", "D", true, false},
+		{"1", "B", false, false},
+		{"0", "", true, true},
+		{"", "D", true, false},
+		{"", "", false, false},
+	} {
+		st := &qrz.Callsign{Call: "XX1XX", QSLMgr: "LoTW, eQSL, Club Log", MQSL: c.mqsl}
+		if c.addr {
+			st.Addr1, st.Addr2 = "Street 1", "Town"
+		}
+		if r := Determine(st, ""); r.Method != c.method || r.RefusePaper != c.refuse {
+			t.Errorf("mqsl %q address %v: %+v", c.mqsl, c.addr, r)
 		}
 	}
 }
@@ -169,6 +196,7 @@ func TestQSLMgrCallsignForms(t *testing.T) {
 		"K2ABC (bureau only)": "K2ABC", "DL1ABC/P,": "DL1ABC/P",
 		"QSL MGR EA5GL": "EA5GL", "QSL VIA EC1DD": "EC1DD", "QSL Manager: EA7FTR": "EA7FTR",
 		"PSE QSL via K2ABC direct": "K2ABC",
+		"ONLY VIA EB7DX":           "EB7DX",
 	} {
 		r := Determine(&qrz.Callsign{QSLMgr: mgr}, "")
 		if r.Method != "M" || r.Manager != want || r.Confidence != "high" {
@@ -184,6 +212,8 @@ func TestBioNegationsAndKeywords(t *testing.T) {
 		{"Please QSL via bureau only", "B"},
 		{"No bureau cards please, direct with SAE", "D"},
 		{"73 and see you on the bands", ""},
+		{"The direction was always 270 degrees", ""}, // not "direct"
+		{"I don´t answer Paper QSL Cards anymore. Cards via Bureau will no longer be possible", ""},
 	} {
 		r := Determine(&qrz.Callsign{Call: "XX1XX"}, c.bio)
 		if r.Method != c.method || r.Method == "M" {

@@ -35,7 +35,7 @@ Rules:
    - mqsl 0: no-paper.
    - no full postal address: mqsl 1: routes bureau; mqsl empty: unknown.
 7. mqsl = 0 means "will not return paper QSL". With mqsl = 0 and no paper route offered in qslmgr or the bio: no-paper, whatever eqsl and lotw say. A route offered in the text wins over mqsl = 0.
-8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes; mentioning them does not change rules 6 and 7.
+8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes; mentioning them does not change rules 6 and 7, also when qslmgr lists nothing else ("LoTW, eQSL, Club Log": mqsl decides). Only an explicit "eQSL only" / "LoTW only" refuses paper.
 9. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
 10. The bio may be written in any language; the note is always in English.
 11. contribution is about what the station asks for, not about the route: set it whenever a contribution is asked for or waived, also for a manager or OQRS. Kind and amount ("SAE + 2 USD") also go into the note.
