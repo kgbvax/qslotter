@@ -274,7 +274,8 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/queue/list", s.htmxQueueList)            // Inbox master list (live refresh)
 	r.Get("/queue/current", s.htmxCurrent)           // the QSO in progress (live refresh; ?compact=1)
 	r.Post("/current/written", s.htmxCurrentWritten) // call=, route=B|D: card written during the QSO
-	r.Post("/current/cancel", s.htmxCurrentCancel)   // call=
+	r.Post("/current/decide", s.htmxCurrentDecide)   // call=, decision=yes|no: card / no card during the QSO
+	r.Post("/current/cancel", s.htmxCurrentCancel)   // call=: drop a decision (the QSO may never be logged)
 	r.Get("/work/list", s.htmxWorkList)              // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)

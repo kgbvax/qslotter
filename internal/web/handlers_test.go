@@ -140,6 +140,9 @@ func TestQueuePagesRender(t *testing.T) {
 	if b := compact.Body.String(); !strings.Contains(b, "/queue/yes?key=") || strings.Contains(b, "/queue/written") {
 		t.Fatalf("compact rows must offer yes/no only:\n%s", b)
 	}
+	if b := compact.Body.String(); !strings.Contains(b, `<td class="c-bm">20m<br>SSB</td>`) {
+		t.Fatalf("compact rows stack band over mode:\n%s", b)
+	}
 
 	// SSE-driven row fetch, both variants.
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape(key)); r.Code != 200 {

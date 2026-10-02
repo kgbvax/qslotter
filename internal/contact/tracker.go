@@ -28,9 +28,32 @@ const (
 	currentTTL = 15 * time.Minute
 )
 
-// ReasonWritten is the queue reason of a QSO booked from a card written
-// during it that the qualifier would not have queued.
-const ReasonWritten = "written during the QSO"
+// Queue reasons of a QSO booked from a decision made during it that the
+// qualifier would not have queued.
+const (
+	ReasonWritten = "written during the QSO"
+	ReasonDecided = "decided during the QSO"
+)
+
+// Decision is what the operator settled for the QSO in progress.
+type Decision string
+
+const (
+	Written Decision = "written" // card filled in during the QSO, with its route
+	Yes     Decision = "yes"     // card wanted: goes to the Desk, route chosen there
+	No      Decision = "no"      // no card
+)
+
+// Queue status a booked decision ends in.
+func (d Decision) status() string {
+	switch d {
+	case Yes:
+		return "decided"
+	case No:
+		return "skipped"
+	}
+	return "sent"
+}
 
 // lookupDelay lets the entry field settle before QRZ is asked (a logger may
 // broadcast while the call is still being typed).
@@ -44,27 +67,31 @@ type Current struct {
 	Stale    bool      // not seen for a while (the logger may not send "cleared")
 }
 
-// Pending is a card written during a QSO that is not logged yet.
+// Pending is a decision made during a QSO that is not logged yet. The QSO may
+// never be logged: nothing is stored until it is, and the decision is
+// dropped (Cancel, or PendingTTL).
 type Pending struct {
-	Call  string
-	Route store.Route
-	At    time.Time // marked
-	Since time.Time // the QSO in progress started (call entered)
+	Call     string
+	Decision Decision
+	Route    store.Route // Written only
+	At       time.Time   // marked
+	Since    time.Time   // the QSO in progress started (call entered)
 }
 
-// Applied is a pending card that was booked when its QSO was logged.
+// Applied is a pending decision that was booked when its QSO was logged.
 type Applied struct {
-	Call   string
-	QSLKey string
-	Route  store.Route
-	At     time.Time
-	Err    string // set when booking failed
+	Call     string
+	QSLKey   string
+	Decision Decision
+	Route    store.Route
+	At       time.Time
+	Err      string // set when booking failed
 }
 
 // Lookup starts a background QRZ lookup for a call (station.Refresher.Get).
 type Lookup func(ctx context.Context, call string)
 
-// Tracker holds the QSO in progress and the cards written during QSOs that
+// Tracker holds the QSO in progress and the decisions made during QSOs that
 // are not logged yet. Safe for concurrent use.
 type Tracker struct {
 	store  store.Store
@@ -120,7 +147,8 @@ func (t *Tracker) Set(c Contact) {
 }
 
 // Clear forgets the QSO in progress (the entry field was emptied). Pending
-// cards stay until their QSO is logged.
+// decisions stay until their QSO is logged (or they are cancelled or expire:
+// the QSO may never be logged).
 func (t *Tracker) Clear() {
 	t.mu.Lock()
 	had := t.current != nil
@@ -152,9 +180,19 @@ func (t *Tracker) Current() *Current {
 // MarkWritten remembers a card written now (bureau or direct) for the QSO in
 // progress with call; it is booked on the QSO as soon as the QSO is logged.
 func (t *Tracker) MarkWritten(call string, rt store.Route) {
+	t.mark(call, Written, rt)
+}
+
+// MarkDecision remembers the card / no card decision (Yes, No) for the QSO in
+// progress with call; it is booked on the QSO as soon as the QSO is logged.
+func (t *Tracker) MarkDecision(call string, d Decision) {
+	t.mark(call, d, store.Route{})
+}
+
+func (t *Tracker) mark(call string, d Decision, rt store.Route) {
 	call = strings.ToUpper(strings.TrimSpace(call))
 	t.mu.Lock()
-	p := Pending{Call: call, Route: rt, At: t.now(), Since: t.now()}
+	p := Pending{Call: call, Decision: d, Route: rt, At: t.now(), Since: t.now()}
 	if t.current != nil && t.current.Call == call {
 		p.Since = t.current.Since
 	}
@@ -180,8 +218,9 @@ func (t *Tracker) isThatQSO(q *store.QSO, since time.Time) bool {
 	return ok && !start.Before(since.Add(-loggedSlack)) && !start.After(t.now().Add(loggedSlack))
 }
 
-// CancelWritten forgets a pending card.
-func (t *Tracker) CancelWritten(call string) {
+// Cancel forgets a pending decision (also the way out when the QSO will never
+// be logged).
+func (t *Tracker) Cancel(call string) {
 	call = strings.ToUpper(strings.TrimSpace(call))
 	t.mu.Lock()
 	delete(t.pending, call)
@@ -189,8 +228,8 @@ func (t *Tracker) CancelWritten(call string) {
 	t.changed(call)
 }
 
-// Pending lists the cards waiting for their QSO, oldest first (expired ones
-// are dropped).
+// Pending lists the decisions waiting for their QSO, oldest first (expired
+// ones are dropped).
 func (t *Tracker) Pending() []Pending {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -210,7 +249,7 @@ func (t *Tracker) Pending() []Pending {
 	return out
 }
 
-// LastApplied returns the last booking of a pending card, or nil.
+// LastApplied returns the last booking of a pending decision, or nil.
 func (t *Tracker) LastApplied() *Applied {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -222,8 +261,9 @@ func (t *Tracker) LastApplied() *Applied {
 }
 
 // QSOLogged is called for every newly stored QSO (UDP feed, Clublog pull).
-// A card written during that QSO is booked on it ("written now" with its
-// route); the QSO in progress with that call is over.
+// A decision made during that QSO is booked on it (card: to the Desk, no
+// card, or "written now" with its route); the QSO in progress with that call
+// is over.
 func (t *Tracker) QSOLogged(q *store.QSO) {
 	call := strings.ToUpper(q.Call)
 	t.mu.Lock()
@@ -243,7 +283,7 @@ func (t *Tracker) QSOLogged(q *store.QSO) {
 		delete(t.pending, p.Call)
 		ok = false
 	}
-	// Only the QSO that was in progress takes the card: an older QSO with
+	// Only the QSO that was in progress takes the decision: an older QSO with
 	// the station (e.g. back-filled by a Clublog pull) leaves it waiting.
 	if ok && !t.isThatQSO(q, p.Since) {
 		ok = false
@@ -258,12 +298,12 @@ func (t *Tracker) QSOLogged(q *store.QSO) {
 	t.mu.Unlock()
 
 	if ok {
-		a := &Applied{Call: q.Call, QSLKey: q.QSLKey, Route: p.Route, At: t.now()}
-		if err := t.book(q, p.Route); err != nil {
+		a := &Applied{Call: q.Call, QSLKey: q.QSLKey, Decision: p.Decision, Route: p.Route, At: t.now()}
+		if err := t.book(q, p); err != nil {
 			a.Err = err.Error()
-			log.Printf("contact: booking the card written during the QSO with %s: %v", q.Call, err)
+			log.Printf("contact: booking the %s decision made during the QSO with %s: %v", p.Decision, q.Call, err)
 		} else if t.broker != nil {
-			t.broker.Publish(events.QueueChanged(q.QSLKey, "sent"))
+			t.broker.Publish(events.QueueChanged(q.QSLKey, p.Decision.status()))
 		}
 		t.mu.Lock()
 		t.applied = a
@@ -274,18 +314,29 @@ func (t *Tracker) QSOLogged(q *store.QSO) {
 	}
 }
 
-// book records the card written now on the logged QSO; a QSO the qualifier
-// did not queue (digital mode, ...) gets a queue item first - the operator
-// did write the card.
-func (t *Tracker) book(q *store.QSO, rt store.Route) error {
+// book records the decision on the logged QSO. A QSO without a queue item
+// (digital mode, before the cutoff, ...) gets one first - the operator did
+// decide - and for "no card" this is what keeps the qualifier (a Clublog pull
+// runs it after this) from putting the QSO into the Inbox.
+func (t *Tracker) book(q *store.QSO, p Pending) error {
 	item, err := t.store.QueueGet(q.QSLKey)
 	if err != nil {
 		return err
 	}
 	if item == nil {
-		if err := t.store.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued", OverrideReason: ReasonWritten}); err != nil {
+		reason := ReasonDecided
+		if p.Decision == Written {
+			reason = ReasonWritten
+		}
+		if err := t.store.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued", OverrideReason: reason}); err != nil {
 			return err
 		}
 	}
-	return t.store.QueueWrittenNow([]string{q.QSLKey}, rt)
+	switch p.Decision {
+	case Yes:
+		return t.store.QueueAccept(q.QSLKey)
+	case No:
+		return t.store.QueueDecline(q.QSLKey)
+	}
+	return t.store.QueueWrittenNow([]string{q.QSLKey}, p.Route)
 }

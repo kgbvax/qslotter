@@ -275,6 +275,7 @@ body.compact h2 { font-size: 15px; margin: 2px 0 6px; }
 body.compact th { padding: 3px 6px 3px 0; }
 body.compact td { padding: 3px 6px 3px 0; }
 body.compact td.c-name, body.compact td.c-bm { color: var(--ink-soft); }
+body.compact td.c-bm { line-height: 1.15; } /* band over mode */
 body.compact .stamps { gap: 4px; }
 body.compact button.stamp { font-size: 10.5px; padding: 1px 6px; }
 body.compact .fulfil { gap: 4px; margin-left: 6px; }
@@ -360,8 +361,8 @@ header.site nav .pending.err { color: var(--red); }
 .chip.rcvd { border-color: var(--red); color: var(--red); font-weight: 700; }
 .chip.warn { border-style: dashed; }
 .chip.first { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 700; }
-.entry .call .chip.first, .qslcard .call .chip.first { font-size: 13px; vertical-align: middle; margin-left: 6px; }
-.at-call .chip.first { display: none; } /* shown beside the callsign instead */
+.entry .call .chip.first, .qslcard .call .chip.first, .entry .call .chip.earlier, .qslcard .call .chip.earlier { font-size: 13px; vertical-align: middle; margin-left: 6px; }
+.at-call .chip.first, .at-call .chip.earlier { display: none; } /* shown beside the callsign instead */
 .why-queued { font-size: 12.5px; color: var(--red); margin: 4px 0; }
 .qrzstate { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .qrzstate.q-off, .qrzstate.q-notfound { color: var(--red); }
@@ -482,6 +483,7 @@ main { padding-top: 22px; }
 .current .current-head { font-size: 15px; }
 .current .current-head .lbl { font: 700 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--red); margin-right: 6px; }
 .current .current-head .call { font: 700 20px 'IBM Plex Mono', monospace; }
+.current .current-worked { margin: 4px 0 0; }
 .current .current-written { margin: 6px 0; }
 .current .current-written .lbl { font-size: 12px; color: var(--ink-soft); }
 .current.compact { padding: 4px 8px; }
