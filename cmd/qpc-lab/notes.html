@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>qpc note review</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1f2328; --mute:#6b7076; --line:#dcd9d2; --acc:#1d5fa8; --ok:#2e7d4f; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:16px; align-items:center; padding:10px 20px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  header .progress { color:var(--mute); }
+  header .spacer { flex:1; }
+  button { font:inherit; padding:5px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); cursor:pointer; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 400px; gap:20px; padding:20px; max-width:1400px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
+  .call { font-size:26px; font-weight:700; }
+  .call a { font-size:14px; font-weight:400; margin-left:10px; color:var(--acc); }
+  .answer { color:var(--mute); margin:2px 0 12px; }
+  table.fields td { padding:2px 14px 2px 0; vertical-align:top; }
+  table.fields td:first-child { color:var(--mute); }
+  .bio { white-space:pre-wrap; overflow-wrap:anywhere; max-height:60vh; overflow:auto; border-top:1px solid var(--line); padding-top:10px; margin-top:10px; }
+  mark { background:#fff1a8; } mark.q { background:#ffb347; font-weight:700; }
+  .note { border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:4px 0 12px; min-height:2.2em; }
+  .note.empty { color:var(--mute); font-style:italic; }
+  .lbl { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); }
+  textarea { width:100%; font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; min-height:4.5em; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+  kbd { font:12px ui-monospace, monospace; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; color:var(--mute); }
+  .status { margin-top:10px; font-size:13px; min-height:1.4em; color:var(--ok); }
+  .status.err { color:#b3261e; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>qpc note review</h1>
+  <span class="progress" id="progress"></span>
+  <span class="spacer"></span>
+  <button id="prev">←</button><button id="next">→</button>
+</header>
+<main>
+  <section class="card">
+    <div class="call"><span id="call"></span><a id="qrz" target="_blank" rel="noopener">QRZ page ↗</a></div>
+    <div class="answer" id="answer"></div>
+    <table class="fields">
+      <tr><td>qslmgr</td><td id="qslmgr"></td></tr>
+      <tr><td>flags</td><td id="flags"></td></tr>
+      <tr><td>address</td><td id="addr"></td></tr>
+    </table>
+    <div class="bio" id="bio"></div>
+  </section>
+  <aside class="card">
+    <div class="lbl">Your note</div><div class="note" id="gold"></div>
+    <div class="lbl">Model's note</div><div class="note" id="model"></div>
+    <div class="lbl">Final note (English, a few words; empty = no note)</div>
+    <textarea id="final"></textarea>
+    <div class="row">
+      <button id="take">Take model's <kbd>a</kbd></button>
+      <button id="keep">Keep yours <kbd>k</kbd></button>
+      <button id="clear">No note <kbd>x</kbd></button>
+    </div>
+    <div class="row"><button class="primary" id="save">Save &amp; next</button><kbd>Enter</kbd> · <kbd>e</kbd> edit · <kbd>←</kbd><kbd>→</kbd> browse</div>
+    <div class="status" id="status"></div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let L = [], cur = 0, saving = false;
+const KEYWORDS = /(\w*qsl\w*)|\b(bureau|buro|büro|direct\w*|direkt|oqrs|manager|via|sase?|irc|green ?stamps?|lotw|paypal|clublog|club log|paper|eme|ft8|usd|\$\d+)\b/gi;
+function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function marked(t) { return esc(t).replace(KEYWORDS, (m, q) => q ? `<mark class="q">${m}</mark>` : `<mark>${m}</mark>`); }
+function note(id, t) { $(id).textContent = t || '(none)'; $(id).className = 'note' + (t ? '' : ' empty'); }
+
+async function load() {
+  L = (await (await fetch('/api/state')).json()).items || [];
+  cur = Math.max(0, L.findIndex(x => !x.reviewed));
+  render();
+}
+function render() {
+  if (!L.length) { $('progress').textContent = 'nothing to review'; return; }
+  const x = L[cur], st = x.station;
+  $('progress').textContent = `${cur + 1}/${L.length} · ${L.filter(i => i.reviewed).length} reviewed`;
+  $('call').textContent = st.call;
+  $('qrz').href = 'https://www.qrz.com/db/' + encodeURIComponent(st.call);
+  $('answer').textContent = 'your label: ' + x.answer;
+  $('qslmgr').innerHTML = st.qslmgr ? marked(st.qslmgr) : '<i>(empty)</i>';
+  $('flags').textContent = `mqsl ${st.mqsl || '–'} · eqsl ${st.eqsl || '–'} · lotw ${st.lotw || '–'}`;
+  $('addr').textContent = [st.addr1, st.addr2, st.zip, st.country].filter(Boolean).join(', ') || '(none)';
+  const bio = (st.bio || '').replace(/^Untitled Document\s*/, '');
+  $('bio').innerHTML = bio ? marked(bio) : '<i>(no bio)</i>';
+  $('bio').scrollTop = 0;
+  note('gold', x.gold); note('model', x.model);
+  $('final').value = x.gold || '';
+  $('status').textContent = x.reviewed ? 'reviewed' : '';
+  $('status').className = 'status';
+}
+async function save() {
+  if (saving || !L.length) return;
+  saving = true;
+  document.activeElement.blur();
+  try {
+    const res = await fetch('/api/note', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ call: L[cur].station.call, note: $('final').value }) });
+    if (!res.ok) { $('status').textContent = 'Not saved: ' + await res.text(); $('status').className = 'status err'; return; }
+    Object.assign(L[cur], await res.json());
+  } finally { saving = false; }
+  const next = L.findIndex((x, i) => i > cur && !x.reviewed);
+  if (next >= 0) cur = next; else if (cur < L.length - 1) cur++;
+  render();
+}
+$('take').onclick = () => { $('final').value = L[cur].model || ''; };
+$('keep').onclick = () => { $('final').value = L[cur].gold || ''; };
+$('clear').onclick = () => { $('final').value = ''; };
+$('save').onclick = save;
+$('prev').onclick = () => { cur = (cur - 1 + L.length) % L.length; render(); };
+$('next').onclick = () => { cur = (cur + 1) % L.length; render(); };
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (saving) { e.preventDefault(); return; }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); return; }
+  if (e.key === 'Escape') { e.target.blur(); return; }
+  if (e.target.matches('textarea')) return;
+  switch (e.key) {
+    case 'a': $('take').click(); break;
+    case 'k': $('keep').click(); break;
+    case 'x': $('clear').click(); break;
+    case 'e': e.preventDefault(); $('final').focus(); break;
+    case 'ArrowLeft': $('prev').click(); break;
+    case 'ArrowRight': $('next').click(); break;
+  }
+});
+load();
+</script>
+</body>
+</html>

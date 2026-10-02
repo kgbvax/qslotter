@@ -40,6 +40,7 @@ func main() {
 		"sample": cmdSample,
 		"enrich": cmdEnrich,
 		"label":  cmdLabel,
+		"notes":  cmdNotes,
 		"run":    cmdRun,
 		"report": cmdReport,
 	}
@@ -53,6 +54,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|run|report [flags]   (-h for flags)")
+	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|notes|run|report [flags]   (-h for flags)")
 	os.Exit(2)
 }

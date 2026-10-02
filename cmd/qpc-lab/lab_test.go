@@ -235,3 +235,26 @@ func TestReportSmoke(t *testing.T) {
 		t.Errorf("-legacy: %s", b)
 	}
 }
+
+func TestNotesReview(t *testing.T) {
+	gold := filepath.Join(t.TempDir(), "gold.jsonl")
+	appendJSONL(gold, goldLabel{Call: "K1A", Status: qpc.Paper, Routes: []qpc.Route{qpc.Direct}, Comment: "mine", At: "x"})
+	appendJSONL(gold, goldLabel{Call: "K2B", Status: qpc.Unknown, At: "x"})
+	appendJSONL(gold, map[string]any{"call": "K3C", "label": "bureau", "at": "x"}) // first pass: not reviewed
+	items := []item{{Station: qpc.Station{Call: "K1A"}}, {Station: qpc.Station{Call: "K2B"}}, {Station: qpc.Station{Call: "K3C"}}}
+	results := map[string]qpc.Result{"K1A": {Call: "K1A", Note: "SAE + 2 USD"}, "K3C": {Call: "K3C", Note: "x"}}
+	h, n, err := newNotesHandler(items, results, gold)
+	if err != nil || n != 1 {
+		t.Fatalf("items %d, %v (want only K1A: K2B has no note, K3C is first-pass)", n, err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/note", strings.NewReader(`{"call":"k1a","note":" SAE + 2 USD "}`)))
+	if rec.Code != 200 {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body)
+	}
+	g, _ := loadGold(gold)
+	k := g["K1A"]
+	if k.Note != "SAE + 2 USD" || !k.NoteReviewed || k.Status != qpc.Paper || fmt.Sprint(k.Routes) != "[direct]" || k.Comment != "mine" {
+		t.Errorf("reviewed label: %+v", k)
+	}
+}

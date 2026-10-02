@@ -35,9 +35,12 @@ type goldLabel struct {
 	Note      string      `json:"note,omitempty"`    // the station's preferences, conditions, requirements
 	Comment   string      `json:"comment,omitempty"` // the labeller's own remark
 	Unsure    bool        `json:"unsure,omitempty"`
-	Label     string      `json:"label,omitempty"` // single-label scheme (first pass)
-	Legacy    bool        `json:"-"`
-	At        string      `json:"at"`
+	// NoteReviewed: the note was settled on the review page (qpc-lab notes),
+	// which shows a model's note, so it is not blind like the rest.
+	NoteReviewed bool   `json:"note_reviewed,omitempty"`
+	Label        string `json:"label,omitempty"` // single-label scheme (first pass)
+	Legacy       bool   `json:"-"`
+	At           string `json:"at"`
 }
 
 func (g *goldLabel) normalize() {
