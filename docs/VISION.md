@@ -540,3 +540,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   otherwise" - chosen on the first sample - gives 75% on the fresh one, not
   significant. qpc's distinct value is the note, which the heuristic cannot
   produce.
+- **2026-10-02 — A contribution flag next to the note.** The most common
+  note content (18 of the operator's 34 notes) is what a station asks in
+  return for a card: SAE/SASE, IRC, green stamps, money, PayPal, a fee. It
+  becomes a discrete flag, `contribution` = required / not-needed / not
+  stated (kind and amount stay in the note), answered by qpc (prompt v7) and
+  detected by keywords in `qsldetermine` (qslmgr and card-related bio
+  sentences, with negations). The app computes it but does not store or show
+  it yet; the Desk could flag it next to a direct route.

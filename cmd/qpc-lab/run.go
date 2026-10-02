@@ -187,7 +187,7 @@ func runVariant(ctx context.Context, v qpc.Variant, items []item, dsHash, out st
 		if err := appendJSONL(resultsPath, r); err != nil {
 			return err
 		}
-		ans := answerT{r.Status, r.Routes, r.Preferred, r.Via, r.Note}.String()
+		ans := answerT{r.Status, r.Routes, r.Preferred, r.Via, r.Note, r.Contribution}.String()
 		if r.Status == "" {
 			ans = "(unreadable: " + r.ParseError + ")"
 		}
@@ -210,6 +210,7 @@ func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	h := qsldetermine.Determine(c, st.Bio)
 	r := qpc.Result{Call: strings.ToUpper(st.Call), Model: "heuristic", Confidence: h.Confidence, Evidence: h.Reason}
 	r.Status, r.Routes, r.Via = mapHeuristic(h)
+	r.Contribution = qpc.Contribution(h.Contribution)
 	r.LatencyMS = time.Since(start).Milliseconds()
 	return r, nil
 }

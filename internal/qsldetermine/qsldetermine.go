@@ -20,6 +20,10 @@ type Result struct {
 	RefusePaper bool   // explicit "NO QSL", eQSL/LoTW-only, etc.
 	Confidence  string // "high" (structured field), "medium" (explicit bio), "low" (fallback)
 	Reason      string
+	// Contribution: "required" when the station asks for something in
+	// return for a card (SAE/SASE, IRC, green stamps, money, PayPal, a fee or
+	// donation), "not-needed" when it waives that explicitly, "" otherwise.
+	Contribution string
 }
 
 // Determine applies the decision ladder to a QRZ lookup result + bio text.
@@ -28,6 +32,12 @@ func Determine(c *qrz.Callsign, bio string) Result {
 	if c == nil {
 		return Result{Reason: "no station info"}
 	}
+	r := determineRoute(c, bio)
+	r.Contribution = contribution(c.QSLMgr, bio)
+	return r
+}
+
+func determineRoute(c *qrz.Callsign, bio string) Result {
 
 	// 1. Structured qslmgr field. A callsign there is a manager (highest
 	// confidence). Anything else is free text people type into the field
@@ -79,6 +89,44 @@ func Determine(c *qrz.Callsign, bio string) Result {
 
 	// 4. No signal.
 	return Result{Confidence: "low", Reason: "no QSL preference signal"}
+}
+
+var (
+	// contributionRe: something asked in return for a card.
+	contributionRe = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?|\bgs\b|return postage|postage|\busd\b|us ?\$|\$ ?\d|\d ?\$|\d ?(eur|euro|€)|€ ?\d|\beuros?\b|dollars?|paypal|donation|contribution|\bfee\b`)
+	// noContributionRe: the same, waived ("no SASE needed", "IRC not
+	// necessary", "free of charge"). Matched spans are removed before
+	// contributionRe looks, so "no green stamps, IRC only" still asks for one.
+	noContributionRe = regexp.MustCompile(`(no|without|don'?t (send|need)|no need (for|of|to send)) (\w+ )?(s\.?a\.?s?\.?e\b|irc'?s?|green ?stamps?|postage|money|dollars?|contribution|donation|fee)( (is|are))?( (needed|necessary|required))?|(sase|sae|irc'?s?|green ?stamps?|postage|money) (is |are )?not (needed|necessary|required)|free of charge`)
+	// qslContextRe marks the sentences of a bio that talk about cards;
+	// money elsewhere ("my book costs $5") is not a contribution.
+	qslContextRe = regexp.MustCompile(`qsl|card|direct|postage|return|envelope|oqrs|bureau|buro|mail|sase|\bsae\b|\birc\b`)
+	sentenceRe   = regexp.MustCompile(`\n|\. |; |! `)
+)
+
+// contribution reads the qslmgr field and the card-related sentences of the
+// bio for something asked in return for a card.
+func contribution(qslmgr, bio string) string {
+	parts := []string{strings.ToLower(qslmgr)}
+	for _, s := range sentenceRe.Split(strings.ToLower(bio), -1) {
+		if qslContextRe.MatchString(s) {
+			parts = append(parts, s)
+		}
+	}
+	waived := false
+	for _, p := range parts {
+		if noContributionRe.MatchString(p) {
+			waived = true
+			p = noContributionRe.ReplaceAllString(p, " ")
+		}
+		if contributionRe.MatchString(p) {
+			return "required"
+		}
+	}
+	if waived {
+		return "not-needed"
+	}
+	return ""
 }
 
 // flag normalizes a QRZ yes/no flag: QRZ sends 1/0, older data and tests Y/N.

@@ -205,3 +205,25 @@ func TestAddressOnlyRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestContribution(t *testing.T) {
+	cases := []struct{ qslmgr, bio, want string }{
+		{"DIRECT ONLY ( SAE + $6 )", "", "required"},
+		{"", "QSL direct with SASE and 2 green stamps please.", "required"},
+		{"", "Paper QSL on request: 5 EUR via PayPal for postage", "required"},
+		{"", "Direct: no SASE needed, I return all cards.", "not-needed"},
+		{"", "QSL via bureau or direct, IRC not necessary.", "not-needed"},
+		{"", "No green stamps please, IRC only for direct QSL.", "required"},
+		{"", "My new book costs $5.\nQSL via bureau.", ""},
+		{"VIA BUREAU", "", ""},
+		{"", "QSL free of charge via the bureau", "not-needed"},
+	}
+	for _, c := range cases {
+		if got := contribution(c.qslmgr, c.bio); got != c.want {
+			t.Errorf("%q / %q: got %q, want %q", c.qslmgr, c.bio, got, c.want)
+		}
+	}
+	if r := Determine(&qrz.Callsign{QSLMgr: "Direct SASE"}, ""); r.Contribution != "required" || r.Method != "D" {
+		t.Errorf("Determine: %+v", r)
+	}
+}

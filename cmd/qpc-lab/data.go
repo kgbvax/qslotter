@@ -34,7 +34,10 @@ type goldLabel struct {
 	Via       string      `json:"via,omitempty"`
 	Note      string      `json:"note,omitempty"`    // the station's preferences, conditions, requirements
 	Comment   string      `json:"comment,omitempty"` // the labeller's own remark
-	Unsure    bool        `json:"unsure,omitempty"`
+	// Contribution: something asked in return for a card (required,
+	// not-needed, "" = not stated).
+	Contribution qpc.Contribution `json:"contribution,omitempty"`
+	Unsure       bool             `json:"unsure,omitempty"`
 	// NoteReviewed: the note was settled on the review page (qpc-lab notes),
 	// which shows a model's note, so it is not blind like the rest.
 	NoteReviewed bool   `json:"note_reviewed,omitempty"`

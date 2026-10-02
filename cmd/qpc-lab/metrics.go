@@ -20,6 +20,9 @@ type answerT struct {
 	Preferred qpc.Route
 	Via       string
 	Note      string
+	// Contribution is scored on its own, not as part of "all": only prompts
+	// from v7 answer it.
+	Contribution qpc.Contribution
 }
 
 // String is the compact form used in tables: "bureau+direct*" (* = preferred),
@@ -66,6 +69,7 @@ func (p pair) preferredOK() bool { return p.Gold.Preferred == p.Pred.Preferred }
 func (p pair) viaOK() bool       { return p.Gold.Via == p.Pred.Via }
 func (p pair) allOK() bool       { return p.statusOK() && p.routesOK() && p.preferredOK() && p.viaOK() }
 func (p pair) noteAgrees() bool  { return (p.Gold.Note != "") == (p.Pred.Note != "") }
+func (p pair) contribOK() bool   { return p.Gold.Contribution == p.Pred.Contribution }
 
 // classStats is precision and recall for one status or route; NaN =
 // undefined (never predicted / never in gold).
@@ -93,6 +97,8 @@ type metrics struct {
 	Unreadable, Truncated, CutOff      int
 	Guarded, GuardedOK                 int
 	NotesGold, NotesPred, NotesBoth    int
+	ContribAcc                         float64
+	ContribRequired                    classStats // "required" found where the station asks for it
 	PerStatus, PerRoute                []classStats
 	Confusion                          map[qpc.Status]map[qpc.Status]int // gold -> pred -> count
 	// Share of stations the model answered with that confidence or higher,
@@ -115,7 +121,8 @@ func computeMetrics(ps []pair) metrics {
 	if m.N == 0 {
 		return m
 	}
-	var status, routes, pref, via, all, notes, high, highOK, hm, hmOK, tokSum int
+	var status, routes, pref, via, all, notes, contrib, high, highOK, hm, hmOK, tokSum int
+	var crSup, crPred, crTP int
 	var lat []float64
 	count := func(ok bool, n *int) {
 		if ok {
@@ -129,6 +136,10 @@ func computeMetrics(ps []pair) metrics {
 		count(p.viaOK(), &via)
 		count(p.allOK(), &all)
 		count(p.noteAgrees(), &notes)
+		count(p.contribOK(), &contrib)
+		count(p.Gold.Contribution == qpc.ContributionRequired, &crSup)
+		count(p.Pred.Contribution == qpc.ContributionRequired, &crPred)
+		count(p.Gold.Contribution == qpc.ContributionRequired && p.Pred.Contribution == qpc.ContributionRequired, &crTP)
 		count(p.Pred.Status == unreadable, &m.Unreadable)
 		count(p.Truncated, &m.Truncated)
 		count(p.CutOff, &m.CutOff)
@@ -157,6 +168,8 @@ func computeMetrics(ps []pair) metrics {
 	}
 	m.StatusAcc, m.RoutesAcc, m.PreferredAcc = ratio(status, m.N), ratio(routes, m.N), ratio(pref, m.N)
 	m.ViaAcc, m.AllAcc, m.NoteAgree = ratio(via, m.N), ratio(all, m.N), ratio(notes, m.N)
+	m.ContribAcc = ratio(contrib, m.N)
+	m.ContribRequired = newClassStats("required", crSup, crPred, crTP)
 	m.HighCov, m.HighAcc = ratio(high, m.N), ratio(highOK, high)
 	m.HighMedCov, m.HighMedAcc = ratio(hm, m.N), ratio(hmOK, hm)
 	m.TokensMean = tokSum / m.N

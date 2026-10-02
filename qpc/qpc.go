@@ -84,6 +84,22 @@ func HasRoute(rs []Route, r Route) bool {
 	return false
 }
 
+// Contribution says whether the station asks for something in return for a
+// card: return postage (SAE/SASE, IRC, green stamps), money (USD, EUR), PayPal,
+// an OQRS fee or a donation. Required, explicitly not needed, or "" when the
+// record does not say. Kind and amount stay in the note.
+type Contribution string
+
+const (
+	ContributionRequired  Contribution = "required"
+	ContributionNotNeeded Contribution = "not-needed"
+)
+
+// Valid reports whether p is a known value ("" = not stated).
+func (p Contribution) Valid() bool {
+	return p == "" || p == ContributionRequired || p == ContributionNotNeeded
+}
+
 // LegacyLabels is the single-label scheme of prompts v1 and v2: one route or
 // one status, the cheapest route when several were accepted.
 var LegacyLabels = []string{"bureau", "direct", "oqrs", "unclear", "no-paper", "unknown"}
@@ -134,12 +150,13 @@ func (s Station) HasFullAddress() bool {
 // Result is one classification. Status is empty when the model's answer could
 // not be read (ParseError says why); a transport failure is an error instead.
 type Result struct {
-	Call      string  `json:"call"`
-	Status    Status  `json:"status"`
-	Routes    []Route `json:"routes,omitempty"`    // with Status paper: every route the station accepts
-	Preferred Route   `json:"preferred,omitempty"` // the route the station says it prefers, if any
-	Via       string  `json:"via,omitempty"`       // callsign the card goes via, empty if none
-	Note      string  `json:"note,omitempty"`      // the station's preferences, conditions, requirements (English)
+	Call         string       `json:"call"`
+	Status       Status       `json:"status"`
+	Routes       []Route      `json:"routes,omitempty"`       // with Status paper: every route the station accepts
+	Preferred    Route        `json:"preferred,omitempty"`    // the route the station says it prefers, if any
+	Via          string       `json:"via,omitempty"`          // callsign the card goes via, empty if none
+	Note         string       `json:"note,omitempty"`         // the station's preferences, conditions, requirements (English)
+	Contribution Contribution `json:"contribution,omitempty"` // something asked in return for a card (prompts from v7)
 	// Label is the answer of a single-label prompt (v1, v2); Status and
 	// Routes are derived from it.
 	Label            string `json:"label,omitempty"`

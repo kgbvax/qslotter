@@ -76,7 +76,7 @@ func newNotesHandler(items []item, results map[string]qpc.Result, goldPath strin
 			continue
 		}
 		ni := &noteItem{Station: it.Station, Gold: g.Note, Model: r.Note, Reviewed: g.NoteReviewed,
-			Answer: answerT{g.Status, g.Routes, g.Preferred, g.Via, ""}.String(), Evidence: r.Evidence, goldLabel: g}
+			Answer: answerT{Status: g.Status, Routes: g.Routes, Preferred: g.Preferred, Via: g.Via}.String(), Evidence: r.Evidence, goldLabel: g}
 		list = append(list, ni)
 		byCall[it.Call] = ni
 	}

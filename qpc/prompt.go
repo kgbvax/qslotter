@@ -24,7 +24,7 @@ var builtinPrompts embed.FS
 type Prompt struct {
 	Name   string // file name without extension
 	Hash   string // first 8 hex digits of the SHA-256 of the file (and Rules, if used)
-	Answer string // "routes" or "label"
+	Answer string // "routes-contribution", "routes" or "label"
 	tmpl   *template.Template
 }
 
@@ -81,7 +81,7 @@ func LoadPrompt(nameOrPath string) (*Prompt, error) {
 			return nil, fmt.Errorf("prompt %q: %w", nameOrPath, err)
 		}
 		switch a := strings.TrimSpace(b.String()); a {
-		case "routes", "label":
+		case "routes-contribution", "routes", "label":
 			p.Answer = a
 		default:
 			return nil, fmt.Errorf("prompt %q: answer %q (want routes or label)", nameOrPath, a)
@@ -92,7 +92,10 @@ func LoadPrompt(nameOrPath string) (*Prompt, error) {
 
 // schema returns the response_format for Format "schema".
 func (p *Prompt) schema() json.RawMessage {
-	if p.Answer == "routes" {
+	switch p.Answer {
+	case "routes-contribution":
+		return routesContributionSchema
+	case "routes":
 		return routesSchema
 	}
 	return labelSchema
@@ -127,6 +130,24 @@ var routesSchema = func() json.RawMessage {
 		`"note":{"type":"string"},` +
 		`"confidence":{"type":"string","enum":["high","medium","low"]}` +
 		`},"required":["evidence","status","routes","preferred","via","note","confidence"],"additionalProperties":false}}}`)
+}()
+
+// routesContributionSchema is routesSchema plus the contribution flag (prompts from v7).
+var routesContributionSchema = func() json.RawMessage {
+	statuses, _ := json.Marshal(Statuses)
+	routes, _ := json.Marshal(AllRoutes)
+	preferred, _ := json.Marshal(append([]Route{""}, AllRoutes...))
+	return json.RawMessage(`{"type":"json_schema","json_schema":{"name":"qsl_preference","strict":true,"schema":{` +
+		`"type":"object","properties":{` +
+		`"evidence":{"type":"string"},` +
+		`"status":{"type":"string","enum":` + string(statuses) + `},` +
+		`"routes":{"type":"array","items":{"type":"string","enum":` + string(routes) + `}},` +
+		`"preferred":{"type":"string","enum":` + string(preferred) + `},` +
+		`"via":{"type":"string"},` +
+		`"contribution":{"type":"string","enum":["","required","not-needed"]},` +
+		`"note":{"type":"string"},` +
+		`"confidence":{"type":"string","enum":["high","medium","low"]}` +
+		`},"required":["evidence","status","routes","preferred","via","contribution","note","confidence"],"additionalProperties":false}}}`)
 }()
 
 var labelSchema = func() json.RawMessage {

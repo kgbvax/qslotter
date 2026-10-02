@@ -5,6 +5,7 @@ Answer:
 - routes: with status paper, every route the station accepts for paper cards: bureau, direct, oqrs. Empty for the other statuses.
 - preferred: the route the station says it prefers ("direct preferred", "bureau if possible"); empty when it states no preference.
 - via: the callsign the card is routed via, if any (below).
+- contribution: does the station ask for something in return for a card - return postage (SAE/SASE, IRC, green stamps), money ("2 USD", "4 EUR"), PayPal, an OQRS fee or a donation? "required", "not-needed" when it says so explicitly ("no SASE needed", "free of charge"), or empty when the record does not say.
 - note: a few English words summing up anything the station says about how or when to send paper cards: preferences, conditions, requirements ("direct preferred", "only if no electronic QSL possible", "EME QSOs only", "no cards for FT8 QSOs", "SAE + 2 USD", "PayPal for postage"). Summarize, do not copy the station's text. Empty if it says nothing of the kind.
 
 Status:
@@ -37,6 +38,7 @@ Rules:
 8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes; mentioning them does not change rules 6 and 7.
 9. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
 10. The bio may be written in any language; the note is always in English.
+11. contribution is about what the station asks for, not about the route: set it whenever a contribution is asked for or waived, also for a manager or OQRS. Kind and amount ("SAE + 2 USD") also go into the note.
 
 QRZ fields:
 - qslmgr: QSL manager or QSL instructions, free text.

@@ -10,14 +10,15 @@ import (
 // answer is the JSON object the prompts ask for: Status, Routes, Preferred and
 // Note for a routes prompt, Label for a single-label prompt (v1, v2).
 type answer struct {
-	Evidence   string   `json:"evidence"`
-	Status     string   `json:"status"`
-	Routes     []string `json:"routes"`
-	Preferred  string   `json:"preferred"`
-	Label      string   `json:"label"`
-	Via        string   `json:"via"`
-	Note       string   `json:"note"`
-	Confidence string   `json:"confidence"`
+	Evidence     string   `json:"evidence"`
+	Status       string   `json:"status"`
+	Routes       []string `json:"routes"`
+	Preferred    string   `json:"preferred"`
+	Label        string   `json:"label"`
+	Via          string   `json:"via"`
+	Contribution string   `json:"contribution"`
+	Note         string   `json:"note"`
+	Confidence   string   `json:"confidence"`
 }
 
 var (
@@ -59,6 +60,11 @@ func parseAnswer(raw string, r *Result) {
 		problems = append(problems, fmt.Sprintf("via %q is not a callsign", a.Via))
 	}
 	r.Via = via
+	if p := Contribution(word(a.Contribution)); p.Valid() {
+		r.Contribution = p
+	} else {
+		problems = append(problems, fmt.Sprintf("invalid contribution %q", a.Contribution))
+	}
 
 	if a.Status == "" && a.Label != "" {
 		l := word(a.Label)

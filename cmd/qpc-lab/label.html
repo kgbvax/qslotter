@@ -90,6 +90,8 @@
       <div class="opts" id="routes"></div>
       <div class="group">…or no usable route</div>
       <div class="opts" id="statuses"></div>
+      <div class="group">Contribution asked for <kbd>$</kbd> (SAE/SASE, IRC, green stamps, money, PayPal, fee)</div>
+      <div class="opts" id="contrib"></div>
       <div class="field">
         <label for="via">Via callsign <kbd>v</kbd> (manager or home call; empty if none)</label>
         <input type="text" id="via" autocomplete="off" spellcheck="false">
@@ -105,7 +107,7 @@
       <div class="row"><input type="checkbox" id="unsure"><label for="unsure">Unsure <kbd>u</kbd></label></div>
       <div class="row"><button class="primary" id="save">Save &amp; next</button><kbd>Enter</kbd></div>
       <div class="status" id="status"></div>
-      <div class="keys"><kbd>b</kbd><kbd>d</kbd><kbd>o</kbd> route on/off · <kbd>B</kbd><kbd>D</kbd><kbd>O</kbd> preferred (★) · <kbd>1</kbd> no-paper <kbd>2</kbd> unknown <kbd>3</kbd> unclear · <kbd>Enter</kbd> save &amp; next · <kbd>Esc</kbd> leave a text field · <kbd>←</kbd><kbd>→</kbd> browse · <kbd>j</kbd> next to do · <kbd>h</kbd> highlight · <kbd>r</kbd> rules</div>
+      <div class="keys"><kbd>b</kbd><kbd>d</kbd><kbd>o</kbd> route on/off · <kbd>B</kbd><kbd>D</kbd><kbd>O</kbd> preferred (★) · <kbd>1</kbd> no-paper <kbd>2</kbd> unknown <kbd>3</kbd> unclear · <kbd>$</kbd> contribution · <kbd>Enter</kbd> save &amp; next · <kbd>Esc</kbd> leave a text field · <kbd>←</kbd><kbd>→</kbd> browse · <kbd>j</kbd> next to do · <kbd>h</kbd> highlight · <kbd>r</kbd> rules</div>
       <details id="rules"><summary>Labelling rules <kbd>r</kbd></summary><pre id="rulesText"></pre></details>
     </div>
   </aside>
@@ -117,6 +119,8 @@ let S = null, cur = 0, highlight = true, saving = false;
 let F = { routes: new Set(), preferred: '', status: '' };
 const ROUTE_KEYS = { b: 'bureau', d: 'direct', o: 'oqrs' };
 const STATUS_KEYS = { '1': 'no-paper', '2': 'unknown', '3': 'unclear' };
+const CONTRIB = [['', 'not stated'], ['required', 'required'], ['not-needed', 'not needed (waived)']];
+let contrib = '';
 
 // "QSL" stands out (also inside words: eQSL, DigiQSL, QSL-Karte).
 const KEYWORDS = /(\w*qsl\w*)|\b(bureau|buro|büro|bureo|direct\w*|direkt|oqrs|manager|mgr|via|sase?|irc|green ?stamps?|lotw|paypal|clublog|club log|no paper|paper)\b/gi;
@@ -142,10 +146,17 @@ async function load() {
     lab.querySelector('input').onchange = () => setStatus(st);
     $('statuses').appendChild(lab);
   });
+  CONTRIB.forEach(([v, text]) => {
+    const lab = document.createElement('label');
+    lab.innerHTML = `<input type="radio" name="contrib" value="${v}"><span>${text}</span>`;
+    lab.querySelector('input').onchange = () => { contrib = v; };
+    $('contrib').appendChild(lab);
+  });
   cur = firstTodo(0);
   if (cur < 0) cur = 0;
   render();
 }
+function renderContrib() { document.querySelectorAll('input[name=contrib]').forEach(x => x.checked = x.value === contrib); }
 
 // Done = labelled in the routes scheme; a first-pass label still needs a look.
 function done(i) { const g = S.gold[S.stations[i].call]; return !!g && !g.legacy; }
@@ -203,6 +214,8 @@ function render() {
   $('bio').scrollTop = 0;
   F = { routes: new Set(g ? (g.routes || []) : []), preferred: g ? (g.preferred || '') : '', status: g && g.status !== 'paper' ? g.status : '' };
   renderForm();
+  contrib = g ? (g.contribution || '') : '';
+  renderContrib();
   $('via').value = g ? (g.via || '') : '';
   $('note').value = g ? (g.note || '') : '';
   $('comment').value = g ? (g.comment || '') : '';
@@ -239,6 +252,7 @@ async function save() {
   const body = {
     call: st.call, status: F.routes.size ? 'paper' : F.status, routes: [...F.routes], preferred: F.preferred,
     via: $('via').value.trim(), note: $('note').value.trim(), comment: $('comment').value.trim(), unsure: $('unsure').checked,
+    contribution: contrib,
   };
   // Keys typed while the save is in flight must not land on this station.
   saving = true;
@@ -281,6 +295,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (STATUS_KEYS[e.key]) { e.preventDefault(); setStatus(STATUS_KEYS[e.key]); return; }
+  if (e.key === '$') { e.preventDefault(); const i = CONTRIB.findIndex(c => c[0] === contrib); contrib = CONTRIB[(i + 1) % CONTRIB.length][0]; renderContrib(); return; }
   switch (e.key) {
     case 'ArrowLeft': move(-1); break;
     case 'ArrowRight': move(1); break;

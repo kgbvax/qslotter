@@ -81,8 +81,8 @@ func cmdReport(args []string) error {
 			}
 			g := gold[it.Call]
 			p := pair{Call: it.Call,
-				Gold: answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note},
-				Pred: answerT{res.Status, res.Routes, res.Preferred, res.Via, res.Note},
+				Gold: answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note, g.Contribution},
+				Pred: answerT{res.Status, res.Routes, res.Preferred, res.Via, res.Note, res.Contribution},
 				Conf: res.Confidence, Evidence: res.Evidence, LatencyMS: res.LatencyMS,
 				Tokens: res.PromptTokens, Truncated: res.Truncated, CutOff: res.FinishReason == "length",
 				Guarded: res.Guard != ""}
@@ -111,7 +111,7 @@ func cmdReport(args []string) error {
 	writeSummary(f, runs)
 	fmt.Fprintln(f, `
 "status" = paper / no-paper / unknown / unclear right; "routes" = the whole set of accepted routes right; "pref" = preferred route right (both empty counts as right); "via" likewise; "all" = status, routes, pref and via all right.
-"notes" = both or neither have a note (the wording is compared by reading, below). "high conf" = share answered with high confidence, and how many of those are entirely right.
+"notes" = both or neither have a note (the wording is compared by reading, below). "contrib" = the contribution flag right (required / not-needed / not stated), with precision/recall for "required"; not part of "all". "high conf" = share answered with high confidence, and how many of those are entirely right.
 Single-label prompts (v1, v2) give one route at most and no note.`)
 	for _, r := range runs {
 		writeRunDetail(f, r)
@@ -212,21 +212,27 @@ func writeGoldDistribution(w io.Writer, eval []item, gold map[string]goldLabel) 
 	for _, k := range keys {
 		fmt.Fprintf(w, "| %s | %d |\n", k, combos[k])
 	}
-	fmt.Fprintf(w, "\nWith a preferred route: %d. With a via callsign: %d. With a note: %d.\n\n", pref, vias, notes)
+	contrib := map[qpc.Contribution]int{}
+	for _, it := range eval {
+		contrib[gold[it.Call].Contribution]++
+	}
+	fmt.Fprintf(w, "\nWith a preferred route: %d. With a via callsign: %d. With a note: %d. Contribution required: %d, not needed: %d.\n\n",
+		pref, vias, notes, contrib[qpc.ContributionRequired], contrib[qpc.ContributionNotNeeded])
 }
 
 func writeSummary(w io.Writer, runs []*run) {
-	fmt.Fprintln(w, "| variant | model | prompt | done | status | routes | pref | via | **all** | κ | notes | high conf (cov/all) | unreadable | s mean/p95 |")
-	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+	fmt.Fprintln(w, "| variant | model | prompt | done | status | routes | pref | via | **all** | κ | notes | contrib (P/R) | high conf (cov/all) | unreadable | s mean/p95 |")
+	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, r := range runs {
 		m := r.M
 		model := r.Info.Variant.Model
 		if r.Info.Variant.Kind == "heuristic" {
 			model = "(rules)"
 		}
-		fmt.Fprintf(w, "| %s | %s | %s | %d/%d | %s | %s | %s | %s | **%s** | %s | %s | %s / %s | %d | %.1f / %.1f |\n",
+		fmt.Fprintf(w, "| %s | %s | %s | %d/%d | %s | %s | %s | %s | **%s** | %s | %s | %s (%s/%s) | %s / %s | %d | %.1f / %.1f |\n",
 			r.Name, model, orDash(r.Info.PromptID), m.N, m.N+r.Missing, pct(m.StatusAcc), pct(m.RoutesAcc),
 			pct(m.PreferredAcc), pct(m.ViaAcc), pct(m.AllAcc), num(m.Kappa), pct(m.NoteAgree),
+			pct(m.ContribAcc), pct(m.ContribRequired.Precision), pct(m.ContribRequired.Recall),
 			pct(m.HighCov), pct(m.HighAcc), m.Unreadable, m.LatencyMean, m.LatencyP95)
 	}
 }
@@ -342,7 +348,7 @@ func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]g
 	var order []string
 	for _, it := range eval {
 		g := gold[it.Call]
-		ga := answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note}
+		ga := answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note, g.Contribution}
 		var cells []string
 		any := false
 		for _, r := range runs {
@@ -386,7 +392,7 @@ func writeDisagreements(w io.Writer, runs []*run, eval []item, gold map[string]g
 	fmt.Fprintln(w, "\n### Evidence quoted by the wrong answers")
 	for _, call := range order {
 		g := gold[call]
-		fmt.Fprintf(w, "\n**%s** — yours: %s", call, answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note})
+		fmt.Fprintf(w, "\n**%s** — yours: %s", call, answerT{g.Status, g.Routes, g.Preferred, g.Via, g.Note, g.Contribution})
 		if g.Note != "" {
 			fmt.Fprintf(w, " (note: %s)", cell(g.Note))
 		}

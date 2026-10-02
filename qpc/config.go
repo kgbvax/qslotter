@@ -44,7 +44,7 @@ type Variant struct {
 // Defaults applied by WithDefaults.
 const (
 	DefaultBaseURL     = "http://localhost:11434/v1"
-	DefaultPrompt      = "v6"
+	DefaultPrompt      = "v7"
 	DefaultMaxTokens   = 512
 	DefaultBioMaxChars = 6000
 	DefaultTimeout     = 2 * time.Minute

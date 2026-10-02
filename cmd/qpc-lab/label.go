@@ -149,6 +149,9 @@ func (g *goldLabel) clean() error {
 	case !g.Status.Valid():
 		return fmt.Errorf("pick routes or a status")
 	}
+	if !g.Contribution.Valid() {
+		return fmt.Errorf("invalid contribution %q", g.Contribution)
+	}
 	if g.Preferred != "" && !qpc.HasRoute(g.Routes, g.Preferred) {
 		return fmt.Errorf("preferred %q is not among the routes", g.Preferred)
 	}
