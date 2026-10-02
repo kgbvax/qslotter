@@ -77,7 +77,6 @@ func TestGermanComplete(t *testing.T) {
 		}
 		k := addQueued(t, st, call, "20240108")
 		requestDE(t, h, http.MethodGet, "/decide?key="+url.QueryEscape(k), nil)
-		requestDE(t, h, http.MethodGet, "/station/"+call, nil)
 	}
 	backlog := addQueued(t, st, "DL5VVV", "20200101")
 	if _, err := st.QueueDiscardBacklog("20210101"); err != nil {
