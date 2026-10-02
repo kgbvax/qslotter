@@ -587,3 +587,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   if anything better: fully right 77% / 71% on the two labelled samples
   (v7: 76% / 68%), status 87% / 90% (v7: 83% / 81%). v8 is the default
   prompt; its rules are inlined, so a LABELS.md edit no longer changes it.
+- **2026-10-02 — Heuristic: managers with a lead-in, SASE = direct.** The
+  third-sample comparison with qwen v8 showed `qsldetermine` missing
+  managers written "QSL MGR EA5GL", "QSL VIA EC1DD" or "QSL Manager:
+  EA7FTR" in qslmgr, taking the station's own call as its manager ("QSL
+  via PD3JWB (bureau)" on PD3JWB), and not reading "LOTW or SASE" as
+  direct. Fixed; on the labelled samples the heuristic is now fully right
+  on 75% / 77% (status, routes and via: 78% vs qwen v8 76%), and it agrees
+  with qwen v8 on 76% of the third sample (was 74%).

@@ -45,7 +45,9 @@ func determineRoute(c *qrz.Callsign, bio string) Result {
 	// instead of mistaking its first word for a callsign.
 	mgr := strings.TrimSpace(c.QSLMgr)
 	if mgr != "" && !strings.EqualFold(mgr, "NONE") {
-		if call, ok := managerCall(mgr); ok {
+		// The station's own call is not a manager ("QSL via PD3JWB (bureau)"
+		// on PD3JWB's record); its home call for a portable call is.
+		if call, ok := managerCall(mgr); ok && !strings.EqualFold(call, strings.TrimSpace(c.Call)) {
 			return Result{Method: "M", Manager: call, Confidence: "high",
 				Reason: "qslmgr field: " + mgr}
 		}
@@ -58,7 +60,7 @@ func determineRoute(c *qrz.Callsign, bio string) Result {
 	// 2. Bio text.
 	sig := readSignals(bio)
 	refusePaper := sig.noPaper
-	if m := viaManagerRe.FindStringSubmatch(bio); m != nil && LooksLikeCallsign(m[1]) {
+	if m := viaManagerRe.FindStringSubmatch(bio); m != nil && LooksLikeCallsign(m[1]) && !strings.EqualFold(m[1], strings.TrimSpace(c.Call)) {
 		return Result{Method: "M", Manager: strings.ToUpper(m[1]),
 			Confidence: "medium", Reason: "bio: QSL via " + m[1], RefusePaper: refusePaper}
 	}
@@ -154,6 +156,25 @@ func contribution(qslmgr, bio string) string {
 	return ""
 }
 
+// asked returns lc without the parts that waive or merely mention a
+// contribution ("no SASE needed", "even with green stamps"), so what is left
+// is asked for.
+func asked(lc string) string {
+	lc = ignoreContributionRe.ReplaceAllString(lc, " ")
+	for _, re := range noContributionSpans {
+		lc = re.ReplaceAllStringFunc(lc, func(m string) string {
+			if contributionRe.MatchString(m) {
+				return " "
+			}
+			return m
+		})
+	}
+	for _, re := range noContributionRes {
+		lc = re.ReplaceAllString(lc, " ")
+	}
+	return lc
+}
+
 // flag normalizes a QRZ yes/no flag: QRZ sends 1/0, older data and tests Y/N.
 func flag(v string) (yes, no bool) {
 	switch strings.ToUpper(strings.TrimSpace(v)) {
@@ -165,11 +186,15 @@ func flag(v string) (yes, no bool) {
 	return false, false
 }
 
+var managerLeadIn = map[string]bool{"via": true, "qsl": true, "mgr": true, "manager": true, "pse": true, "please": true}
+
 // managerCall extracts a manager callsign from a qslmgr value such as
-// "K2ABC", "via K2ABC" or "K2ABC (bureau only)". Free text yields false.
+// "K2ABC", "via K2ABC", "QSL MGR K2ABC" or "K2ABC (bureau only)". Free text
+// yields false.
 func managerCall(s string) (string, bool) {
 	fields := strings.Fields(s)
-	if len(fields) > 1 && strings.EqualFold(strings.Trim(fields[0], ",;:."), "via") {
+	// Lead-in words: "QSL via K2ABC", "QSL MGR K2ABC", "QSL Manager: K2ABC".
+	for len(fields) > 1 && managerLeadIn[strings.ToLower(strings.Trim(fields[0], ",;:.-"))] {
 		fields = fields[1:]
 	}
 	if len(fields) == 0 {
@@ -193,8 +218,11 @@ type signals struct {
 }
 
 var (
-	bureauWordRe     = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
-	directWordRe     = regexp.MustCompile(`direct|direkt|directo`)
+	bureauWordRe = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
+	directWordRe = regexp.MustCompile(`direct|direkt|directo`)
+	// returnPostageRe: asking for return postage means a card by post
+	// ("LOTW or SASE"); see asked for waivers.
+	returnPostageRe  = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?`)
 	electronicRe     = regexp.MustCompile(`e-?\.?qsl|lotw|logbook of the world|clublog|hamaward`) // HamAward: digital only
 	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward)[^.]{0,20}\bonly\b|\bonly (via )?(e-?\.?qsl|lotw|electronic|hamaward)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
@@ -211,7 +239,7 @@ func readSignals(text string) signals {
 	lc := strings.ToLower(text)
 	var s signals
 	s.bureauWord = bureauWordRe.MatchString(lc)
-	s.directWord = directWordRe.MatchString(lc)
+	s.directWord = directWordRe.MatchString(lc) || returnPostageRe.MatchString(asked(lc))
 	s.electronic = electronicRe.MatchString(lc)
 	s.electronicOnly = electronicOnlyRe.MatchString(lc)
 	s.onlyDirect = onlyDirectRe.MatchString(lc)

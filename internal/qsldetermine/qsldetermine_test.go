@@ -1,6 +1,7 @@
 package qsldetermine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dl9et/qslotter/internal/qrz"
@@ -121,6 +122,10 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"LoTW, QRZ.com, eQSL, Clublog. No paper or cards and no Bureau.", "", true},
 		{"Only eQSL / No QSL Paper Direct or Office please", "", true},
 		{"QSL VIA HAMAWARD ONLY", "", true},
+		{"LOTW or SASE", "D", false},
+		{"Bureau or IRC", "B", false}, // both accepted, bureau is cheaper
+		{"QSL VIA BUREAU, no SASE needed", "B", false},
+		{"ONLY LoTW. No paper QSL even with green stamps", "", true},
 		{"No bureau", "D", false},
 		{"No bureau, SASE please", "D", false},
 	}
@@ -139,10 +144,31 @@ func TestQSLMgrFreeText(t *testing.T) {
 	}
 }
 
+func TestManagerWithRoute(t *testing.T) {
+	// A lead-in word is not a route: "QSL MGR EA5GL" names no route.
+	r := Determine(&qrz.Callsign{QSLMgr: "QSL MGR EA5GL", Addr1: "Street 1", Addr2: "Town"}, "")
+	if r.Method != "M" || r.Manager != "EA5GL" || strings.Contains(strings.ToLower(strings.TrimPrefix(r.Reason, "qslmgr field: ")), "direct") {
+		t.Errorf("manager without route: %+v", r)
+	}
+	// The station's own call is not a manager; the home call of a portable call is.
+	if r := Determine(&qrz.Callsign{Call: "PD3JWB", QSLMgr: "QSL via PD3JWB (bureau)"}, ""); r.Method != "B" || r.Manager != "" {
+		t.Errorf("own call as manager: %+v", r)
+	}
+	if r := Determine(&qrz.Callsign{Call: "EA8/DL1ABC"}, "QSL via DL1ABC"); r.Method != "M" || r.Manager != "DL1ABC" {
+		t.Errorf("home call: %+v", r)
+	}
+	// "QSL via bureau" is a route, not a manager.
+	if r := Determine(&qrz.Callsign{QSLMgr: "QSL VIA BUREAU"}, ""); r.Method != "B" {
+		t.Errorf("QSL VIA BUREAU: %+v", r)
+	}
+}
+
 func TestQSLMgrCallsignForms(t *testing.T) {
 	for mgr, want := range map[string]string{
 		"K2ABC": "K2ABC", "via K2ABC": "K2ABC", "k2abc": "K2ABC",
 		"K2ABC (bureau only)": "K2ABC", "DL1ABC/P,": "DL1ABC/P",
+		"QSL MGR EA5GL": "EA5GL", "QSL VIA EC1DD": "EC1DD", "QSL Manager: EA7FTR": "EA7FTR",
+		"PSE QSL via K2ABC direct": "K2ABC",
 	} {
 		r := Determine(&qrz.Callsign{QSLMgr: mgr}, "")
 		if r.Method != "M" || r.Manager != want || r.Confidence != "high" {
