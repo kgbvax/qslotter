@@ -55,9 +55,9 @@ func (s *Server) currentView(compact bool) CurrentView {
 		route := i18n.M(routeName(routeCode(a.Route.Method, a.Route.Via)))
 		v.AppliedLeft = int((appliedFor-s.now().Sub(a.At))/time.Second) + 2
 		if a.Err != "" {
-			v.Applied, v.Failed = i18n.M("The card written during the QSO with %s could not be booked: %s", a.Call, a.Err), true
+			v.Applied, v.Failed = i18n.M("The card written during the QSO with %s could not be recorded: %s", a.Call, a.Err), true
 		} else {
-			v.Applied = i18n.M("Card written during the QSO with %s booked on the logged QSO (%s).", a.Call, route)
+			v.Applied = i18n.M("Card written during the QSO with %s recorded on the logged QSO (%s).", a.Call, route)
 		}
 	}
 	if v.Cur != nil {
@@ -75,7 +75,7 @@ func (s *Server) currentView(compact bool) CurrentView {
 				}
 			}
 			if n := res.Others; n > 0 {
-				kept = append(kept, Badge{Kind: "warn", Text: i18n.M("%d open QSO(s) with this station in the Inbox or at the Desk - a card written now books only the QSO being logged", n)})
+				kept = append(kept, Badge{Kind: "warn", Text: i18n.M("%d open QSO(s) with this station in New QSOs or at the Desk - a card written during the QSO is recorded only on the QSO being logged", n)})
 			}
 			res.Badges = kept
 		}
@@ -107,7 +107,7 @@ func (s *Server) htmxCurrentWritten(w http.ResponseWriter, r *http.Request) {
 	case "B", "D":
 		rt = store.Route{Method: r.FormValue("route")}
 	default:
-		s.fail(w, r, http.StatusBadRequest, "A card written now goes bureau or direct.")
+		s.fail(w, r, http.StatusBadRequest, "A card written during the QSO goes bureau or direct.")
 		return
 	}
 	s.Contacts.MarkWritten(call, rt)

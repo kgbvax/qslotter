@@ -3,7 +3,7 @@
   <div class="empty">
     <p class="big">{{t "No QSOs waiting for a decision."}}</p>
     <p>{{t "New QSOs land here the moment Log4OM sends them; Clublog pulls add any you logged elsewhere."}}</p>
-    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{t "%d card(s) waiting at the Desk" .Work}} &rarr;</a>{{else}}<a href="/queue">{{t "Back to the Inbox list"}}</a>{{end}}{{end}}</p>
+    <p>{{with counts}}{{if .Work}}<a href="/work/card">{{t "%d card(s) waiting at the Desk" .Work}} &rarr;</a>{{else}}<a href="/queue">{{t "Back to the New QSOs list"}}</a>{{end}}{{end}}</p>
   </div>
 {{else}}
   {{$nx := printf "&md=%s&next=%s&prev=%s" (mdflag .MD) (q .Down) (q .Up)}}
@@ -24,15 +24,15 @@
   </article>
   <div class="decide-actions">
     <span class="stamps" role="group" aria-label="{{t "Card?"}}">
-      <button type="button" class="stamp yes{{if or (eq .Row.Suggested "B") (eq .Row.Suggested "D") (eq .Row.Suggested "M")}} suggested{{end}}" data-key="y" title="{{t "Yes, card - goes to the Desk, where the route is chosen"}}  (y)" hx-post="/queue/yes?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Yes, card"}}</button>
+      <button type="button" class="stamp yes{{if or (eq .Row.Suggested "B") (eq .Row.Suggested "D") (eq .Row.Suggested "M")}} suggested{{end}}" data-key="y" title="{{t "Yes, card - goes to the Desk, where you choose how to send it"}}  (y)" hx-post="/queue/yes?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Yes, card"}}</button>
       <button type="button" class="stamp none{{if eq .Row.Suggested "N"}} suggested{{end}}" data-key="n" title="{{t "No card"}}  (n)" hx-post="/queue/none?key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "No card"}}</button>
     </span>
-    <span class="fulfil written-now" role="group" aria-label="{{t "Written now"}}">
-      <span class="lbl" title="{{t "Card filled in during the QSO - done, never shown again"}}">{{t "Written now:"}}</span>
-      <button type="button" class="mini" data-key="wb" title="{{t "Written now, goes via the bureau - done"}}  ({{t "w, then b"}})" hx-post="/queue/written?route=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Bureau"}}</button>
-      <button type="button" class="mini" data-key="wd" title="{{t "Written now, goes direct - done"}}  ({{t "w, then d"}})" hx-post="/queue/written?route=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Direct"}}</button>
+    <span class="fulfil written-now" role="group" aria-label="{{t "Already written"}}">
+      <span class="lbl" title="{{t "Card already filled in during the QSO - marked sent via bureau/direct, goes to Done"}}">{{t "Already written - sent via:"}}</span>
+      <button type="button" class="mini" data-key="wb" title="{{t "Already written, sent via the bureau - goes to Done"}}  ({{t "w, then b"}})" hx-post="/queue/written?route=B&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Bureau"}}</button>
+      <button type="button" class="mini" data-key="wd" title="{{t "Already written, sent direct - goes to Done"}}  ({{t "w, then d"}})" hx-post="/queue/written?route=D&amp;key={{q .Row.Item.QSLKey}}&amp;work=1{{$nx}}" hx-target="#decide" hx-swap="outerHTML">{{t "Direct"}}</button>
     </span>
   </div>
-  <p class="muted legend">{{t "Keys:"}} <kbd>y</kbd> {{t "yes, card"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>w</kbd> {{t "then"}} <kbd>b</kbd> / <kbd>d</kbd> {{t "written now via bureau / direct"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t `"yes" sends the card to the Desk, where its route is chosen; the next QSO follows.`}}</p>
+  <p class="muted legend">{{t "Keys:"}} <kbd>y</kbd> {{t "yes, card"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>w</kbd> {{t "then"}} <kbd>b</kbd> / <kbd>d</kbd> {{t "already written, sent via bureau / direct"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t `"yes" sends the card to the Desk, where you choose how to send it; the next QSO follows.`}}</p>
 {{end}}
 </div>{{end}}

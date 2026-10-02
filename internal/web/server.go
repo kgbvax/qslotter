@@ -163,7 +163,7 @@ func (s *Server) langFuncs(lang string) template.FuncMap {
 var jsStrings = []string{
 	"Error",
 	"Network error - is the qslotter server running?",
-	"No reply to %s.",
+	"Skipped %s - your card is still due.",
 }
 
 // lang is the UI language of a request: the ui.language setting, else the

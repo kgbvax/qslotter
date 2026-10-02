@@ -28,7 +28,7 @@ func TestReceiveLookupPortableAndYourCard(t *testing.T) {
 	h := srv.Routes()
 	p := addQSO(t, st, "EA8/DL1ABC", "20240201", "15m")
 	if r := postForm(t, h, "/receive/lookup", url.Values{"call": {"dl1abc"}}); r.Code != 200 ||
-		!strings.Contains(r.Body.String(), "EA8/DL1ABC") || !strings.Contains(r.Body.String(), "in the Inbox") ||
+		!strings.Contains(r.Body.String(), "EA8/DL1ABC") || !strings.Contains(r.Body.String(), "in New QSOs") ||
 		!strings.Contains(r.Body.String(), `value="`+p+`"`) || !strings.Contains(r.Body.String(), `value="`+key+`"`) {
 		t.Fatalf("lookup:\n%s", r.Body)
 	}
@@ -51,7 +51,7 @@ func TestReceiveBookAndReply(t *testing.T) {
 
 	r := postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {inbox, never, sent}})
 	body := r.Body.String()
-	if r.Code != 200 || strings.Count(body, `<b class="err">reply due</b>`) != 2 || !strings.Contains(body, "your card went out") || !strings.Contains(body, `id="reply-0"`) {
+	if r.Code != 200 || strings.Count(body, `<b class="err">your card due</b>`) != 2 || !strings.Contains(body, "your card went out") || !strings.Contains(body, `id="reply-0"`) {
 		t.Fatalf("book:\n%s", body)
 	}
 	for _, k := range []string{inbox, never, sent} {
@@ -67,7 +67,7 @@ func TestReceiveBookAndReply(t *testing.T) {
 		t.Fatalf("written reply without a route = %d, want 400", r.Code)
 	}
 	r = postForm(t, h, "/receive/reply?how=written", url.Values{"key": {inbox, never}, "route": {"B"}})
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "Reply to DL1ABC written (Bureau)") {
+	if r.Code != 200 || !strings.Contains(r.Body.String(), "Your card to DL1ABC written (Bureau)") {
 		t.Fatalf("reply written:\n%s", r.Body)
 	}
 	for _, k := range []string{inbox, never} {
@@ -76,7 +76,7 @@ func TestReceiveBookAndReply(t *testing.T) {
 		}
 	}
 	// Booking again: nothing due any more.
-	if b := postForm(t, h, "/receive/book", url.Values{"key": {never}}).Body.String(); strings.Contains(b, "reply due") || !strings.Contains(b, "No reply needed") {
+	if b := postForm(t, h, "/receive/book", url.Values{"key": {never}}).Body.String(); strings.Contains(b, "your card due") || !strings.Contains(b, "Nothing to send back") {
 		t.Fatalf("second booking:\n%s", b)
 	}
 }
@@ -125,7 +125,7 @@ func TestReceiveExpectedAndOverdue(t *testing.T) {
 		t.Fatalf("lookup of an expected card:\n%s", l)
 	}
 	b := postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {key}}).Body.String()
-	if !strings.Contains(b, "no reply needed") || strings.Contains(b, `class="reply"`) {
+	if !strings.Contains(b, "nothing to send back") || strings.Contains(b, `class="reply"`) {
 		t.Fatalf("booking a requested card:\n%s", b)
 	}
 	if page = get(t, h, "/receive").Body.String(); strings.Contains(page, "Expected cards") {
@@ -248,7 +248,7 @@ func TestReceiveReplyRecoverableAndPrintFailure(t *testing.T) {
 	h := srv.Routes()
 	postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {key}})
 	l := postForm(t, h, "/receive/lookup", url.Values{"call": {"DL1ABC"}}).Body.String()
-	if !strings.Contains(l, `class="err">reply due</b>`) || !strings.Contains(l, `name="key" value="`+key+`"`) {
+	if !strings.Contains(l, `class="err">your card due</b>`) || !strings.Contains(l, `name="key" value="`+key+`"`) {
 		t.Fatalf("a booked QSO with an open reply must stay answerable:\n%s", l)
 	}
 	if b := postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {key}}).Body.String(); !strings.Contains(b, `id="reply-0"`) {

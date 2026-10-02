@@ -106,14 +106,14 @@ func TestGermanComplete(t *testing.T) {
 func TestLanguageChoice(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	h := srv.Routes()
-	if b := requestDE(t, h, http.MethodGet, "/nav", nil).Body.String(); !strings.Contains(b, "Eingang") {
+	if b := requestDE(t, h, http.MethodGet, "/nav", nil).Body.String(); !strings.Contains(b, "Neue QSOs") {
 		t.Fatalf("German browser, no setting: %s", b)
 	}
-	if b := get(t, h, "/nav").Body.String(); !strings.Contains(b, ">Inbox") {
+	if b := get(t, h, "/nav").Body.String(); !strings.Contains(b, ">New QSOs") {
 		t.Fatalf("no Accept-Language: English: %s", b)
 	}
 	srv.cfg.UI.Language = "en"
-	if b := requestDE(t, h, http.MethodGet, "/nav", nil).Body.String(); !strings.Contains(b, ">Inbox") {
+	if b := requestDE(t, h, http.MethodGet, "/nav", nil).Body.String(); !strings.Contains(b, ">New QSOs") {
 		t.Fatalf("setting en wins over the browser: %s", b)
 	}
 	if b := requestDE(t, h, http.MethodGet, "/queue", nil).Body.String(); !strings.Contains(b, `<html lang="en">`) {

@@ -3,16 +3,16 @@
 {{with .Cur}}
   <div class="current-head"><span class="lbl">{{t "QSO in progress"}}</span> <a class="call" href="/station/{{.Call}}">{{.Call}}</a>{{if .Band}} <span class="c-bm">{{.Band}}</span>{{end}}{{if .Mode}} <span class="c-bm">{{.Mode}}</span>{{end}}{{if .Stale}} <span class="muted" title="{{t "the logger has not sent this call for a few minutes"}}">({{t "not seen for a while"}})</span>{{end}}{{with $.Info}}{{if or .Name .Country}} <span class="muted">{{.Name}}{{if and .Name .Country}}, {{end}}{{.Country}}</span>{{end}}{{end}}</div>
   {{if $.Mine}}
-    <p class="current-written">{{t "Card written now (%s) - it is booked on the QSO as soon as the QSO is logged." (t $.Mine.RouteName)}}
+    <p class="current-written">{{t "Card written during the QSO (%s) - it is recorded on the QSO as soon as the QSO is logged." (t $.Mine.RouteName)}}
       <button type="button" class="mini" hx-post="/current/cancel?call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Undo"}}</button></p>
   {{else}}
     <p class="current-written"><span class="lbl">{{t "Card written during the QSO:"}}</span>
-      <button type="button" class="mini" title="{{t "Card written now, goes via the bureau - booked when the QSO is logged"}}" hx-post="/current/written?route=B&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Bureau"}}</button>
-      <button type="button" class="mini" title="{{t "Card written now, goes direct - booked when the QSO is logged"}}" hx-post="/current/written?route=D&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Direct"}}</button></p>
+      <button type="button" class="mini" title="{{t "Card written during the QSO, sent via the bureau - recorded when the QSO is logged"}}" hx-post="/current/written?route=B&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Bureau"}}</button>
+      <button type="button" class="mini" title="{{t "Card written during the QSO, sent direct - recorded when the QSO is logged"}}" hx-post="/current/written?route=D&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Direct"}}</button></p>
   {{end}}
   {{if $.Compact}}{{with $.Row.Research}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{else}}<div class="current-research">{{template "research_panel" $.Row}}</div>{{end}}
 {{end}}
-{{range .Others}}<p class="muted current-other">{{t "%s: card written now (%s), waiting for the QSO to be logged." .Call (t .RouteName)}}
+{{range .Others}}<p class="muted current-other">{{t "%s: card written during the QSO (%s), waiting for the QSO to be logged." .Call (t .RouteName)}}
   <button type="button" class="mini" hx-post="/current/cancel?call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Undo"}}</button></p>{{end}}
 {{if not .Applied.IsZero}}<p class="banner{{if .Failed}} errbanner{{end}}" hx-get="/queue/current{{if .Compact}}?compact=1{{end}}" hx-trigger="load delay:{{.AppliedLeft}}s" hx-target="#current" hx-swap="outerHTML">{{tm .Applied}}</p>{{end}}
 </div>{{end}}{{end}}

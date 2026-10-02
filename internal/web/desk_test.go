@@ -263,7 +263,7 @@ func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 		t.Fatalf("choices for a card that left were applied to another card:\n%s", b)
 	}
 	b = getHX(t, h, "/work/card?key="+url.QueryEscape(key)+"&route=&manager=").Body.String()
-	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "preselected: QRZ suggestion") {
+	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "suggested: by QRZ") {
 		t.Fatalf("an empty carried route wiped the preselection:\n%s", b)
 	}
 }

@@ -407,6 +407,16 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   opens the Inbox, no separate start page. Inbox and Desk get master-detail
   views (the list selects, the detail pane decides); the Inbox also keeps a
   compact list for operating.
+- **2026-10-02 — UI wording review (EN + DE).** The first area is called
+  **New QSOs / Neue QSOs** in the UI: an inbox holds mail that arrived, and
+  that is Incoming QSLs / Posteingang (Eingang vs Posteingang collided in
+  German). "Inbox" stays the name of the `queued` state in code and in these
+  docs. Also: "route" is **Send via / Versand über** in the UI; "written now"
+  is **Already written** (card filled in during the QSO) and **Written by
+  hand - sent** at the Desk; "reply" is **your card due**; "book as received"
+  is **Mark as received**; "No reply" is **Not now**; "Requested..." is
+  **Request their card...**; Print / Written say they mark the card as sent.
+  Stored values (`desired_method`, `note = "written now"`) are unchanged.
 - **2026-10-01 — The Inbox decides *whether*, the Desk decides *how*.** Inbox:
   yes (route-less) / no / written now. The route (bureau, direct, via manager
   direct, via manager bureau) is chosen at the Desk when the card is written

@@ -111,7 +111,7 @@ func (s *Server) rcvdLines(call string) (lines []*RcvdLine, truncated bool, err 
 					}
 				}
 			}
-			l.Reply = i18n.M("%s - no reply needed", l.Yours)
+			l.Reply = i18n.M("%s - nothing to send back", l.Yours)
 		case sent || h.QueueStatus == "sent":
 			if !sent { // pushed, and Clublog's state changed since: the queue knows
 				if it, _ := s.store.QueueGet(h.QSO.QSLKey); it != nil {
@@ -129,7 +129,7 @@ func (s *Server) rcvdLines(call string) (lines []*RcvdLine, truncated bool, err 
 		case h.QueueStatus == "decided":
 			l.Yours, l.AtDesk = i18n.M("at the Desk"), true
 		case h.QueueStatus == "queued":
-			l.Yours = i18n.M("in the Inbox")
+			l.Yours = i18n.M("in New QSOs")
 		case h.QueueStatus == "skipped":
 			l.Yours = i18n.M("no card decided")
 		}
@@ -303,7 +303,7 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 	if expectedCard {
 		for _, l := range mine {
 			if l.Reply.IsZero() {
-				l.Reply, l.AtDesk = i18n.M("their card answers your request - no reply needed"), false
+				l.Reply, l.AtDesk = i18n.M("their card answers your request - nothing to send back"), false
 			}
 		}
 	}
@@ -436,14 +436,14 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	route := i18n.M(routeName(routeCode(rt.Method, rt.Via)))
-	msg, to := i18n.M("Reply to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys)), "decided"
+	msg, to := i18n.M("Your card to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys)), "decided"
 	switch how {
 	case "written":
 		if err := s.store.QueueWritten(keys, rt); err != nil {
 			s.queueErr(w, r, err)
 			return
 		}
-		msg, to = i18n.M("Reply to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
+		msg, to = i18n.M("Your card to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
 	case "print":
 		if err := s.printCard(keys, rt); err != nil {
 			if errors.Is(err, store.ErrConflict) {
@@ -454,10 +454,10 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 			for _, k := range keys {
 				s.publishQueueChanged(k, "decided")
 			}
-			s.render(w, r, "receive_msg", map[string]any{"Msg": i18n.M("Printing failed (%s) - the reply to %s waits at the Desk.", err.Error(), callFromKey(keys[0])), "Err": true})
+			s.render(w, r, "receive_msg", map[string]any{"Msg": i18n.M("Printing failed (%s) - your card to %s waits at the Desk.", err.Error(), callFromKey(keys[0])), "Err": true})
 			return
 		}
-		msg, to = i18n.M("Reply to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
+		msg, to = i18n.M("Your card to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
 	}
 	for _, k := range keys {
 		s.publishQueueChanged(k, to)

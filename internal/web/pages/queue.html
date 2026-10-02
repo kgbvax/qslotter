@@ -6,7 +6,7 @@
 </tr>{{end}}{{if not .Rows}}<tr class="md-empty"><td colspan="4" class="muted">{{t "Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged."}}</td></tr>{{end}}{{end}}
 
 {{define "queue.html"}}<!DOCTYPE html>
-<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Inbox"}}</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "New QSOs"}}</title>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-500.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-700.woff2" as="font" type="font/woff2" crossorigin>
@@ -24,7 +24,7 @@
   {{template "nav" .}}
 </header>
 <div class="band"><div class="band-in">
-    <div class="band-title"><h2>{{t "Inbox"}}</h2><p>{{t "Which QSOs get a card?"}}</p></div>
+    <div class="band-title"><h2>{{t "New QSOs"}}</h2><p>{{t "Which QSOs get a card?"}}</p></div>
     <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/queue" aria-current="page">{{t "List"}}</a><a href="/decide" title="{{t "One QSO at a time"}}">{{t "card by card"}}</a>
       <button hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML" title="{{t "Recompute queue"}}">&#8635;</button><span id="recompute-msg"></span></div>
   </div></div>

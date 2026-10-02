@@ -1,5 +1,5 @@
 {{define "row_yesno"}}<span class="stamps" role="group" aria-label="{{t "Card for %s?" .QSO.Call}}">
-    <button type="button" class="stamp yes{{if or (eq .Suggested "B") (eq .Suggested "D") (eq .Suggested "M")}} suggested{{end}}" title="{{t "Yes, card - goes to the Desk, where the route is chosen"}}" aria-label="{{t "Yes, card"}}"
+    <button type="button" class="stamp yes{{if or (eq .Suggested "B") (eq .Suggested "D") (eq .Suggested "M")}} suggested{{end}}" title="{{t "Yes, card - goes to the Desk, where you choose how to send it"}}" aria-label="{{t "Yes, card"}}"
             hx-post="/queue/yes?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Yes"}}</button>
     <button type="button" class="stamp none{{if eq .Suggested "N"}} suggested{{end}}" title="{{t "No card"}}" aria-label="{{t "No card"}}"
             hx-post="/queue/none?key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "No"}}</button>
@@ -7,10 +7,10 @@
 
 {{define "row_actions"}}<td class="actions">
   {{template "row_yesno" .}}
-  <span class="fulfil written-now" role="group" aria-label="{{t "Written now"}}">
-    <span class="lbl" title="{{t "Card filled in during the QSO - done, never shown again"}}">{{t "written now:"}}</span>
-    <button type="button" class="mini" title="{{t "Written now, goes via the bureau - done"}}" hx-post="/queue/written?route=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Bureau"}}</button>
-    <button type="button" class="mini" title="{{t "Written now, goes direct - done"}}" hx-post="/queue/written?route=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Direct"}}</button>
+  <span class="fulfil written-now" role="group" aria-label="{{t "Already written"}}">
+    <span class="lbl" title="{{t "Card already filled in during the QSO - marked sent via bureau/direct, goes to Done"}}">{{t "Already written - sent via:"}}</span>
+    <button type="button" class="mini" title="{{t "Already written, sent via the bureau - goes to Done"}}" hx-post="/queue/written?route=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Bureau"}}</button>
+    <button type="button" class="mini" title="{{t "Already written, sent direct - goes to Done"}}" hx-post="/queue/written?route=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Direct"}}</button>
   </span>
 </td>{{end}}
 

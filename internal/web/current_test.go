@@ -43,7 +43,7 @@ func TestCurrentContactBox(t *testing.T) {
 		t.Fatalf("written now via manager = %d, want 400", r.Code)
 	}
 	r := postForm(t, h, "/current/written", url.Values{"call": {"VU2ATN"}, "route": {"D"}})
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "booked on the QSO as soon as the QSO is logged") {
+	if r.Code != 200 || !strings.Contains(r.Body.String(), "recorded on the QSO as soon as the QSO is logged") {
 		t.Fatalf("written now = %d:\n%s", r.Code, r.Body)
 	}
 	// The QSO is logged: the card is booked, the box reports it.
@@ -56,14 +56,14 @@ func TestCurrentContactBox(t *testing.T) {
 	if it := status(t, st, q.QSLKey); it.Status != "sent" || it.DesiredMethod != "D" || it.Note != "written now" {
 		t.Fatalf("booked: %+v", it)
 	}
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "Card written during the QSO with VU2ATN booked") || strings.Contains(b, "QSO in progress") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "Card written during the QSO with VU2ATN recorded") || strings.Contains(b, "QSO in progress") {
 		t.Fatalf("after logging:\n%s", b)
 	}
 	// Undo before the QSO is logged.
 	tr.Set(contact.Contact{Call: "JA1ZZZ"})
 	tr.MarkWritten("JA1ZZZ", store.Route{Method: "B"})
 	tr.Set(contact.Contact{Call: "K1ABC"}) // moved on: the pending card is listed
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "JA1ZZZ: card written now") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "JA1ZZZ: card written during the QSO") {
 		t.Fatalf("pending card of a call no longer in progress:\n%s", b)
 	}
 	postForm(t, h, "/current/cancel", url.Values{"call": {"JA1ZZZ"}})

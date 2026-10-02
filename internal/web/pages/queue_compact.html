@@ -1,5 +1,5 @@
 {{define "queue_compact.html"}}<!DOCTYPE html>
-<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Inbox"}}</title>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "New QSOs"}}</title>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-500.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/schibstedgrotesk-700.woff2" as="font" type="font/woff2" crossorigin>
@@ -12,7 +12,7 @@
 <script src="/static/live.js" defer></script>
 </head><body class="compact" data-live="list">
 <main>
-  <h2>{{t "Inbox"}} <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
+  <h2>{{t "New QSOs"}} <small>(<span id="queue-count">{{len .Rows}}</span>)</small>
     <a href="/decide">{{t "Decide"}}</a> <a href="/work">{{t "Desk"}}</a>
     <button type="button" class="mini view-switch" data-view="full" title="{{t "Switch this window back to the full view"}}" hidden>{{t "full view"}}</button>
     <button class="mini" hx-post="/queue/recompute" hx-target="#recompute-msg" hx-swap="innerHTML">↻</button>
@@ -26,7 +26,7 @@
     {{range .Rows}}{{template "queue_row_compact.html" .}}{{end}}
     </tbody>
   </table>
-  <p class="muted legend">{{t "Yes = card (route chosen at the Desk) · No = no card. Written now: in the full view."}}</p>
+  <p class="muted legend">{{t "Yes = card (you choose how to send it at the Desk) · No = no card. Already written: in the full view."}}</p>
 </main>
 <script>
 // In an app-mode window (launched with --app=...) the page may resize its

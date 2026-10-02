@@ -4,12 +4,12 @@
   <table class="rcvtable">
     <thead><tr><th>{{t "On the card"}}</th><th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Call"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST"}}</th><th>{{t "Your card"}}</th></tr></thead>
     <tbody>{{range .Lines}}<tr{{if .Received}} class="got"{{end}}>
-      <td>{{if .Received}}{{if .Reply.IsZero}}<label title="{{t "Their card is booked, your reply is still open: tick to answer it"}}"><input type="checkbox" name="key" value="{{.QSO.QSLKey}}"> <b class="err">{{t "reply due"}}</b></label>{{else}}<span class="muted">{{t "received %s" (fmtDate .RcvdDate)}}</span>{{end}}{{else}}<input type="checkbox" name="key" value="{{.QSO.QSLKey}}"{{if .Checked}} checked{{end}} aria-label="{{t "The card confirms %s %s %s" .QSO.Call (fmtDate .QSO.QSODate) .QSO.Band}}">{{end}}</td>
+      <td>{{if .Received}}{{if .Reply.IsZero}}<label title="{{t "Their card is recorded, your card is still due: tick to prepare yours"}}"><input type="checkbox" name="key" value="{{.QSO.QSLKey}}"> <b class="err">{{t "your card due"}}</b></label>{{else}}<span class="muted">{{t "received %s" (fmtDate .RcvdDate)}}</span>{{end}}{{else}}<input type="checkbox" name="key" value="{{.QSO.QSLKey}}"{{if .Checked}} checked{{end}} aria-label="{{t "The card confirms %s %s %s" .QSO.Call (fmtDate .QSO.QSODate) .QSO.Band}}">{{end}}</td>
       <td class="c-date">{{fmtDate .QSO.QSODate}}</td><td class="c-bm">{{fmtTime .QSO.TimeOn}}</td>
       <td><span class="call">{{.QSO.Call}}</span></td><td class="c-bm">{{.QSO.Band}}</td><td class="c-bm">{{.QSO.Mode}}</td><td class="c-bm">{{.QSO.RSTSent}}</td>
       <td>{{if not .Yours.IsZero}}{{tm .Yours}}{{else}}<span class="muted">{{t "none yet"}}</span>{{end}}</td>
     </tr>{{end}}</tbody>
   </table>
   {{if .Truncated}}<p class="muted">{{t "Showing the newest QSOs only - type the exact call (e.g. with /P) to narrow the list."}}</p>{{end}}
-  <p><button type="submit" class="stamp primary" data-focus>{{t "Book as received"}}</button> <span class="muted">{{t "Enter"}} &middot; {{t "their card goes to Clublog with the next push"}} &middot; {{t "a ticked \"reply due\" line just opens the reply"}}</span></p>
+  <p><button type="submit" class="stamp primary" data-focus>{{t "Mark as received"}}</button> <span class="muted">{{t "Enter"}} &middot; {{t "their card goes to Clublog with the next push"}} &middot; {{t "a ticked \"your card due\" line just opens your card"}}</span></p>
 </form>{{end}}{{end}}

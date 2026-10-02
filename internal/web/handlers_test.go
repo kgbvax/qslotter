@@ -176,7 +176,7 @@ func TestListYesLeavesInbox(t *testing.T) {
 	if body := get(t, h, "/decide").Body.String(); strings.Contains(body, "DL1ABC") || !strings.Contains(body, "DL2ZZZ") {
 		t.Fatalf("/decide after yes must show only the undecided card:\n%s", body)
 	}
-	if body := get(t, h, "/work").Body.String(); !strings.Contains(body, "row-"+key) || !strings.Contains(body, "Route open <small>") {
+	if body := get(t, h, "/work").Body.String(); !strings.Contains(body, "row-"+key) || !strings.Contains(body, "Not chosen yet <small>") {
 		t.Fatalf("/work must list the card under Route open:\n%s", body)
 	}
 }
@@ -380,9 +380,9 @@ func TestWorkQueue(t *testing.T) {
 	}
 
 	list := get(t, h, "/work").Body.String()
-	iO, iD, iM, iB := strings.Index(list, "Route open <small>"), strings.Index(list, "Direct <small>"), strings.Index(list, "Via manager <small>"), strings.Index(list, "Bureau <small>")
+	iO, iD, iM, iB := strings.Index(list, "Not chosen yet <small>"), strings.Index(list, "Direct <small>"), strings.Index(list, "Via manager <small>"), strings.Index(list, "Bureau <small>")
 	if iO < 0 || iD < iO || iM < iD || iB < iM {
-		t.Fatalf("/work groups must read Route open, Direct, Via manager, Bureau:\n%s", list)
+		t.Fatalf("/work groups must read Not chosen yet, Direct, Via manager, Bureau:\n%s", list)
 	}
 	if !strings.Contains(list, `form="batch" value="K2ABC"`) || !strings.Contains(list, `form="batch" value="MD"`) || !strings.Contains(list, "Via manager, direct K2ABC") {
 		t.Fatalf("/work must preselect the suggested manager route:\n%s", list)
@@ -390,7 +390,7 @@ func TestWorkQueue(t *testing.T) {
 
 	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "preselected: QRZ suggestion", "/work/print?view=work", `data-key="p"`, "What QRZ says"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "suggested: by QRZ", "/work/print?view=work", `data-key="p"`, "What QRZ says"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -478,7 +478,7 @@ func TestPrintNeedsADecisionAndARoute(t *testing.T) {
 		t.Fatalf("print of an Inbox card = %d, want 409", r.Code)
 	}
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}}); r.Code != http.StatusBadRequest || !strings.Contains(r.Body.String(), "Choose a route") {
+	if r := postForm(t, h, "/work/print", url.Values{"key": {key}}); r.Code != http.StatusBadRequest || !strings.Contains(r.Body.String(), "Choose how to send") {
 		t.Fatalf("print without a route = %d: %s", r.Code, r.Body)
 	}
 	if n := len(srv.printer.(*fakePrinter).printed); n != 0 {
@@ -552,7 +552,7 @@ func TestDoneAndReopen(t *testing.T) {
 	postForm(t, h, "/queue/none", url.Values{"key": {kn}})
 
 	body := get(t, h, "/done").Body.String()
-	for _, want := range []string{"row-" + key, "Bureau, written now", "row-" + kn, "no card", "/queue/reopen?key="} {
+	for _, want := range []string{"row-" + key, "Bureau, written during the QSO", "row-" + kn, "no card", "/queue/reopen?key="} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/done missing %q:\n%s", want, body)
 		}
@@ -616,12 +616,12 @@ func TestNavShowsCounts(t *testing.T) {
 	h := srv.Routes()
 	addQueued(t, st, "DL2ZZZ", "20240103")
 	nav := get(t, h, "/nav").Body.String()
-	if !strings.Contains(nav, `Inbox <span class="cnt">2</span>`) || strings.Contains(nav, `Desk <span`) {
+	if !strings.Contains(nav, `New QSOs <span class="cnt">2</span>`) || strings.Contains(nav, `Desk <span`) {
 		t.Fatalf("nav = %s", nav)
 	}
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	nav = get(t, h, "/nav").Body.String()
-	if !strings.Contains(nav, `Inbox <span class="cnt">1</span>`) || !strings.Contains(nav, `Desk <span class="cnt">1</span>`) {
+	if !strings.Contains(nav, `New QSOs <span class="cnt">1</span>`) || !strings.Contains(nav, `Desk <span class="cnt">1</span>`) {
 		t.Fatalf("nav after yes = %s", nav)
 	}
 }
@@ -821,7 +821,7 @@ func TestDecideCardShowsResearch(t *testing.T) {
 		"card already sent 2023-05-02",     // effective sent
 		"their card received 2023-06-10",   // received: reply is due
 		"LoTW confirmed",
-		"more QSO(s) with DL1ABC wait in the Inbox",
+		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table
 		"a hint, not a decision",    // suggestion is tentative
 		"VIA BUREAU, DIRECT. LotW.", // raw qslmgr text shown verbatim

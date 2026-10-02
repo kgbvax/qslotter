@@ -41,7 +41,7 @@ type DeskCard struct {
 	Prints int    // physical cards a print produces (QSO rows per card from the template)
 
 	Route      string // route offered first: B, D, MD (manager direct), MB (manager bureau), "" = none
-	RouteFrom  string // where it comes from: "chosen earlier", "QRZ suggestion"
+	RouteFrom  string // where it comes from: "chosen earlier", "by QRZ"
 	MgrPrefill string // manager callsign for the manager routes
 	OQRS       bool   // QRZ mentions OQRS: "requested" is the likely outcome
 }
@@ -126,15 +126,15 @@ func preselectRoute(c *DeskCard) (code, from, manager string) {
 			if r.Item.Manager != "" {
 				manager = r.Item.Manager
 			}
-			return code, "chosen earlier", manager
+			return code, "your earlier choice", manager
 		}
 	}
 	switch c.Lead.Suggested {
 	case "B", "D":
-		return c.Lead.Suggested, "QRZ suggestion", manager
+		return c.Lead.Suggested, "by QRZ", manager
 	case "M":
 		if manager != "" {
-			return "MD", "QRZ suggestion", manager
+			return "MD", "by QRZ", manager
 		}
 	}
 	return "", "", manager
@@ -164,7 +164,7 @@ type WorkGroup struct {
 }
 
 var workGroupOrder = []WorkGroup{
-	{Method: "O", Title: "Route open"},
+	{Method: "O", Title: "Not chosen yet"},
 	{Method: "D", Title: "Direct"},
 	{Method: "M", Title: "Via manager"},
 	{Method: "B", Title: "Bureau"},

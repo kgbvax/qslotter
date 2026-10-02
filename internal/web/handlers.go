@@ -166,7 +166,7 @@ func routeName(code string) string {
 	case "MB":
 		return "Via manager, bureau"
 	}
-	return "Route open"
+	return "Not chosen yet"
 }
 
 // rowsFor builds rows for the listed items, skipping those whose QSO is gone.
@@ -316,7 +316,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		if rcvd, date := q.EffectiveRcvd(); rcvd {
 			line.Rcvd = rcvdMsg(date)
 			if rcvdBad == nil {
-				rcvdBad = &Badge{Kind: "rcvd", Text: i18n.M("their card %s - a reply is due unless you already sent one", line.Rcvd)}
+				rcvdBad = &Badge{Kind: "rcvd", Text: i18n.M("their card %s - yours is due unless you already sent one", line.Rcvd)}
 			}
 		}
 		lotw = lotw || line.LoTW
@@ -358,7 +358,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: i18n.M("%d QSO(s) with %s already at the Desk - a yes puts this one on the same card", sameDesk, row.QSO.Call)})
 	}
 	if sameInbox > 0 {
-		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: i18n.M("%d more QSO(s) with %s wait in the Inbox - with a yes they share one card", sameInbox, row.QSO.Call)})
+		res.Badges = append(res.Badges, Badge{Kind: "warn", Text: i18n.M("%d more QSO(s) with %s wait in New QSOs - with a yes they share one card", sameInbox, row.QSO.Call)})
 	}
 	if otherCallOp > 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
@@ -538,14 +538,14 @@ func outcomeOf(it *store.QueueItem) i18n.Msg {
 	case it.Note == "sent elsewhere":
 		return i18n.M("sent elsewhere (per Clublog)")
 	case it.DesiredMethod == "W":
-		return i18n.M("written on the spot")
+		return i18n.M("written during the QSO")
 	}
 	how := i18n.M("written")
 	if it.PrintedAt.Valid {
 		how = i18n.M("printed")
 	}
 	if it.Note == "written now" {
-		how = i18n.M("written now")
+		how = i18n.M("written during the QSO")
 	}
 	var name i18n.Msg
 	switch it.DesiredMethod {
@@ -784,7 +784,7 @@ func routeFrom(r *http.Request, key string) (store.Route, error) {
 
 var (
 	errNeedManager = errors.New("Via manager needs the manager's callsign - type it in the manager field.")
-	errNeedRoute   = errors.New("Choose a route first: bureau, direct, or via manager (direct or bureau).")
+	errNeedRoute   = errors.New("Choose how to send first: bureau, direct, or via manager (direct or bureau).")
 	errBadRoute    = errors.New("route must be B, D, MD or MB")
 )
 
@@ -845,9 +845,9 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	}
 	switch inClublog {
 	case "sent":
-		s.notice(w, r, "Reopened. Clublog already has this card as sent; reopening does not undo that there.")
+		s.notice(w, r, "Moved back to New QSOs. Clublog already has this card as sent; that is not undone there.")
 	case "requested":
-		s.notice(w, r, "Reopened. Clublog already has their card as requested (QSL_RCVD=R); reopening does not undo that there.")
+		s.notice(w, r, "Moved back to New QSOs. Clublog already has their card as requested (QSL_RCVD=R); that is not undone there.")
 	}
 	s.afterTransition(w, r, key, "queued")
 }
@@ -934,9 +934,9 @@ func (s *Server) htmxQueueRecompute(w http.ResponseWriter, r *http.Request) {
 	n := len(keys)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if n == 0 {
-		_, _ = w.Write([]byte(`<span class="muted">` + template.HTMLEscapeString(s.tr(r, "no new QSOs to enqueue")) + `</span>`))
+		_, _ = w.Write([]byte(`<span class="muted">` + template.HTMLEscapeString(s.tr(r, "no new QSOs found")) + `</span>`))
 	} else {
-		_, _ = w.Write([]byte(`<span class="ok">` + template.HTMLEscapeString(s.tr(r, "enqueued %d new QSO(s)", n)) + `</span>`))
+		_, _ = w.Write([]byte(`<span class="ok">` + template.HTMLEscapeString(s.tr(r, "%d new QSO(s) found", n)) + `</span>`))
 	}
 }
 

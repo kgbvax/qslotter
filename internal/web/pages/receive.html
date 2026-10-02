@@ -16,14 +16,14 @@
   {{template "nav" .}}
 </header>
 <div class="band"><div class="band-in">
-    <div class="band-title"><h2>{{t "Incoming QSLs"}}</h2><p>{{t "Book the cards you received, then answer them."}}</p></div>
+    <div class="band-title"><h2>{{t "Incoming QSLs"}}</h2><p>{{t "Record the cards you received, then send yours back."}}</p></div>
   </div></div>
 <main>
   <form id="rcv-find" hx-post="/receive/lookup" hx-target="#results" hx-swap="innerHTML" class="rcv-find">
     <input type="text" id="rcv-call" name="call" placeholder="{{t "Callsign on the card"}}" value="{{.Call}}" autofocus autocomplete="off"
            aria-label="{{t "Callsign on the card"}}">
     <button type="submit">{{t "Find"}}</button>
-    <span class="muted">{{t "Enter: find"}} &middot; {{t "tick the QSO(s) the card confirms"}} &middot; {{t "Enter: book"}} &middot; {{t "then answer it or not."}} {{t "Portable calls of the station are found too."}}</span>
+    <span class="muted">{{t "Enter: find"}} &middot; {{t "tick the QSO(s) the card confirms"}} &middot; {{t "Enter: mark received"}} &middot; {{t "then send yours or not."}} {{t "Portable calls of the station are found too."}}</span>
   </form>
   <div id="results">{{if .Call}}{{template "receive_results.html" .}}{{end}}</div>
 

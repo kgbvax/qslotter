@@ -132,7 +132,7 @@ func (s *Shell) Run() error {
 		Icon:    trayIcon(),
 		Items: []tray.Item{
 			{Title: s.opts.Labels.or(s.opts.Labels.Open, "Open qslotter"), OnClick: func() { s.open(viewFull) }},
-			{Title: s.opts.Labels.or(s.opts.Labels.Compact, "Compact Inbox"), OnClick: func() { s.open(viewCompact) }},
+			{Title: s.opts.Labels.or(s.opts.Labels.Compact, "Compact list"), OnClick: func() { s.open(viewCompact) }},
 			{Separator: true},
 			{Title: s.opts.Labels.or(s.opts.Labels.Quit, "Quit qslotter"), OnClick: s.Quit},
 		},
