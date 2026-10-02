@@ -6,7 +6,7 @@
 <div class="pref">
   <h4>{{t "What QRZ says"}}{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "cached %s ago" .QRZAge}}{{end}}</span>{{end}}</h4>
   {{if and .Info (not .Info.NotFound)}}
-    {{if .Suggested}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggested)))}}{{if .MgrPrefill}} {{.MgrPrefill}}{{end}}{{if .Info.QSLConfidence}} <span class="muted">({{t "%s confidence" (t .Info.QSLConfidence)}})</span>{{end}} <span class="muted">- {{t "a hint, not a decision"}}</span></p>{{end}}
+    {{if .Suggested}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggested)))}}{{if .MgrPrefill}} {{.MgrPrefill}}{{end}}{{if .Info.QSLConfidence}} <span class="muted">({{t "%s confidence" (t .Info.QSLConfidence)}})</span>{{end}}</p>{{end}}
     {{if .Info.QSLReason}}<p class="why">{{.Info.QSLReason}}</p>{{end}}
     {{if .Info.QSLMgr}}<p class="why">{{t "QSL manager field:"}} <code>{{.Info.QSLMgr}}</code></p>{{end}}
     <p class="flags">{{t "paper (mQSL):"}} {{t (yn .Info.MQSL)}} &middot; LoTW: {{t (yn .Info.LoTW)}} &middot; eQSL: {{t (yn .Info.EQSL)}}{{if .Info.Email}} &middot; {{t "mail:"}} {{.Info.Email}}{{end}}</p>

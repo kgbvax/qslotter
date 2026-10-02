@@ -823,7 +823,6 @@ func TestDecideCardShowsResearch(t *testing.T) {
 		"LoTW confirmed",
 		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table
-		"a hint, not a decision",    // suggestion is tentative
 		"VIA BUREAU, DIRECT. LotW.", // raw qslmgr text shown verbatim
 		"paper (mQSL): yes",         // QRZ 1/0 flags read
 		"eQSL: no",

@@ -38,7 +38,6 @@
   "cached %s ago": "Stand: vor %s",
   "%s confidence": "Sicherheit: %s",
   "Suggests <b class=\"tentative\">%s</b>": "Vorschlag: <b class=\"tentative\">%s</b>",
-  "a hint, not a decision": "ein Hinweis, keine Entscheidung",
   "QSL manager field:": "QSL-Manager-Feld:",
   "paper (mQSL):": "Papier (mQSL):",
   "mail:": "E-Mail:",
