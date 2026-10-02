@@ -547,4 +547,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   stated (kind and amount stay in the note), answered by qpc (prompt v7) and
   detected by keywords in `qsldetermine` (qslmgr and card-related bio
   sentences, with negations). The app computes it but does not store or show
-  it yet; the Desk could flag it next to a direct route.
+  it yet; the Desk could flag it next to a direct route. Result on both
+  samples (23 stations asking, labels reviewed): the keyword heuristic
+  finds 20, qwen3.5:4b (v7) 12, neither raises a false alarm; the flag is
+  right on 98% of stations for the heuristic, 92-95% for qwen. The
+  negation patterns were tightened after seeing these samples, so the
+  heuristic's numbers are somewhat optimistic. Asking qwen for the flag
+  cost it about 3 points on the main answer (v6 71% -> v7 68% fully right
+  on the fresh sample) - the heuristic is the better source for the flag.
