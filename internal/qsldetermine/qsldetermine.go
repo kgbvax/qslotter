@@ -195,8 +195,8 @@ type signals struct {
 var (
 	bureauWordRe     = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
 	directWordRe     = regexp.MustCompile(`direct|direkt|directo`)
-	electronicRe     = regexp.MustCompile(`e-?\.?qsl|lotw|logbook of the world|clublog`)
-	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic)[^.]{0,20}\bonly\b|\bonly (e-?\.?qsl|lotw|electronic)`)
+	electronicRe     = regexp.MustCompile(`e-?\.?qsl|lotw|logbook of the world|clublog|hamaward`) // HamAward: digital only
+	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward)[^.]{0,20}\bonly\b|\bonly (via )?(e-?\.?qsl|lotw|electronic|hamaward)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
 	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)`)

@@ -120,6 +120,7 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"QRZ - HRDLOG - LOTW - EQSL - CLUBLOG - NO Paper NO Bureau", "", true},
 		{"LoTW, QRZ.com, eQSL, Clublog. No paper or cards and no Bureau.", "", true},
 		{"Only eQSL / No QSL Paper Direct or Office please", "", true},
+		{"QSL VIA HAMAWARD ONLY", "", true},
 		{"No bureau", "D", false},
 		{"No bureau, SASE please", "D", false},
 	}
@@ -169,6 +170,10 @@ func TestBioNegationsAndKeywords(t *testing.T) {
 	}
 	if r := Determine(&qrz.Callsign{Call: "XX1XX"}, "eQSL only, sorry"); !r.RefusePaper {
 		t.Errorf("explicit eQSL only must refuse paper: %+v", r)
+	}
+	// HamAward confirmations are digital only.
+	if r := Determine(&qrz.Callsign{Call: "XX1XX"}, "QSL only via HAMAWARD"); !r.RefusePaper || r.Method != "" {
+		t.Errorf("HamAward only must refuse paper: %+v", r)
 	}
 }
 
