@@ -28,7 +28,8 @@
   table.fields td:first-child { color:var(--mute); width:70px; }
   table.fields td.hint { color:var(--mute); font-size:13px; }
   .bio { white-space:pre-wrap; overflow-wrap:anywhere; max-height:62vh; overflow:auto; border-top:1px solid var(--line); padding-top:10px; }
-  .bio mark { background:#fff1a8; padding:0 1px; }
+  mark { background:#fff1a8; padding:0 1px; }
+  mark.q { background:#ffb347; font-weight:700; }
   .empty { color:var(--mute); font-style:italic; }
   aside .card { position:sticky; top:96px; }
   .labels label { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; }
@@ -101,7 +102,12 @@ let S = null, cur = 0, highlight = true, saving = false;
 
 // Words worth spotting in a long bio. Highlighting only helps reading; it is
 // not a suggestion.
-const KEYWORDS = /\b(qsl\w*|bureau|buro|büro|bureo|direct\w*|direkt|oqrs|manager|mgr|via|sase?|irc|green ?stamps?|lotw|e-?qsl|paypal|clublog|club log|no paper|paper)\b/gi;
+// "QSL" stands out (also inside words: eQSL, DigiQSL, QSL-Karte).
+const KEYWORDS = /(\w*qsl\w*)|\b(bureau|buro|büro|bureo|direct\w*|direkt|oqrs|manager|mgr|via|sase?|irc|green ?stamps?|lotw|paypal|clublog|club log|no paper|paper)\b/gi;
+function marked(text) {
+  const h = esc(text);
+  return highlight ? h.replace(KEYWORDS, (m, q) => q ? `<mark class="q">${m}</mark>` : `<mark>${m}</mark>`) : h;
+}
 
 async function load() {
   S = await (await fetch('/api/state')).json();
@@ -165,7 +171,9 @@ function renderBio() {
   // "Untitled Document" is the title of QRZ's bio page, not bio text.
   const bio = (S.stations[cur].bio || '').replace(/^Untitled Document\s*/, '');
   $('bio').className = 'bio' + (bio ? '' : ' empty');
-  $('bio').innerHTML = bio ? (highlight ? esc(bio).replace(KEYWORDS, '<mark>$&</mark>') : esc(bio)) : '(no bio)';
+  $('bio').innerHTML = bio ? marked(bio) : '(no bio)';
+  const mgr = S.stations[cur].qslmgr;
+  if (mgr) $('qslmgr').innerHTML = marked(mgr);
 }
 
 function status(msg, cls) { const el = $('status'); el.textContent = msg; el.className = 'status ' + (cls || ''); }
