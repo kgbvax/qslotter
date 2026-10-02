@@ -579,3 +579,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   nearly everything (single), and names a preferred route where none is
   stated. Keeping only a long bio's QSL sentences changed little. ~2.5 s
   a station. Not pursued unless a stronger decision model appears.
+- **2026-10-02 — Prompt v8: the same rules at half the size.** v7's system
+  prompt was about 2,450 tokens (rules, definitions, nine examples, a
+  "common mistakes" list) against ~250 for the station itself. v8 folds the
+  definitions into the answer description, keeps five examples and drops
+  the mistakes list: ~1,350 fixed tokens. qwen3.5:4b is not worse with it,
+  if anything better: fully right 77% / 71% on the two labelled samples
+  (v7: 76% / 68%), status 87% / 90% (v7: 83% / 81%). v8 is the default
+  prompt; its rules are inlined, so a LABELS.md edit no longer changes it.

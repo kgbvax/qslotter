@@ -50,7 +50,7 @@ type Variant struct {
 // Defaults applied by WithDefaults.
 const (
 	DefaultBaseURL  = "http://localhost:11434/v1"
-	DefaultPrompt   = "v7"
+	DefaultPrompt   = "v8"
 	DefaultDecision = "d1-split"
 	// DefaultDecisionBioMaxChars fits Tev1's context of about 2,000 tokens.
 	DefaultDecisionBioMaxChars = 1500
