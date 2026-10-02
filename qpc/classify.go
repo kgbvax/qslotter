@@ -1,7 +1,9 @@
 package qpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,9 +12,10 @@ import (
 
 // Classifier classifies stations with one Variant.
 type Classifier struct {
-	v      Variant
-	prompt *Prompt
-	client *chatClient
+	v        Variant
+	prompt   *Prompt   // kind llm
+	decision *Decision // kind decision
+	client   *chatClient
 }
 
 // New prepares a classifier for an LLM variant (defaults applied).
@@ -21,29 +24,53 @@ func New(v Variant) (*Classifier, error) {
 	if err := v.Check(); err != nil {
 		return nil, err
 	}
-	if v.Kind != "llm" {
-		return nil, fmt.Errorf("variant %q: kind %q is not an LLM classifier", v.Name, v.Kind)
+	c := &Classifier{v: v, client: &chatClient{baseURL: v.BaseURL, apiKey: v.APIKey, http: &http.Client{}}}
+	var err error
+	switch v.Kind {
+	case "llm":
+		c.prompt, err = LoadPrompt(v.Prompt)
+	case "decision":
+		c.decision, err = LoadDecision(v.Prompt)
+	default:
+		return nil, fmt.Errorf("variant %q: kind %q is not a model classifier", v.Name, v.Kind)
 	}
-	p, err := LoadPrompt(v.Prompt)
 	if err != nil {
 		return nil, err
 	}
-	return &Classifier{
-		v:      v,
-		prompt: p,
-		client: &chatClient{baseURL: v.BaseURL, apiKey: v.APIKey, http: &http.Client{}},
-	}, nil
+	return c, nil
 }
 
 // Variant returns the resolved variant.
 func (c *Classifier) Variant() Variant { return c.v }
 
-// PromptID identifies the prompt text (name@hash).
-func (c *Classifier) PromptID() string { return c.prompt.ID() }
+// PromptID identifies the prompt text or decision spec (name@hash).
+func (c *Classifier) PromptID() string {
+	if c.decision != nil {
+		return c.decision.ID()
+	}
+	return c.prompt.ID()
+}
 
-// Messages renders the prompt for st without calling the model.
+func (c *Classifier) bio(st Station) (string, bool) {
+	if c.v.BioFocus {
+		return FocusBio(st.Bio, c.v.BioMaxChars)
+	}
+	return PrepareBio(st.Bio, c.v.BioMaxChars)
+}
+
+// Messages renders the prompt for st without calling the model. For a
+// decision variant, user is the request body and system is empty.
 func (c *Classifier) Messages(st Station) (system, user string, truncated bool, err error) {
-	bio, truncated := PrepareBio(st.Bio, c.v.BioMaxChars)
+	bio, truncated := c.bio(st)
+	if c.decision != nil {
+		body, err := c.decision.request(c.v.Model, st, bio, c.v.Extra)
+		if err != nil {
+			return "", "", truncated, err
+		}
+		var b bytes.Buffer
+		json.Indent(&b, body, "", "  ")
+		return "", b.String(), truncated, nil
+	}
 	system, user, err = c.prompt.Render(PromptData{
 		Station: st, Bio: bio, Truncated: truncated, Rules: Rules,
 		Labels: LegacyLabels, Statuses: Statuses, Routes: AllRoutes,
@@ -55,6 +82,9 @@ func (c *Classifier) Messages(st Station) (system, user string, truncated bool, 
 // Result then has an empty Label and a ParseError.
 func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	st.Call = strings.ToUpper(strings.TrimSpace(st.Call))
+	if c.decision != nil {
+		return c.decide(ctx, st)
+	}
 	r := Result{Call: st.Call, Model: c.v.Model, Prompt: c.prompt.ID()}
 	system, user, truncated, err := c.Messages(st)
 	if err != nil {
@@ -85,6 +115,32 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	r.PromptTokens, r.CompletionTokens, r.FinishReason = ans.PromptTokens, ans.CompletionTokens, ans.FinishReason
 	parseAnswer(ans.Content, &r)
 	if c.v.AddressGuard {
+		addressGuard(st, &r)
+	}
+	return r, nil
+}
+
+// decide asks a decision model (Kind "decision") about st.
+func (c *Classifier) decide(ctx context.Context, st Station) (Result, error) {
+	r := Result{Call: st.Call, Model: c.v.Model, Prompt: c.decision.ID()}
+	bio, truncated := c.bio(st)
+	r.Truncated = truncated
+	body, err := c.decision.request(c.v.Model, st, bio, c.v.Extra)
+	if err != nil {
+		return r, fmt.Errorf("encode request: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.v.Timeout)
+	defer cancel()
+	start := time.Now()
+	dr, raw, err := decide(ctx, c.client.http, c.v.BaseURL, c.v.APIKey, body)
+	r.LatencyMS = msSince(start)
+	if err != nil {
+		return r, err
+	}
+	r.Raw = raw
+	r.PromptTokens, r.CompletionTokens = dr.Usage.InputTokens, dr.Usage.OutputTokens
+	c.decision.apply(dr.Answers, &r)
+	if c.v.AddressGuard && r.Status != "" {
 		addressGuard(st, &r)
 	}
 	return r, nil

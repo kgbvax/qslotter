@@ -1,0 +1,16 @@
+# Jev-style decision models (Ollama /v1/systemone): the answer as scored
+# choices instead of written JSON. No note and no via callsign; the rules sit
+# in the question instructions of the decision spec (qpc/decisions). Tev1 runs
+# with a context of about 2,000 tokens, so bios are capped at 1,500
+# characters: cut, or (bio_focus) reduced to their sentences about QSL cards.
+defaults:
+  kind: decision
+  base_url: http://localhost:11434/v1
+  model: "tev1:4b"
+  timeout: 2m
+
+variants:
+  - {name: tev1-split, prompt: d1-split}
+  - {name: tev1-split-focus, prompt: d1-split, bio_focus: true}
+  - {name: tev1-single, prompt: d1-single}
+  - {name: tev1-single-focus, prompt: d1-single, bio_focus: true}
