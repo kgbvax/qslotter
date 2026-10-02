@@ -606,3 +606,11 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   manager. Three labels were brought in line with the rule (SP8QC/P,
   A61BG, UT5RB). Status, routes and via right on the labelled samples:
   heuristic 81%, qwen3.5:4b v8 78%; fully right 78% / 80% against 79% / 72%.
+- **2026-10-03 — A clean 50-station holdout: still level.** 50 stations
+  drawn after all tuning (none of the 400 seen before), labelled blind:
+  fully right heuristic 76%, qwen3.5:4b v8 74%; status, routes and via
+  76% vs 82%. Over all 250 labelled stations (status, routes, via):
+  heuristic 80%, qwen v8 79%; when they agree (198) they are right 91% of
+  the time. The heuristic's misses here: OQRS, which it never answers (3
+  of 12), managers named in the bio, missed refusals; qwen's: a preferred
+  route where none is stated (4).
