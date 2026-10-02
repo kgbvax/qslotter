@@ -19,6 +19,7 @@ import (
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/store"
+	"github.com/dl9et/qslotter/internal/sync"
 )
 
 // fakeClublog stands in for clublog.org behind the Pull/Push buttons.
@@ -290,5 +291,55 @@ func TestOutcomeTexts(t *testing.T) {
 		if len(missing) > 0 {
 			t.Errorf("%q: missing from the German catalogs: %q", c.want, missing)
 		}
+	}
+}
+
+// TestClublogPauseShown: after a 403 every page's nav and the settings page
+// say the automatic sync is paused; a pull by hand that gets through ends it.
+func TestClublogPauseShown(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	f := &fakeClublog{status: http.StatusForbidden}
+	f.install(t, srv)
+	h := srv.Routes()
+	if b := get(t, h, "/nav").Body.String(); strings.Contains(b, "Clublog paused") {
+		t.Fatal("paused before any 403")
+	}
+	if rec := postForm(t, h, "/sync/pull", nil); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("refused pull = %d", rec.Code)
+	}
+	if b := get(t, h, "/nav").Body.String(); !strings.Contains(b, "Clublog paused") || !strings.Contains(b, `href="/settings"`) {
+		t.Errorf("nav after a 403:\n%s", b)
+	}
+	if b := get(t, h, "/settings").Body.String(); !strings.Contains(b, "Clublog refused these credentials (403)") {
+		t.Errorf("settings page after a 403 does not explain the pause")
+	}
+
+	f.mu.Lock()
+	f.status = 0
+	f.mu.Unlock()
+	if rec := postForm(t, h, "/sync/pull", nil); rec.Code != 200 {
+		t.Fatalf("pull = %d", rec.Code)
+	}
+	if b := get(t, h, "/nav").Body.String(); strings.Contains(b, "Clublog paused") {
+		t.Error("a pull that got through must end the pause")
+	}
+}
+
+// TestSettingsCheckNotesRefusal: the credential check on saving the settings
+// pauses after a 403 and ends a pause when Clublog lets it in.
+func TestSettingsCheckNotesRefusal(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	f := &fakeClublog{status: http.StatusForbidden}
+	f.install(t, srv)
+	cfg := srv.config()
+	_, msg := srv.validateCredentials(cfg)
+	if !strings.HasPrefix(msg.String(), "ERROR") || sync.RefusedAt(st, srv.clublogFn(cfg.Clublog)) == "" {
+		t.Fatalf("refused check: %q, paused %v", msg, srv.clublogPausedAt())
+	}
+	f.mu.Lock()
+	f.status = 0
+	f.mu.Unlock()
+	if _, msg = srv.validateCredentials(cfg); !strings.HasPrefix(msg.String(), "OK") || srv.clublogPausedAt() != "" {
+		t.Fatalf("check that got through: %q, still paused %q", msg, srv.clublogPausedAt())
 	}
 }

@@ -24,6 +24,7 @@
     <label>{{t "Password"}} <input type="password" name="qrz_password" value="" placeholder="{{if .Cfg.QRZ.Password}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
 
     <h3>{{t "Clublog (log sync + push-back)"}}</h3>
+    {{if .ClublogPaused}}<p class="err">{{t "Clublog refused these credentials (403) %s ago. Automatic sync is paused until you change them here or a pull by hand on the Log page gets through - Clublog bans an IP that keeps failing." (since .ClublogPaused)}}</p>{{end}}
     <label>{{t "Email"}} <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
     <label>{{t "Application password"}} <input type="password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
     <label>{{t "Callsign"}} <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>

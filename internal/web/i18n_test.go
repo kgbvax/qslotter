@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/store"
+	"github.com/dl9et/qslotter/internal/sync"
 )
 
 // requestDE sends a request with a German browser.
@@ -82,6 +84,10 @@ func TestGermanComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = backlog
+
+	// Clublog refused the credentials: the nav and settings say sync is paused.
+	srv.cfg.Clublog.Email, srv.cfg.Clublog.AppPassword, srv.cfg.Clublog.APIKey = "e", "p", "k"
+	sync.NoteLogin(st, srv.clublogFn(srv.cfg.Clublog), clublog.ErrForbidden)
 
 	pages := []string{"/", "/queue", "/queue?compact=1", "/decide", "/decide?key=" + url.QueryEscape(key),
 		"/work", "/work/card", "/work/card?filter=O", "/done", "/log", "/settings", "/receive",

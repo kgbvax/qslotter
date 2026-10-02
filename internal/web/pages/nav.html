@@ -10,5 +10,6 @@
     <a data-area="settings" href="/settings">{{t "Settings"}}</a>
     <button type="button" class="mini view-switch" data-view="compact" title="{{t "Switch this window to the small compact list"}}" hidden>{{t "compact"}}</button>
     {{if $c.Push}}<span class="pending" title="{{t "Local QSL state not yet pushed to Clublog"}}">{{t "%d to push" $c.Push}}</span>{{end}}
+    {{if $c.ClublogPaused}}<a class="pending err" href="/settings" title="{{t "Clublog refused the login (403): automatic sync is paused until the credentials change or a pull by hand gets through"}}">{{t "Clublog paused"}}</a>{{end}}
   </span>
 </nav>{{end}}

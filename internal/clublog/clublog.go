@@ -11,6 +11,7 @@ package clublog
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -20,6 +21,10 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrForbidden is Clublog's 403: bad credentials or a banned IP. Do not try
+// again with the same credentials - Clublog bans an IP that keeps failing.
+var ErrForbidden = errors.New("403 forbidden")
 
 type Client struct {
 	Email       string
@@ -68,7 +73,7 @@ func (c *Client) PullLog(recDateFrom string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("clublog: 403 forbidden (bad credentials or IP banned - stop immediately)")
+		return nil, fmt.Errorf("clublog pull: %w (bad credentials or IP banned - stop immediately)", ErrForbidden)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("clublog pull: HTTP %d", resp.StatusCode)
@@ -125,7 +130,7 @@ func (c *Client) PushLogs(adif []byte) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("clublog push: 403 forbidden (bad credentials or IP banned)")
+		return fmt.Errorf("clublog push: %w (bad credentials or IP banned - stop immediately)", ErrForbidden)
 	}
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -141,8 +146,8 @@ func (c *Client) PushLogs(adif []byte) error {
 func (c *Client) CheckCredentials() error {
 	today := time.Now().UTC().Format("2006-01-02")
 	_, err := c.PullLog(today)
-	if err != nil && strings.Contains(err.Error(), "403") {
-		return fmt.Errorf("clublog: 403 - credentials rejected (email/app password/API key/call wrong, or IP banned)")
+	if errors.Is(err, ErrForbidden) {
+		return fmt.Errorf("clublog: %w - credentials rejected (email/app password/API key/call wrong, or IP banned)", ErrForbidden)
 	}
 	return err
 }

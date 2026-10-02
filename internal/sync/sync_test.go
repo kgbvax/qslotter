@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -697,5 +698,117 @@ func TestPullReportsNewQSOs(t *testing.T) {
 	}
 	if ins != 1 || upd != 1 || strings.Join(seen, ",") != "DL3EF" {
 		t.Fatalf("second pull: inserted=%d updated=%d reported %v; want 1/1 [DL3EF]", ins, upd, seen)
+	}
+}
+
+// TestNoteLogin: a 403 pauses these credentials (and only these), other
+// failures change nothing, a success ends the pause. The secrets are not
+// stored.
+func TestNoteLogin(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	c := clublog.New("e", "secret", "DL9ET", "k")
+	NoteLogin(st, c, nil) // nothing to clear
+	if at := RefusedAt(st, c); at != "" {
+		t.Fatalf("refused without a 403: %q", at)
+	}
+	NoteLogin(st, c, fmt.Errorf("clublog pull: %w", clublog.ErrForbidden))
+	if RefusedAt(st, c) == "" {
+		t.Fatal("a 403 must pause these credentials")
+	}
+	if fp, _ := st.MetaGet(metaRefusedCreds); strings.Contains(fp, "secret") || len(fp) != 64 {
+		t.Errorf("stored %q: a fingerprint, not the secret", fp)
+	}
+	if at := RefusedAt(st, clublog.New("e", "new secret", "DL9ET", "k")); at != "" {
+		t.Error("changed credentials are not paused")
+	}
+	if RefusedAt(st, nil) != "" {
+		t.Error("no client, no pause")
+	}
+	NoteLogin(st, c, fmt.Errorf("clublog pull: HTTP 503"))
+	if RefusedAt(st, c) == "" {
+		t.Error("an outage says nothing about the credentials: still paused")
+	}
+	NoteLogin(st, c, nil)
+	if at := RefusedAt(st, c); at != "" {
+		t.Errorf("a login that got through ends the pause: %q", at)
+	}
+}
+
+// TestRefusalByPullAndPush: a 403 on either request pauses, a pull by hand
+// that gets through ends the pause.
+func TestRefusalByPullAndPush(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	f := &recorder{}
+	o := &Orchestrator{Store: st, Clublog: f.client(t)}
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL2CD", 1)
+	_ = st.SetQSLSentLocal(qsos[0].QSLKey, "B")
+	f.pushStatus = http.StatusForbidden
+	if _, err := o.PushBack(); !errors.Is(err, clublog.ErrForbidden) {
+		t.Fatalf("push: %v", err)
+	}
+	if RefusedAt(st, o.Clublog) == "" {
+		t.Fatal("a refused push must pause")
+	}
+	if _, _, err := o.PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	if at := RefusedAt(st, o.Clublog); at != "" {
+		t.Fatalf("a pull that got through must end the pause: %q", at)
+	}
+	f.pullStatus = http.StatusForbidden
+	_, _, _ = o.PullAndUpsert()
+	if RefusedAt(st, o.Clublog) == "" {
+		t.Fatal("a refused pull must pause")
+	}
+}
+
+// TestLoopPausesAfter403: after a 403 the loop stops logging in - pull and
+// push - until the credentials change.
+func TestLoopPausesAfter403(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db")) // see TestLoopPushes
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	f := &recorder{}
+	base := f.client(t)
+	if _, _, err := (&Orchestrator{Store: st, Clublog: base}).PullAndUpsert(); err != nil {
+		t.Fatal(err)
+	}
+	qsos, _ := st.RecentQSOsByCall("DL2CD", 1)
+	_ = st.SetQSLSentLocal(qsos[0].QSLKey, "B")
+	f.mu.Lock()
+	f.pulls, f.pullStatus, f.pushStatus = 0, http.StatusForbidden, http.StatusForbidden
+	f.mu.Unlock()
+
+	var password atomic.Value
+	password.Store("p")
+	o := &Orchestrator{Store: st, Configure: func() (*clublog.Client, bool) {
+		cl := *base
+		cl.AppPassword = password.Load().(string)
+		return &cl, true
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := Loop(ctx, o, 10*time.Millisecond, 10*time.Millisecond)
+	defer func() { cancel(); <-done }()
+
+	waitFor(t, "the refused login", func() bool { p, n, _ := f.counts(); return p+n >= 1 })
+	time.Sleep(150 * time.Millisecond) // ~15 ticks of each
+	if p, n, _ := f.counts(); p+n != 1 {
+		t.Fatalf("logins after the 403: %d pulls, %d pushes; want the one refused", p, n)
+	}
+
+	f.mu.Lock()
+	f.pullStatus, f.pushStatus = 0, 0
+	f.mu.Unlock()
+	password.Store("fixed under Settings")
+	waitFor(t, "sync with the new credentials", func() bool { pend, _ := st.PendingPushBack(); return len(pend) == 0 })
+	if p, _, _ := f.counts(); p < 1 {
+		t.Error("the pull must resume too")
 	}
 }

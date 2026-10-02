@@ -181,10 +181,14 @@ func main() {
 				log.Printf("[startup] QRZ credentials OK (%s)", cfg.QRZ.Username)
 			}
 		}
-		if cfg.Clublog.Email != "" && cfg.Clublog.APIKey != "" {
-			if err := clublogClient.CheckCredentials(); err != nil {
+		if cfg.Clublog.Configured() {
+			if at := sync.RefusedAt(st, clublogClient); at != "" {
+				log.Printf("[startup] Clublog credentials: not checked - Clublog refused them (403) at %s; sync paused until they change", at)
+			} else if err := clublogClient.CheckCredentials(); err != nil {
+				sync.NoteLogin(st, clublogClient, err)
 				log.Printf("[startup] Clublog credentials: %v", err)
 			} else {
+				sync.NoteLogin(st, clublogClient, nil)
 				log.Printf("[startup] Clublog credentials OK (%s)", cfg.Clublog.Call)
 			}
 		}

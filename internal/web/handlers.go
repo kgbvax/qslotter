@@ -852,6 +852,17 @@ func (s *Server) clublogClient(w http.ResponseWriter, r *http.Request) (*clublog
 	return s.clublogFn(c), true
 }
 
+// clublogPausedAt tells when Clublog refused the configured credentials with
+// a 403 ("" = it did not): the automatic sync waits until they change or a
+// pull/push by hand gets through.
+func (s *Server) clublogPausedAt() string {
+	c := s.config().Clublog
+	if !c.Configured() {
+		return ""
+	}
+	return sync.RefusedAt(s.store, s.clublogFn(c))
+}
+
 func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 	cl, ok := s.clublogClient(w, r)
 	if !ok {

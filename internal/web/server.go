@@ -90,19 +90,19 @@ func (s *Server) config() *config.Config {
 func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath string, refresher *station.Refresher) (*Server, error) {
 	rules := qualify.NewRules(cfg.Qualify, st)
 	srv := &Server{
-		cfg:        cfg,
-		cfgPath:    cfgPath,
-		store:      st,
-		broker:     broker,
-		rules:      rules,
-		refresher:  refresher,
-		printer:    printer.New(),
-		now:        time.Now,
-		validateFn: validateCredentials,
+		cfg:       cfg,
+		cfgPath:   cfgPath,
+		store:     st,
+		broker:    broker,
+		rules:     rules,
+		refresher: refresher,
+		printer:   printer.New(),
+		now:       time.Now,
 		clublogFn: func(c config.ClublogCfg) *clublog.Client {
 			return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey)
 		},
 	}
+	srv.validateFn = srv.validateCredentials
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"fmtDate":    fmtDate,
 		"fmtTime":    fmtTime,
@@ -201,8 +201,9 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, code int, text str
 
 // NavCounts are the badges in the site nav.
 type NavCounts struct {
-	New, Work, Push int // awaiting a decision, awaiting production, not yet pushed to Clublog
-	Expected        int // requested cards not arrived yet
+	New, Work, Push int  // awaiting a decision, awaiting production, not yet pushed to Clublog
+	Expected        int  // requested cards not arrived yet
+	ClublogPaused   bool // Clublog refused the credentials (403): no automatic sync
 }
 
 // navCounts is called from the templates on every page render; a store error
@@ -213,7 +214,7 @@ func (s *Server) navCounts() NavCounts {
 		return NavCounts{}
 	}
 	e, _ := s.store.ExpectedCount()
-	return NavCounts{New: q, Work: d, Push: p, Expected: e}
+	return NavCounts{New: q, Work: d, Push: p, Expected: e, ClublogPaused: s.clublogPausedAt() != ""}
 }
 
 // methodName spells out a decision/method letter.

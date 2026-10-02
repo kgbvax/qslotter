@@ -61,6 +61,7 @@ func (o *Orchestrator) announce(key, to string) {
 // It is safe to run periodically (every pull_interval).
 func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 	adifBytes, err := o.Clublog.PullLog("")
+	NoteLogin(o.Store, o.Clublog, err)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -185,7 +186,9 @@ func (o *Orchestrator) PushBack() (pushed int, err error) {
 			return pushed, err
 		}
 	}
-	if err := o.Clublog.PushLogs(buf.Bytes()); err != nil {
+	err = o.Clublog.PushLogs(buf.Bytes())
+	NoteLogin(o.Store, o.Clublog, err)
+	if err != nil {
 		return pushed, err
 	}
 	for _, q := range pending {

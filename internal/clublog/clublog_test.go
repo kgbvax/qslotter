@@ -1,6 +1,7 @@
 package clublog
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -91,7 +92,7 @@ func TestPullLogErrors(t *testing.T) {
 	c, n := fake(t, "e", "p", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	})
-	if _, err := c.PullLog(""); err == nil || !strings.Contains(err.Error(), "403") {
+	if _, err := c.PullLog(""); !errors.Is(err, ErrForbidden) {
 		t.Errorf("403: err = %v", err)
 	}
 	if n.Load() != 1 {
@@ -157,7 +158,7 @@ func TestPushLogsErrors(t *testing.T) {
 	c, n := fake(t, "e", "p", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	})
-	if err := c.PushLogs([]byte("x")); err == nil || !strings.Contains(err.Error(), "403") {
+	if err := c.PushLogs([]byte("x")); !errors.Is(err, ErrForbidden) {
 		t.Errorf("403: err = %v", err)
 	}
 	if n.Load() != 1 {
@@ -190,11 +191,11 @@ func TestCheckCredentials(t *testing.T) {
 		t.Errorf("checked from %s, want today (%s) - a full pull is too big for a check", start, today)
 	}
 	code = http.StatusForbidden
-	if err := c.CheckCredentials(); err == nil || !strings.Contains(err.Error(), "credentials rejected") {
+	if err := c.CheckCredentials(); !errors.Is(err, ErrForbidden) || !strings.Contains(err.Error(), "credentials rejected") {
 		t.Errorf("403: err = %v", err)
 	}
 	code = http.StatusBadGateway
-	if err := c.CheckCredentials(); err == nil || strings.Contains(err.Error(), "credentials") {
+	if err := c.CheckCredentials(); err == nil || errors.Is(err, ErrForbidden) || strings.Contains(err.Error(), "credentials") {
 		t.Errorf("502 is not a credential problem: err = %v", err)
 	}
 }

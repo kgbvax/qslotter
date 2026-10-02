@@ -9,17 +9,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/sync"
 	"gopkg.in/yaml.v3"
 )
 
 // pageSettings renders the service-configuration form (QRZ/Clublog
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices()})
+	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
+		"ClublogPaused": s.clublogPausedAt()})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -92,6 +93,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"Saved":         true,
 		"QrzStatus":     qrzStatus,
 		"ClublogStatus": clublogStatus,
+		"ClublogPaused": s.clublogPausedAt(),
 	})
 }
 
@@ -108,8 +110,9 @@ func (s *Server) langChoices() []LangChoice {
 
 // validateCredentials checks both services right now and returns human-ready
 // status lines for the settings page. Uses short-timeout clients so the form
-// round-trip stays snappy; the outcome also lands in the log.
-func validateCredentials(cfg *config.Config) (qrzStatus, clublogStatus i18n.Msg) {
+// round-trip stays snappy; the outcome also lands in the log. A Clublog 403
+// pauses the automatic sync, a success ends a pause (sync.NoteLogin).
+func (s *Server) validateCredentials(cfg *config.Config) (qrzStatus, clublogStatus i18n.Msg) {
 	if cfg.QRZ.Username != "" {
 		q := qrz.New(cfg.QRZ.Username, cfg.QRZ.Password, cfg.QRZ.Agent)
 		q.HTTP = &http.Client{Timeout: 12 * time.Second}
@@ -124,9 +127,11 @@ func validateCredentials(cfg *config.Config) (qrzStatus, clublogStatus i18n.Msg)
 		qrzStatus = i18n.M("not configured (station info disabled)")
 	}
 	if cfg.Clublog.Email != "" && cfg.Clublog.APIKey != "" {
-		c := clublog.New(cfg.Clublog.Email, cfg.Clublog.AppPassword, cfg.Clublog.Call, cfg.Clublog.APIKey)
-		c.HTTP = &http.Client{Timeout: 15 * time.Second}
-		if err := c.CheckCredentials(); err != nil {
+		c := s.clublogFn(cfg.Clublog)
+		c.HTTP = &http.Client{Timeout: 15 * time.Second, Transport: c.HTTP.Transport}
+		err := c.CheckCredentials()
+		sync.NoteLogin(s.store, c, err)
+		if err != nil {
 			clublogStatus = i18n.M("ERROR: %s", err.Error())
 			log.Printf("settings: Clublog credential check failed: %v", err)
 		} else {
