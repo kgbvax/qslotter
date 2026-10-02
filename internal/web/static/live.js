@@ -6,7 +6,6 @@
 //   list      decision-queue table: rows appear, refresh or vanish
 //   decide    decide card view: loads a card when idle; follows a card that was
 //             handled in another window
-//   worklist  work-queue lists: reload <main>
 //   workcard  work card view: like decide, for decided cards
 //   (Inbox pages also keep the "QSO in progress" box current: current_contact)
 //   md-inbox, md-desk  master-detail pages: the list reloads, the detail pane
@@ -91,48 +90,6 @@
         var c = tr.querySelector('.call');
         if (c && c.textContent.trim().toUpperCase() === call) put(tr.id.slice(4));
       });
-    });
-    return;
-  }
-
-  if (mode === 'worklist') {
-    // Unsaved choices on the list (route, manager, batch ticks) survive a
-    // reload: only fields the operator changed are carried over, by name.
-    var snapshot = function (root) {
-      var st = {};
-      root.querySelectorAll('select.route-sel, input.mgr-in, input[type="checkbox"][name="keys"]').forEach(function (f) {
-        if (f.type === 'checkbox') { if (f.checked !== f.defaultChecked) st['c:' + f.value] = f.checked; return; }
-        var changed = f.tagName === 'SELECT'
-          ? !(f.selectedOptions[0] && f.selectedOptions[0].defaultSelected)
-          : f.value !== f.defaultValue;
-        if (changed) st['v:' + f.name] = f.value;
-      });
-      return st;
-    };
-    var restore = function (root, st) {
-      root.querySelectorAll('select.route-sel, input.mgr-in, input[type="checkbox"][name="keys"]').forEach(function (f) {
-        if (f.type === 'checkbox') { if (('c:' + f.value) in st) f.checked = st['c:' + f.value]; return; }
-        if (('v:' + f.name) in st) f.value = st['v:' + f.name];
-      });
-    };
-    var busy = function () { return document.querySelector('main select:focus, main input:focus:not([type="checkbox"])'); };
-    var reload = function () {
-      if (busy()) { settled(reload); return; } // not while a field is being edited
-      fetch(location.pathname).then(function (r) { return r.text(); }).then(function (html) {
-        var doc = new DOMParser().parseFromString(html, 'text/html');
-        var fresh = doc.querySelector('main'), cur = document.querySelector('main');
-        if (!fresh || !cur) return;
-        var st = snapshot(cur);
-        cur.innerHTML = fresh.innerHTML;
-        restore(cur, st);
-        if (window.htmx) htmx.process(cur);
-      });
-    };
-    es.addEventListener('queue_changed', function (e) {
-      var d = parse(e);
-      // A QSO entering the Inbox does not touch the Desk unless it was on it.
-      if (d && d.to === 'queued' && !document.querySelector('input[name="key"][value="' + CSS.escape(d.key) + '"]')) return;
-      settled(reload);
     });
     return;
   }

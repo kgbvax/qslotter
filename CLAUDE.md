@@ -27,6 +27,13 @@ Run all tests:
 
     go test ./...
 
+The browser tests (`internal/web/browser_test.go`: keys.js and live.js in
+headless Chrome via chromedp, against the real server) need Chrome installed
+and skip without it; `go test -short ./...` skips them too. Their helpers
+type keys like a person (text on the keydown, only once htmx has settled) -
+chromedp's own `KeyEvent` sends the text separately, past a handler's
+`preventDefault`.
+
 Run a single test package or test:
 
     go test ./internal/qualify
