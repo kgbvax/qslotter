@@ -16,3 +16,4 @@ variants:
   - {name: qwen3.5-4b-v4, model: "qwen3.5:4b", prompt: v4}
   - {name: qwen3.5-4b-v5, model: "qwen3.5:4b", prompt: v5}
   - {name: gemma4-e4b-v4, model: "gemma4:e4b", prompt: v4}
+  - {name: qwen3.5-4b-v6, model: "qwen3.5:4b", prompt: v6}

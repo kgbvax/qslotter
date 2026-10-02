@@ -3,7 +3,7 @@
 base_url: http://localhost:11434/v1
 # api_key: ${QPC_API_KEY}   # sent as a bearer token; Ollama needs none
 model: qwen3.5:4b
-prompt: v3                  # built-in name (qpc/prompts/v3.tmpl) or a path to a .tmpl file
+prompt: v6                  # built-in name (qpc/prompts/v6.tmpl) or a path to a .tmpl file
 temperature: 0
 max_tokens: 512
 bio_max_chars: 6000

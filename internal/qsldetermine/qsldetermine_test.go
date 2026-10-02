@@ -172,7 +172,36 @@ func TestFlagsOneZero(t *testing.T) {
 	if r := Determine(&qrz.Callsign{MQSL: "0", EQSL: "?", LoTW: "1"}, ""); !r.RefusePaper {
 		t.Errorf("mqsl=0 lotw=1: %+v", r)
 	}
-	if r := Determine(&qrz.Callsign{MQSL: "0"}, ""); r.RefusePaper || r.Method != "" {
-		t.Errorf("mqsl=0 alone is no signal: %+v", r)
+	if r := Determine(&qrz.Callsign{MQSL: "0"}, ""); !r.RefusePaper || r.Method != "" {
+		t.Errorf("mqsl=0 with nothing else is no paper: %+v", r)
+	}
+}
+
+// The operator's rule for a record with nothing in qslmgr or the bio: a full
+// postal address means direct (mqsl 1 or empty), mqsl 0 means no paper,
+// without an address mqsl 1 means bureau; eqsl/lotw do not matter.
+func TestAddressOnlyRecords(t *testing.T) {
+	addr := func(c qrz.Callsign) *qrz.Callsign { c.Addr1, c.Addr2 = "Main St 1", "12345 Town"; return &c }
+	cases := []struct {
+		name   string
+		cs     *qrz.Callsign
+		bio    string
+		method string
+		refuse bool
+	}{
+		{"address, mqsl empty", addr(qrz.Callsign{}), "", "D", false},
+		{"address, mqsl 1", addr(qrz.Callsign{MQSL: "1"}), "", "D", false},
+		{"address, mqsl empty, lotw 1", addr(qrz.Callsign{LoTW: "1", EQSL: "1"}), "", "D", false},
+		{"address, mqsl 0", addr(qrz.Callsign{MQSL: "0"}), "", "", true},
+		{"city only, mqsl 1", &qrz.Callsign{MQSL: "1", Addr2: "Town"}, "", "B", false},
+		{"city only, mqsl empty", &qrz.Callsign{Addr2: "Town"}, "", "", false},
+		{"address, but the bio says bureau", addr(qrz.Callsign{MQSL: "0"}), "QSL via bureau please", "B", false},
+		{"address, bio without QSL words", addr(qrz.Callsign{}), "I like CW and antennas.", "D", false},
+	}
+	for _, c := range cases {
+		r := Determine(c.cs, c.bio)
+		if r.Method != c.method || r.RefusePaper != c.refuse {
+			t.Errorf("%s: %+v", c.name, r)
+		}
 	}
 }

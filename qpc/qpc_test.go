@@ -100,7 +100,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 			t.Errorf("user prompt lacks %q:\n%s", want, user)
 		}
 	}
-	if !strings.HasPrefix(c.PromptID(), "v3@") {
+	if !strings.HasPrefix(c.PromptID(), "v6@") {
 		t.Errorf("prompt ID %q", c.PromptID())
 	}
 	_, user, _, _ = c.Messages(Station{Call: "K1A"})
@@ -114,7 +114,7 @@ func TestBuiltinPromptRenders(t *testing.T) {
 		t.Error("v1 changed")
 	}
 	if v1.prompt.Answer != "label" || c.prompt.Answer != "routes" {
-		t.Errorf("answer formats: v1 %s, v3 %s", v1.prompt.Answer, c.prompt.Answer)
+		t.Errorf("answer formats: v1 %s, v6 %s", v1.prompt.Answer, c.prompt.Answer)
 	}
 }
 
@@ -163,7 +163,7 @@ func TestVariantOver(t *testing.T) {
 	half := 0.5
 	def := Variant{BaseURL: "http://a/v1", Model: "m1", Extra: map[string]any{"think": false, "keep": 1}}
 	v := Variant{Name: "x", Model: "m2", Temperature: &half, Extra: map[string]any{"think": nil, "new": "y"}}.Over(def).WithDefaults()
-	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v3" {
+	if v.BaseURL != "http://a/v1" || v.Model != "m2" || *v.Temperature != 0.5 || v.Prompt != "v6" {
 		t.Errorf("merge: %+v", v)
 	}
 	if _, ok := v.Extra["think"]; ok || v.Extra["keep"] != 1 || v.Extra["new"] != "y" {

@@ -3,7 +3,7 @@
 //
 // Vocabulary (ADIF QSL_VIA): B = bureau, D = direct, E = electronic, M = manager.
 // "No paper" is modelled separately as RefusePaper (derived from bio "NO QSL"
-// or mqsl=N+eqsl=N+lotw=N), since ADIF QSL_VIA has no N value.
+// or mqsl=N with no route in the text), since ADIF QSL_VIA has no N value.
 package qsldetermine
 
 import (
@@ -60,17 +60,21 @@ func Determine(c *qrz.Callsign, bio string) Result {
 		return r
 	}
 
-	// 3. Structured mqsl/eqsl/lotw fallback. QRZ delivers these as 1/0.
+	// 3. Nothing in qslmgr or the bio: the mqsl flag (QRZ delivers 1/0) and
+	// the postal address decide; eqsl/lotw do not (operator's rule,
+	// 2026-10-02). A published street address invites a direct card.
 	mqslYes, mqslNo := flag(c.MQSL)
-	eqslYes, _ := flag(c.EQSL)
-	lotwYes, _ := flag(c.LoTW)
-	if mqslYes {
-		return Result{Method: "B", Confidence: "low",
-			Reason: "mqsl=yes, defaulting to bureau"}
-	}
-	if mqslNo && (eqslYes || lotwYes) {
+	fullAddress := strings.TrimSpace(c.Addr1) != "" && strings.TrimSpace(c.Addr2) != ""
+	switch {
+	case mqslNo:
 		return Result{RefusePaper: true, Confidence: "low",
-			Reason: "mqsl=no, eqsl/lotw only - no paper card"}
+			Reason: "mqsl=no and no route in the text - no paper card"}
+	case fullAddress:
+		return Result{Method: "D", Confidence: "low",
+			Reason: "postal address on QRZ and no other instructions - direct"}
+	case mqslYes:
+		return Result{Method: "B", Confidence: "low",
+			Reason: "mqsl=yes but no full postal address - bureau"}
 	}
 
 	// 4. No signal.

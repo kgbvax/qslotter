@@ -205,7 +205,8 @@ func runVariant(ctx context.Context, v qpc.Variant, items []item, dsHash, out st
 func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	start := time.Now()
 	c := &qrz.Callsign{Call: st.Call, Country: st.Country, DXCC: st.DXCC,
-		QSLMgr: st.QSLMgr, MQSL: st.MQSL, EQSL: st.EQSL, LoTW: st.LoTW}
+		QSLMgr: st.QSLMgr, MQSL: st.MQSL, EQSL: st.EQSL, LoTW: st.LoTW,
+		Addr1: st.Addr1, Addr2: st.Addr2, State: st.State, Zip: st.Zip}
 	h := qsldetermine.Determine(c, st.Bio)
 	r := qpc.Result{Call: strings.ToUpper(st.Call), Model: "heuristic", Confidence: h.Confidence, Evidence: h.Reason}
 	r.Status, r.Routes, r.Via = mapHeuristic(h)

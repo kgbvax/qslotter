@@ -514,3 +514,13 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   for bare mqsl = 0 records, bureau added where only direct is stated,
   verbose notes. 41% of answers have at least one field wrong, so qpc can
   only suggest. About 2.5 s per station on an M2 Pro.
+- **2026-10-02 — Address-only records: direct (heuristic and qpc).** When a
+  QRZ record says nothing about QSL in qslmgr or the bio, the operator's
+  rule decides: mqsl 0 -> no paper; a full postal address (street + city)
+  with mqsl 1 or empty -> direct; without one, mqsl 1 -> bureau, mqsl empty
+  -> unknown; eqsl/lotw flags do not matter. `qsldetermine` follows it, so
+  the Desk now preselects direct for such stations (was bureau for mqsl 1,
+  nothing for mqsl empty) and the Inbox sees "no paper" for mqsl 0 alone
+  (was only with eqsl/lotw). Cached station info keeps the old suggestion
+  until its next refresh. `qpc/LABELS.md` rule 6 and prompt v6 carry it;
+  prompts v1-v5 are frozen with the rules they were evaluated with.

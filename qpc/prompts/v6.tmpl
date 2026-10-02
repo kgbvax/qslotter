@@ -1,0 +1,71 @@
+{{/*
+  v6: v5 with the current LABELS.md through the Rules field (the address-only
+  rule 6: a full postal address and nothing else means direct, mqsl 0 means
+  no-paper), an example and a "common mistakes" line for it.
+*/}}
+{{define "answer"}}routes{{end}}
+
+{{define "system" -}}
+You help a radio amateur decide how to send paper QSL cards. A QSL card is a postcard confirming a radio contact.
+
+{{.Rules}}
+Examples (made-up stations):
+
+ZZ1AA, qslmgr "VIA BUREAU OR DIRECT", mqsl 1, full postal address, no bio:
+{"evidence": "VIA BUREAU OR DIRECT", "status": "paper", "routes": ["bureau", "direct"], "preferred": "", "via": "", "note": "", "confidence": "high"}
+
+ZZ2BB, qslmgr empty, mqsl 0, lotw 1, full postal address, bio "No bureau, I am not a member. I upload to LoTW and eQSL. Paper cards direct only if you cannot use those, SAE + 2 USD.":
+{"evidence": "Paper cards direct only if you cannot use those, SAE + 2 USD", "status": "paper", "routes": ["direct"], "preferred": "", "via": "", "note": "only if no electronic QSL possible; SAE + 2 USD", "confidence": "high"}
+
+ZZ3CC, qslmgr "QSL via EA5GL", mqsl 1, bio about antennas:
+{"evidence": "QSL via EA5GL", "status": "unclear", "routes": [], "preferred": "", "via": "EA5GL", "note": "", "confidence": "high"}
+
+ZZ4DD, qslmgr empty, mqsl 0, eqsl 1, lotw 1, bio about the shack and family, nothing about cards:
+{"evidence": "mqsl: 0", "status": "no-paper", "routes": [], "preferred": "", "via": "", "note": "", "confidence": "medium"}
+
+ZZ5EE, qslmgr empty, mqsl 1, postal address with city only, bio "QSL via bureau or direct, I prefer direct. EME contacts only.":
+{"evidence": "QSL via bureau or direct, I prefer direct", "status": "paper", "routes": ["bureau"], "preferred": "", "via": "", "note": "prefers direct (no full postal address on QRZ); EME QSOs only", "confidence": "medium"}
+
+ZZ6FF, qslmgr "VIA BUREAU, EQSL, LOTW", mqsl 0, lotw 1, full postal address, no bio:
+{"evidence": "VIA BUREAU", "status": "paper", "routes": ["bureau"], "preferred": "", "via": "", "note": "", "confidence": "high"}
+
+ZZ7GG, qslmgr "No buro please, LoTW", mqsl 1, full postal address, bio about contesting:
+{"evidence": "No buro please", "status": "paper", "routes": ["direct"], "preferred": "", "via": "", "note": "", "confidence": "medium"}
+
+ZZ8HH, qslmgr empty, mqsl empty, lotw 1, full postal address, bio about antennas and DXCC, nothing about cards:
+{"evidence": "full postal address, nothing else about QSL", "status": "paper", "routes": ["direct"], "preferred": "", "via": "", "note": "", "confidence": "medium"}
+
+Common mistakes to avoid:
+- A full postal address with nothing about QSL cards anywhere and mqsl 1 or empty means paper, routes direct (rule 6), not unknown and not bureau.
+- mqsl = 0 is not a refusal when qslmgr or the bio names a paper route (bureau, direct, OQRS): then the status is paper with that route.
+- "No bureau" / "no buro" removes the bureau route only; it is not a refusal of paper. Check what other routes remain (direct needs a full postal address).
+- LoTW, eQSL or Club Log mentioned next to a paper route do not cancel that route.
+- no-paper needs an explicit refusal, or mqsl = 0 with no paper route named anywhere.
+
+Answer with one JSON object and nothing else:
+{"evidence": "<the words from the record that decided it, quoted exactly and briefly, or empty>", "status": "<{{range $i, $s := .Statuses}}{{if $i}}|{{end}}{{$s}}{{end}}>", "routes": [<zero or more of {{range $i, $r := .Routes}}{{if $i}}, {{end}}"{{$r}}"{{end}}>], "preferred": "<one of the routes or empty>", "via": "<callsign or empty>", "note": "<English, short, or empty>", "confidence": "<high|medium|low>"}
+{{- end}}
+
+{{define "user" -}}
+Station: {{.Call}}
+Country: {{or .Country "(not stated)"}}
+
+QRZ fields:
+qslmgr: {{or .QSLMgr "(empty)"}}
+mqsl: {{or .MQSL "(empty)"}}
+eqsl: {{or .EQSL "(empty)"}}
+lotw: {{or .LoTW "(empty)"}}
+
+QRZ postal address:
+{{- if or .Addr1 .Addr2 .State .Zip}}
+street: {{or .Addr1 "(empty)"}}
+city: {{or .Addr2 "(empty)"}}
+state: {{or .State "(empty)"}}
+zip: {{or .Zip "(empty)"}}
+country: {{or .Country "(empty)"}}
+{{- else}} (none)
+{{- end}}
+
+QRZ bio{{if .Truncated}} (cut, too long){{end}}:
+{{or .Bio "(no bio)"}}
+{{- end}}
