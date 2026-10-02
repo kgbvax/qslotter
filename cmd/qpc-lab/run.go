@@ -201,7 +201,7 @@ func runVariant(ctx context.Context, v qpc.Variant, items []item, dsHash, out st
 
 // heuristic runs qslotter's rule-based determination (internal/qsldetermine)
 // and maps it to a qpc answer, as the baseline the LLM has to beat. It never
-// answers oqrs, a preferred route or a note; a manager becomes the via.
+// answers a preferred route or a note; a manager becomes the via.
 func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	start := time.Now()
 	c := &qrz.Callsign{Call: st.Call, Country: st.Country, DXCC: st.DXCC,
@@ -222,6 +222,16 @@ var (
 )
 
 func mapHeuristic(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
+	st, routes, via := mapMethod(h)
+	if h.OQRS {
+		// OQRS joins the routes; alone (or for a manager without a route)
+		// it is the route.
+		st, routes = qpc.Paper, qpc.SortRoutes(append(routes, qpc.OQRS))
+	}
+	return st, routes, via
+}
+
+func mapMethod(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
 	switch h.Method {
 	case "B":
 		if bothRe.MatchString(h.Reason) {

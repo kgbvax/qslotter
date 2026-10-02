@@ -78,6 +78,9 @@ func TestMapHeuristic(t *testing.T) {
 		{qsldetermine.Result{Method: "M", Manager: "IQ3BM", Reason: "qslmgr field: IQ3BM via bureau or direct"}, qpc.Paper, "[bureau direct]", "IQ3BM"},
 		{qsldetermine.Result{RefusePaper: true}, qpc.NoPaper, "[]", ""},
 		{qsldetermine.Result{}, qpc.Unknown, "[]", ""},
+		{qsldetermine.Result{Method: "D", OQRS: true}, qpc.Paper, "[direct oqrs]", ""},
+		{qsldetermine.Result{OQRS: true}, qpc.Paper, "[oqrs]", ""},
+		{qsldetermine.Result{Method: "M", Manager: "SQ2RAD", Reason: "qslmgr field: SQ2RAD", OQRS: true}, qpc.Paper, "[oqrs]", "SQ2RAD"},
 	}
 	for _, c := range cases {
 		st, routes, via := mapHeuristic(c.r)

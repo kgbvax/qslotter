@@ -24,6 +24,10 @@ type Result struct {
 	// return for a card (SAE/SASE, IRC, green stamps, money, PayPal, a fee or
 	// donation), "not-needed" when it waives that explicitly, "" otherwise.
 	Contribution string
+	// OQRS: the station takes card requests through an online QSL request
+	// service (Club Log OQRS), next to Method or as the only route (Method
+	// empty, RefusePaper false). Computed, not yet stored or shown.
+	OQRS bool
 }
 
 // Determine applies the decision ladder to a QRZ lookup result + bio text.
@@ -32,12 +36,34 @@ func Determine(c *qrz.Callsign, bio string) Result {
 	if c == nil {
 		return Result{Reason: "no station info"}
 	}
-	r := determineRoute(c, bio)
+	oqrs := offersOQRS(c.QSLMgr, bio)
+	r := determineRoute(c, bio, oqrs)
 	r.Contribution = contribution(c.QSLMgr, bio)
+	if oqrs {
+		r.OQRS = true
+		if r.RefusePaper {
+			// "No cards needed! If you need one, pse use Clublog OQRS"
+			r.RefusePaper, r.Method, r.Manager = false, "", ""
+			r.Reason += "; but OQRS offered"
+		}
+	}
 	return r
 }
 
-func determineRoute(c *qrz.Callsign, bio string) Result {
+var (
+	oqrsRe = regexp.MustCompile(`\boqrs\b|club ?log(\.org)? (qsl )?requests?\b|requests? (your |a )?(qsl )?(via|through|on|at) club ?log`)
+	// noOQRSRe removes "no OQRS" before oqrsRe looks.
+	noOQRSRe = regexp.MustCompile(`\b(no|not|without)( via| through)? (club ?log )?oqrs\b|oqrs (is )?(not|closed)`)
+)
+
+// offersOQRS reports whether qslmgr or the bio offers card requests through
+// an OQRS.
+func offersOQRS(qslmgr, bio string) bool {
+	lc := noOQRSRe.ReplaceAllString(strings.ToLower(qslmgr+"\n"+bio), " ")
+	return oqrsRe.MatchString(lc)
+}
+
+func determineRoute(c *qrz.Callsign, bio string, oqrs bool) Result {
 
 	// 1. Structured qslmgr field. A callsign there is a manager (highest
 	// confidence). Anything else is free text people type into the field
@@ -70,6 +96,12 @@ func determineRoute(c *qrz.Callsign, bio string) Result {
 			r.RefusePaper = true
 		}
 		return r
+	}
+
+	// An OQRS named in the text is a route: the flags and the address do not
+	// decide then.
+	if oqrs {
+		return Result{Confidence: "medium", Reason: "OQRS"}
 	}
 
 	// 3. Nothing in qslmgr or the bio: the mqsl flag (QRZ delivers 1/0) and

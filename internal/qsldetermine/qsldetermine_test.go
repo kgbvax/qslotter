@@ -171,6 +171,32 @@ func TestElectronicList(t *testing.T) {
 	}
 }
 
+func TestOQRS(t *testing.T) {
+	addr := func(c *qrz.Callsign) *qrz.Callsign { c.Addr1, c.Addr2 = "Street 1", "Town"; return c }
+	for _, c := range []struct {
+		st     *qrz.Callsign
+		bio    string
+		method string
+		oqrs   bool
+	}{
+		{&qrz.Callsign{QSLMgr: "DIRECT/OQRS/LOTW/eQSL"}, "", "D", true},
+		{&qrz.Callsign{QSLMgr: "BURO, LOTW, EQSL.CC, CLUBLOG.ORG QSL REQUEST"}, "", "B", true},
+		{&qrz.Callsign{QSLMgr: "clublog request / LOTW"}, "", "", true},
+		// The text names a route: the address does not make it direct.
+		{addr(&qrz.Callsign{MQSL: "1"}), "QSL via Club Log OQRS only.", "", true},
+		// A refusal with an OQRS offered is an OQRS card.
+		{&qrz.Callsign{MQSL: "0"}, "No cards needed! If you need one, pse use Clublog OQRS.", "", true},
+		{&qrz.Callsign{QSLMgr: "VIA SQ2RAD OQRS CLUBLOG"}, "", "M", true},
+		{&qrz.Callsign{QSLMgr: "Direct only, no OQRS"}, "", "D", false},
+		{&qrz.Callsign{}, "I upload to LoTW, Club Log and QRZ. Please do not send me any email QSL requests.", "", false},
+	} {
+		r := Determine(c.st, c.bio)
+		if r.Method != c.method || r.OQRS != c.oqrs || r.RefusePaper {
+			t.Errorf("%q / %q: %+v", c.st.QSLMgr, c.bio, r)
+		}
+	}
+}
+
 func TestManagerWithRoute(t *testing.T) {
 	// A lead-in word is not a route: "QSL MGR EA5GL" names no route.
 	r := Determine(&qrz.Callsign{QSLMgr: "QSL MGR EA5GL", Addr1: "Street 1", Addr2: "Town"}, "")

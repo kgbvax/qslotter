@@ -614,3 +614,14 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   the time. The heuristic's misses here: OQRS, which it never answers (3
   of 12), managers named in the bio, missed refusals; qwen's: a preferred
   route where none is stated (4).
+- **2026-10-03 — The heuristic reads OQRS.** `qsldetermine` sets
+  `Result.OQRS` when qslmgr or the bio offers an OQRS / Club Log request
+  ("no OQRS" excluded); it joins the other routes, is a route of its own
+  when nothing else is named (the flags and address no longer decide
+  then), and turns "No cards needed! If you need one, use Club Log OQRS"
+  from a refusal into an OQRS card. Computed, not yet stored or shown by
+  the app (Method stays B/D/M). On the labelled samples it fixed 5
+  stations and broke 1 (9A7YY, whose label leaves out the OQRS its bio
+  offers); fully right now heuristic 80% / 82% / 80% against qwen v8
+  80% / 72% / 74%. Still missed: the labelling convention that a card
+  "requested via OQRS" for bureau or direct is an OQRS route only.
