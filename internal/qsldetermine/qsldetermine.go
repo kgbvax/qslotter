@@ -65,6 +65,15 @@ func Determine(c *qrz.Callsign, bio string) Result {
 		oqrsOnlyRoutes(text, &r)
 	}
 	addressRule(c, bio, &r)
+	if dclRe.MatchString(strings.ToLower(c.QSLMgr+" "+bio)) && !r.RefusePaper && !r.Bureau && !readSignals(text).noBureau {
+		// DCL (DARC Community Logbook) = a DARC member: the bureau is a route
+		// too (operator, 2026-10-03).
+		r.Bureau, r.Unclear = true, false
+		if r.Method != "M" {
+			r.Method = "B"
+		}
+		r.Reason += "; DCL mentioned: DARC member, bureau"
+	}
 	r.Preferred = preferred(text, r)
 	return r
 }
@@ -117,6 +126,8 @@ func addressRule(c *qrz.Callsign, bio string, r *Result) {
 		r.Method, r.Unclear = "", true
 	}
 }
+
+var dclRe = regexp.MustCompile(`\bdcl\b|darc community log`)
 
 var bioAddressRe = regexp.MustCompile(`(?i)p\.?\s?o\.?\s?box|postfach|apartado|post box|\baddress( below| is)?\s*:`)
 

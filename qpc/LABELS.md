@@ -34,6 +34,7 @@ Rules:
    - full postal address and mqsl 1 or empty: status paper, routes direct.
    - mqsl 0: no-paper.
    - no full postal address: mqsl 1: routes bureau; mqsl empty: unknown.
+6a. DCL (the DARC Community Logbook) mentioned anywhere makes the station a DARC member: bureau is a route too, on top of whatever else applies (unless the bureau is refused).
 7. mqsl = 0 means "will not return paper QSL". With mqsl = 0 and no paper route offered in qslmgr or the bio: no-paper, whatever eqsl and lotw say. A route offered in the text wins over mqsl = 0.
 8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes; mentioning them does not change rules 6 and 7, also when qslmgr lists nothing else ("LoTW, eQSL, Club Log": mqsl decides). Only an explicit "eQSL only" / "LoTW only" refuses paper.
 9. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
