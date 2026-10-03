@@ -666,3 +666,13 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   the code's flag rule: 189 of 250 against v11's 193, so v11 stays the
   default. bwpc's Ollama hung once for about two hours and recovered by
   itself.
+- **2026-10-03 — 100 more stations, operator-reviewed; v13 default.** The
+  assistant pre-labelled a fourth sample of 100 (eval/qpc7) and the
+  operator reviewed all of them, changing 6 (one more rule came out of
+  it: DCL mentioned = DARC member = bureau too, LABELS.md 6a). With the
+  day's fixes the heuristic is fully right on 310 of the operator's 350
+  labelled stations (89%): 91 / 85 / 84 / 92% per sample. qwen3.5:4b
+  with v13 (v11's split - the model reads the text, code applies the
+  flags - plus the operator's rules) gets 280 (80%), v11 276, so v13 is
+  the default prompt; the heuristic still leads by about 9 points.
+  bwpc's ROCm GPU wedged twice (model load hanging); a reboot fixed it.
