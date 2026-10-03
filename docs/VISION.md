@@ -653,3 +653,16 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   v11 also wins on both assistant-labelled samples (87% / 80% vs 82% /
   78%) and runs in ~1.4 s a station on bwpc. v11 is the default prompt.
   The heuristic still leads.
+- **2026-10-03 — The operator's labelling rules; prompt v12 tried.** Five
+  answers settled what the labels contradicted (LABELS.md: direct needs a
+  full address on QRZ or in the bio; preferred only among two or more
+  routes; a card sent only on an OQRS request is OQRS; postage named for a
+  manager means direct via it; "no bureau" alone with mqsl 0 is no paper).
+  14 labels were brought in line. The heuristic follows them and is now
+  fully right on 91% / 85% / 84% of the operator's samples (218 of 250)
+  and 92% / 93% of the assistant's two samples. v12 (v11 plus the five
+  rules) gained on preferred routes, managers and OQRS but started
+  answering "bureau" for address-only records instead of leaving them to
+  the code's flag rule: 189 of 250 against v11's 193, so v11 stays the
+  default. bwpc's Ollama hung once for about two hours and recovered by
+  itself.
