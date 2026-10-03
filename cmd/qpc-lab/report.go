@@ -250,7 +250,7 @@ func writeRunDetail(w io.Writer, r *run) {
 	fmt.Fprintf(w, "\n## %s\n\n", r.Name)
 	switch v.Kind {
 	case "heuristic":
-		fmt.Fprintln(w, "internal/qsldetermine mapped to qpc answers (no preferred route, no note).")
+		fmt.Fprintln(w, "internal/qsldetermine mapped to qpc answers (no note).")
 	case "decision":
 		bio := "cut"
 		if v.BioFocus {

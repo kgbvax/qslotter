@@ -201,7 +201,7 @@ func runVariant(ctx context.Context, v qpc.Variant, items []item, dsHash, out st
 
 // heuristic runs qslotter's rule-based determination (internal/qsldetermine)
 // and maps it to a qpc answer, as the baseline the LLM has to beat. It never
-// answers a preferred route or a note; a manager becomes the via.
+// writes a note; a manager becomes the via.
 func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	start := time.Now()
 	c := &qrz.Callsign{Call: st.Call, Country: st.Country, DXCC: st.DXCC,
@@ -210,6 +210,9 @@ func heuristic(_ context.Context, st qpc.Station) (qpc.Result, error) {
 	h := qsldetermine.Determine(c, st.Bio)
 	r := qpc.Result{Call: strings.ToUpper(st.Call), Model: "heuristic", Confidence: h.Confidence, Evidence: h.Reason}
 	r.Status, r.Routes, r.Via = mapHeuristic(h)
+	if p := map[string]qpc.Route{"B": qpc.Bureau, "D": qpc.Direct, "O": qpc.OQRS}[h.Preferred]; qpc.HasRoute(r.Routes, p) {
+		r.Preferred = p
+	}
 	r.Contribution = qpc.Contribution(h.Contribution)
 	r.LatencyMS = time.Since(start).Milliseconds()
 	return r, nil
@@ -246,6 +249,8 @@ func mapMethod(h qsldetermine.Result) (qpc.Status, []qpc.Route, string) {
 		return qpc.Paper, routes, h.Manager
 	case h.RefusePaper:
 		return qpc.NoPaper, nil, ""
+	case h.Unclear:
+		return qpc.Unclear, nil, ""
 	}
 	return qpc.Unknown, nil, ""
 }

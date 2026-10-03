@@ -52,7 +52,7 @@ func TestDetermineBioNoPaper(t *testing.T) {
 }
 
 func TestDetermineBioDirectOnly(t *testing.T) {
-	cs := &qrz.Callsign{Call: "DL5DIR", MQSL: "Y"}
+	cs := &qrz.Callsign{Call: "DL5DIR", MQSL: "Y", Addr1: "Street 1", Addr2: "Town"}
 	r := Determine(cs, "QSL direct only, no bureau")
 	if r.Method != "D" {
 		t.Fatalf("Method = %q, want D", r.Method)
@@ -134,7 +134,11 @@ func TestQSLMgrFreeText(t *testing.T) {
 		{"No bureau, SASE please", "D", false},
 	}
 	for _, c := range cases {
-		r := Determine(&qrz.Callsign{Call: "XX1XX", QSLMgr: c.mgr}, "")
+		st := &qrz.Callsign{Call: "XX1XX", QSLMgr: c.mgr}
+		if c.method == "D" { // direct needs a full address (rule 5)
+			st.Addr1, st.Addr2 = "Street 1", "Town"
+		}
+		r := Determine(st, "")
 		if r.Method == "M" {
 			t.Errorf("qslmgr %q: free text became a manager: %+v", c.mgr, r)
 			continue
@@ -190,6 +194,9 @@ func TestOQRS(t *testing.T) {
 		{&qrz.Callsign{QSLMgr: "Direct only, no OQRS"}, "", "D", false},
 		{&qrz.Callsign{}, "I upload to LoTW, Club Log and QRZ. Please do not send me any email QSL requests.", "", false},
 	} {
+		if c.method == "D" {
+			c.st.Addr1, c.st.Addr2 = "Street 1", "Town"
+		}
 		r := Determine(c.st, c.bio)
 		if r.Method != c.method || r.OQRS != c.oqrs || r.RefusePaper {
 			t.Errorf("%q / %q: %+v", c.st.QSLMgr, c.bio, r)
@@ -221,9 +228,49 @@ func TestPostalDOKAndInlineManager(t *testing.T) {
 		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
 		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},
 	} {
-		r := Determine(&qrz.Callsign{Call: c.call, QSLMgr: c.mgr}, c.bio)
+		st := &qrz.Callsign{Call: c.call, QSLMgr: c.mgr}
+		if c.direct {
+			st.Addr1, st.Addr2 = "Street 1", "Town"
+		}
+		r := Determine(st, c.bio)
 		if r.Method != c.method || r.Manager != c.manager || r.Bureau != c.bureau || r.Direct != c.direct {
 			t.Errorf("%s %q %q: %+v", c.call, c.mgr, c.bio, r)
+		}
+	}
+}
+
+// The operator's rules of 2026-10-03.
+func TestRules20261003(t *testing.T) {
+	full := func(c qrz.Callsign) *qrz.Callsign { c.Addr1, c.Addr2 = "Street 1", "Town"; return &c }
+	for _, c := range []struct {
+		name           string
+		st             *qrz.Callsign
+		bio            string
+		method, pref   string
+		bureau, direct bool
+		oqrs, unclear  bool
+		refuse         bool
+	}{
+		// Rule 5: direct needs a full address on QRZ or in the bio.
+		{"city only", &qrz.Callsign{QSLMgr: "Direct only or via e-mail", MQSL: "1", Addr2: "Hradec Kralove"}, "", "", "", false, false, false, true, false},
+		{"city only, bureau too", &qrz.Callsign{QSLMgr: "Direct or Bureau", Addr2: "Afragola"}, "", "B", "", true, false, false, false, false},
+		{"address in the bio", &qrz.Callsign{QSLMgr: "Direct"}, "QSL direct to the address below: Postfach 12, 1122 Vienna", "D", "", false, true, false, false, false},
+		{"manager: not checked", &qrz.Callsign{QSLMgr: "QSL via EA5GL direct"}, "", "M", "", false, true, false, false, false},
+		// A card sent only on an OQRS request is OQRS.
+		{"no bureau, clublog request", &qrz.Callsign{QSLMgr: "clublog request / LOTW"}, "* Please do not send QSL via bureau * Please use clublog request for bureau or direct QSLs", "", "", false, false, true, false, false},
+		{"direct via OQRS", full(qrz.Callsign{QSLMgr: "LoTW, Direct via OQRS, NO eQSL"}), "", "", "", false, false, true, false, false},
+		{"own card or OQRS", full(qrz.Callsign{QSLMgr: "LOTW, OQRS"}), "If you want paper QSL, you can send own QSL direct, via Bureau or order via OQRS (prefer).", "B", "O", true, true, true, false, false},
+		// Preferred only with two or more routes.
+		{"preferred, two routes", full(qrz.Callsign{QSLMgr: "VIA BUREAU PREFERRED OR DIRECT"}), "", "B", "B", true, true, false, false, false},
+		{"preferred, one route", full(qrz.Callsign{QSLMgr: "Direct preferred. Will answer any QSL card."}), "", "D", "", false, true, false, false, false},
+		// "No bureau" alone with mqsl 0 names no route.
+		{"no bureau, mqsl 0", full(qrz.Callsign{QSLMgr: "No Buro. Cfm qso e-QSL, LotW.", MQSL: "0"}), "", "", "", false, false, false, false, true},
+		{"no bureau, mqsl 0, direct in bio", full(qrz.Callsign{QSLMgr: "LOTW,EQSL,QRZ. NO BUREAU,I AM NOT MEMBER", MQSL: "0"}), "please no send your qsl via buro, i update my log on LOTW, EQSL, CLUBLOG, last way is direct mode.", "D", "", false, true, false, false, false},
+		{"no bureau, mqsl 1", full(qrz.Callsign{QSLMgr: "LOTW, eQSL, NO BUREAU", MQSL: "1"}), "", "D", "", false, true, false, false, false},
+	} {
+		r := Determine(c.st, c.bio)
+		if r.Method != c.method || r.Preferred != c.pref || r.Bureau != c.bureau || r.Direct != c.direct || r.OQRS != c.oqrs || r.Unclear != c.unclear || r.RefusePaper != c.refuse {
+			t.Errorf("%s: %+v", c.name, r)
 		}
 	}
 }
@@ -272,7 +319,11 @@ func TestBioNegationsAndKeywords(t *testing.T) {
 		{"The direction was always 270 degrees", ""}, // not "direct"
 		{"I don´t answer Paper QSL Cards anymore. Cards via Bureau will no longer be possible", ""},
 	} {
-		r := Determine(&qrz.Callsign{Call: "XX1XX"}, c.bio)
+		st := &qrz.Callsign{Call: "XX1XX"}
+		if c.method == "D" {
+			st.Addr1, st.Addr2 = "Street 1", "Town"
+		}
+		r := Determine(st, c.bio)
 		if r.Method != c.method || r.Method == "M" {
 			t.Errorf("bio %q: got %+v, want method %q", c.bio, r, c.method)
 		}
@@ -355,7 +406,7 @@ func TestContribution(t *testing.T) {
 			t.Errorf("%q / %q: got %q, want %q", c.qslmgr, c.bio, got, c.want)
 		}
 	}
-	if r := Determine(&qrz.Callsign{QSLMgr: "Direct SASE"}, ""); r.Contribution != "required" || r.Method != "D" {
+	if r := Determine(&qrz.Callsign{QSLMgr: "Direct SASE", Addr1: "Street 1", Addr2: "Town"}, ""); r.Contribution != "required" || r.Method != "D" {
 		t.Errorf("Determine: %+v", r)
 	}
 }

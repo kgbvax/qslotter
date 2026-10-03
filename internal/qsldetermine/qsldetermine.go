@@ -20,9 +20,15 @@ type Result struct {
 	// Bureau, Direct: the routes the station accepts (with a manager: the
 	// routes named for it). Method is the cheapest of them.
 	Bureau, Direct bool
-	RefusePaper    bool   // explicit "NO QSL", eQSL/LoTW-only, etc.
-	Confidence     string // "high" (structured field), "medium" (explicit bio), "low" (fallback)
-	Reason         string
+	// Preferred: "B", "D" or "O" (OQRS) when the station says it prefers one
+	// of two or more accepted routes.
+	Preferred string
+	// Unclear: paper cards are wanted but no usable route is left (direct
+	// without a full postal address).
+	Unclear     bool
+	RefusePaper bool   // explicit "NO QSL", eQSL/LoTW-only, etc.
+	Confidence  string // "high" (structured field), "medium" (explicit bio), "low" (fallback)
+	Reason      string
 	// Contribution: "required" when the station asks for something in
 	// return for a card (SAE/SASE, IRC, green stamps, money, PayPal, a fee or
 	// donation), "not-needed" when it waives that explicitly, "" otherwise.
@@ -42,6 +48,13 @@ func Determine(c *qrz.Callsign, bio string) Result {
 	oqrs := offersOQRS(c.QSLMgr, bio)
 	r := determineRoute(c, bio, oqrs)
 	r.Contribution = contribution(c.QSLMgr, bio)
+	text := c.QSLMgr + ". " + qslSentences(bio)
+	if _, mqslNo := flag(c.MQSL); mqslNo && strings.HasSuffix(r.Reason, "no bureau, so direct") && !readSignals(qslSentences(bio)).direct {
+		// "No Buro. Cfm qso e-QSL, LotW." names no route; with mqsl 0 that
+		// is no paper (operator, 2026-10-03). "... last way is direct mode"
+		// in the bio would name one.
+		r = Result{RefusePaper: true, Confidence: "low", Reason: r.Reason + "; but no route named and mqsl=no - no paper card"}
+	}
 	if oqrs {
 		r.OQRS = true
 		if r.RefusePaper {
@@ -49,8 +62,93 @@ func Determine(c *qrz.Callsign, bio string) Result {
 			r.RefusePaper, r.Method, r.Manager = false, "", ""
 			r.Reason += "; but OQRS offered"
 		}
+		oqrsOnlyRoutes(text, &r)
 	}
+	addressRule(c, bio, &r)
+	r.Preferred = preferred(text, r)
 	return r
+}
+
+var (
+	// oqrsRequestRe: a bureau or direct card that is only sent on an OQRS
+	// request ("Direct via OQRS", "use clublog request for bureau or direct
+	// QSLs", "direct QSL card requests: 3 USD through OQRS").
+	oqrsRequestRe = regexp.MustCompile(`(direct|bureau|buro)\s*(via|through|using|by|\()\s*(club ?log )?(oqrs|request)|(oqrs|club ?log request)[^.;\n]{0,25}\bfor (bureau|buro|direct)( (or|and) (bureau|buro|direct))?|(direct|bureau|buro)[^.;\n]{0,25}requests?[^.;\n]{0,20}(through|via|using) (club ?log|oqrs)`)
+)
+
+// oqrsOnlyRoutes drops a bureau or direct route the text reaches only through
+// an OQRS request: OQRS is the route then (operator, 2026-10-03).
+func oqrsOnlyRoutes(text string, r *Result) {
+	lc := strings.Join(strings.Fields(apostrophes.Replace(strings.ToLower(text))), " ")
+	if !oqrsRequestRe.MatchString(lc) {
+		return
+	}
+	rest := readSignals(oqrsRequestRe.ReplaceAllString(lc, " "))
+	if r.Bureau && !rest.bureau {
+		r.Bureau, r.Reason = false, r.Reason+"; bureau only via OQRS"
+	}
+	if r.Direct && !rest.direct {
+		r.Direct, r.Reason = false, r.Reason+"; direct only via OQRS"
+	}
+	if !r.Bureau && !r.Direct && r.Method != "M" {
+		r.Method = ""
+	} else if !r.Bureau && r.Method == "B" {
+		r.Method = "D"
+	}
+}
+
+// addressRule: a direct card to the station itself needs a full postal
+// address (street and city, or a P.O. box), on QRZ or in the bio
+// (LABELS.md rule 5; operator, 2026-10-03). Without one, direct is dropped;
+// with no route left the answer is Unclear. A manager's address is on the
+// manager's record.
+func addressRule(c *qrz.Callsign, bio string, r *Result) {
+	if !r.Direct || r.Method == "M" || (strings.TrimSpace(c.Addr1) != "" && strings.TrimSpace(c.Addr2) != "") || bioAddressRe.MatchString(c.QSLMgr+" "+bio) {
+		return
+	}
+	r.Direct = false
+	r.Reason += "; direct dropped: no full postal address"
+	switch {
+	case r.Bureau:
+		r.Method = "B"
+	case r.OQRS:
+		r.Method = ""
+	default:
+		r.Method, r.Unclear = "", true
+	}
+}
+
+var bioAddressRe = regexp.MustCompile(`(?i)p\.?\s?o\.?\s?box|postfach|apartado|post box|\baddress( below| is)?\s*:`)
+
+var (
+	preferBureauRe = regexp.MustCompile(`(bureau|buro|b\x{fc}ro)[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( the way)?( qsl)?( via)?( the)? (bureau|buro|b\x{fc}ro)`)
+	preferDirectRe = regexp.MustCompile(`direct[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( qsl)?( to receive qsl)?( via)?( the)? direct|recommend direct`)
+	preferOQRSRe   = regexp.MustCompile(`oqrs[^.,;]{0,5}\(\s*prefer`)
+)
+
+// preferred reads a stated preference, only when the station accepts two or
+// more routes (operator, 2026-10-03): "B", "D", "O" or "".
+func preferred(text string, r Result) string {
+	n := 0
+	for _, ok := range []bool{r.Bureau, r.Direct, r.OQRS} {
+		if ok {
+			n++
+		}
+	}
+	if n < 2 {
+		return ""
+	}
+	lc := strings.ToLower(text)
+	b, d, o := preferBureauRe.MatchString(lc), preferDirectRe.MatchString(lc), preferOQRSRe.MatchString(lc)
+	switch {
+	case b && !d && !o && r.Bureau:
+		return "B"
+	case d && !b && !o && r.Direct:
+		return "D"
+	case o && !b && !d && r.OQRS:
+		return "O"
+	}
+	return ""
 }
 
 var (
@@ -283,7 +381,7 @@ var (
 	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)[^.]{0,20}\b(only|solo|nur|seulement|uniquement|tylko)\b|\b(only|solo|nur|seulement|uniquement|tylko)\b[^.]{0,12}(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
-	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer`)
+	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer|(no|not|don't|never) send (your |any |me )?(qsl|cards?)( cards?)? (via|through) (the )?(bureau|buro)`)
 	noDirectRe       = regexp.MustCompile(`no (qsl )?(cards? )?(via |by )(post|snail ?mail|mail)\b|no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
 	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)|no need( any)?( more)? (paper )?(qsl|cards?)`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
