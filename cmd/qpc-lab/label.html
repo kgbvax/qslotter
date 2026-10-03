@@ -86,6 +86,7 @@
   <aside>
     <div class="card">
       <div class="legacy" id="legacy" hidden>Pre-filled from your first pass (one route at most). Add the other routes, the preferred one and the note, then save.</div>
+      <div class="legacy" id="draft" hidden>Pre-filled by Claude. Check it, correct what is wrong, then save.</div>
       <div class="group">Paper routes the station accepts</div>
       <div class="opts" id="routes"></div>
       <div class="group">…or no usable route</div>
@@ -159,7 +160,7 @@ async function load() {
 function renderContrib() { document.querySelectorAll('input[name=contrib]').forEach(x => x.checked = x.value === contrib); }
 
 // Done = labelled in the routes scheme; a first-pass label still needs a look.
-function done(i) { const g = S.gold[S.stations[i].call]; return !!g && !g.legacy; }
+function done(i) { const g = S.gold[S.stations[i].call]; return !!g && !g.legacy && !g.draft; }
 function firstTodo(from) {
   for (let k = 0; k < S.stations.length; k++) {
     const i = (from + k) % S.stations.length;
@@ -200,7 +201,7 @@ function render() {
   const st = S.stations[cur];
   const g = S.gold[st.call];
   const n = S.stations.filter((s, i) => done(i)).length;
-  $('progress').textContent = `station ${cur + 1}/${S.stations.length} · ${n} in the routes scheme`;
+  $('progress').textContent = `station ${cur + 1}/${S.stations.length} · ${n} checked`;
   $('call').textContent = st.call;
   $('qrz').href = 'https://www.qrz.com/db/' + encodeURIComponent(st.call);
   $('country').textContent = [st.country, st.dxcc && 'DXCC ' + st.dxcc].filter(Boolean).join(' · ');
@@ -221,13 +222,14 @@ function render() {
   $('comment').value = g ? (g.comment || '') : '';
   $('unsure').checked = !!(g && g.unsure);
   $('legacy').hidden = !(g && g.legacy);
-  status(g && !g.legacy ? 'saved' : '', 'saved');
+  $('draft').hidden = !(g && g.draft);
+  status(g && !g.legacy && !g.draft ? 'saved' : '', 'saved');
   const grid = $('grid');
   grid.innerHTML = '';
   S.stations.forEach((s, i) => {
     const d = document.createElement('span');
     const gg = S.gold[s.call];
-    d.className = (gg ? (gg.unsure ? 'unsure' : gg.legacy ? 'old' : 'done') : '') + (i === cur ? ' cur' : '');
+    d.className = (gg ? (gg.unsure ? 'unsure' : gg.legacy || gg.draft ? 'old' : 'done') : '') + (i === cur ? ' cur' : '');
     d.title = s.call;
     d.onclick = () => { cur = i; render(); };
     grid.appendChild(d);
@@ -260,7 +262,7 @@ async function save() {
   try {
     const res = await fetch('/api/label', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     if (!res.ok) { status('Not saved: ' + await res.text(), 'err'); return; }
-    S.gold[st.call] = Object.assign(await res.json(), { legacy: false });
+    S.gold[st.call] = Object.assign(await res.json(), { legacy: false, draft: false });
   } catch (err) {
     status('Not saved: ' + err, 'err'); return;
   } finally {

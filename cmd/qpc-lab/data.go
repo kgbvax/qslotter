@@ -40,10 +40,13 @@ type goldLabel struct {
 	Unsure       bool             `json:"unsure,omitempty"`
 	// NoteReviewed: the note was settled on the review page (qpc-lab notes),
 	// which shows a model's note, so it is not blind like the rest.
-	NoteReviewed bool   `json:"note_reviewed,omitempty"`
-	Label        string `json:"label,omitempty"` // single-label scheme (first pass)
-	Legacy       bool   `json:"-"`
-	At           string `json:"at"`
+	NoteReviewed bool `json:"note_reviewed,omitempty"`
+	// Draft: pre-filled by the assistant, not yet checked on the label page;
+	// a save there clears it.
+	Draft  bool   `json:"draft,omitempty"`
+	Label  string `json:"label,omitempty"` // single-label scheme (first pass)
+	Legacy bool   `json:"-"`
+	At     string `json:"at"`
 }
 
 func (g *goldLabel) normalize() {
