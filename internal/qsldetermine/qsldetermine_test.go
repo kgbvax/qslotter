@@ -233,6 +233,7 @@ func TestPostalDOKAndInlineManager(t *testing.T) {
 		{"PD8D", "", "I do not send out physical QSL cards. Please don't send any QSL cards to bureau since I'm not a member.", "", "", false, false},
 		{"DG1NPM", "LOTW, DCL(DARC community log, Email request", "", "B", "", true, true},
 		{"RK3AW", "", "For more information please apply to e-mail. QSL is OK via burea", "B", "", true, false},
+		{"EW4M", "not member of QSL bureau", "", "D", "", false, true},
 		// Routes are read only from the bio's sentences about cards.
 		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
 		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},
@@ -271,6 +272,7 @@ func TestRules20261003(t *testing.T) {
 		{"own card or OQRS", full(qrz.Callsign{QSLMgr: "LOTW, OQRS"}), "If you want paper QSL, you can send own QSL direct, via Bureau or order via OQRS (prefer).", "B", "O", true, true, true, false, false},
 		// Preferred only with two or more routes.
 		{"preferred, two routes", full(qrz.Callsign{QSLMgr: "VIA BUREAU PREFERRED OR DIRECT"}), "", "B", "B", true, true, false, false, false},
+		{"preferably direct", full(qrz.Callsign{}), "All QSL's via bureau (but preferably direct) are answered. Direct with 2 USD & SAE.", "B", "D", true, true, false, false, false},
 		{"preferred, one route", full(qrz.Callsign{QSLMgr: "Direct preferred. Will answer any QSL card."}), "", "D", "", false, true, false, false, false},
 		// "No bureau" alone with mqsl 0 names no route.
 		{"no bureau, mqsl 0", full(qrz.Callsign{QSLMgr: "No Buro. Cfm qso e-QSL, LotW.", MQSL: "0"}), "", "", "", false, false, false, false, true},

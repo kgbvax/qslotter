@@ -132,9 +132,11 @@ var dclRe = regexp.MustCompile(`\bdcl\b|darc community log`)
 var bioAddressRe = regexp.MustCompile(`(?i)p\.?\s?o\.?\s?box|postfach|apartado|post box|\baddress( below| is)?\s*:`)
 
 var (
-	preferBureauRe = regexp.MustCompile(`(bureau|buro|b\x{fc}ro)[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( the way)?( qsl)?( via)?( the)? (bureau|buro|b\x{fc}ro)`)
-	preferDirectRe = regexp.MustCompile(`direct[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( qsl)?( to receive qsl)?( via)?( the)? direct|recommend direct`)
-	preferOQRSRe   = regexp.MustCompile(`oqrs[^.,;]{0,5}\(\s*prefer`)
+	preferBureauRe       = regexp.MustCompile(`preferabl[ey] (via )?(the )?(bureau|buro)|(bureau|buro|b\x{fc}ro)[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( the way)?( qsl)?( via)?( the)? (bureau|buro|b\x{fc}ro)`)
+	preferDirectRe       = regexp.MustCompile(`preferabl[ey] direct|direct[^.,;]{0,15}\(?\s*prefer|prefer[a-z]*( qsl)?( to receive qsl)?( via)?( the)? direct|recommend direct`)
+	preferDirectPhraseRe = regexp.MustCompile(`prefer[a-z]* (the )?direct`)
+	preferBureauPhraseRe = regexp.MustCompile(`prefer[a-z]* (via )?(the )?(bureau|buro|b\x{fc}ro)`)
+	preferOQRSRe         = regexp.MustCompile(`oqrs[^.,;]{0,5}\(\s*prefer`)
 )
 
 // preferred reads a stated preference, only when the station accepts two or
@@ -150,7 +152,11 @@ func preferred(text string, r Result) string {
 		return ""
 	}
 	lc := strings.ToLower(text)
-	b, d, o := preferBureauRe.MatchString(lc), preferDirectRe.MatchString(lc), preferOQRSRe.MatchString(lc)
+	// "via bureau (but preferably direct)": the phrase naming one route must
+	// not count for the route just before it.
+	b := preferBureauRe.MatchString(preferDirectPhraseRe.ReplaceAllString(lc, " "))
+	d := preferDirectRe.MatchString(preferBureauPhraseRe.ReplaceAllString(lc, " "))
+	o := preferOQRSRe.MatchString(lc)
 	switch {
 	case b && !d && !o && r.Bureau:
 		return "B"
@@ -401,7 +407,7 @@ var (
 	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)[^.]{0,20}\b(only|solo|nur|seulement|uniquement|tylko)\b|\b(only|solo|nur|seulement|uniquement|tylko)\b[^.]{0,12}(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
-	noBureauRe       = regexp.MustCompile(`no[- ](qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer|(no|not|don't|never) send (your |any |me )?(qsl|cards?)( cards?)? (via|through|to) (the )?(bureau|buro)`)
+	noBureauRe       = regexp.MustCompile(`no[- ](qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer|(no|not|don't|never) send (your |any |me )?(qsl|cards?)( cards?)? (via|through|to) (the )?(bureau|buro)|not (a )?member of (the |a |any )?(qsl )?(bureau|buro)`)
 	noDirectRe       = regexp.MustCompile(`no (qsl )?(cards? )?(via |by )(post|snail ?mail|mail)\b|no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
 	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)|no need( any)?( more)? (paper )?(qsl|cards?)|(don't|do not|never) (use|send out|send|mail|print)( me)?( any)? (paper |physical )?(qsl|cards?)( cards?)?( any ?longer| anymore)?\b`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
