@@ -224,6 +224,13 @@ func TestPostalDOKAndInlineManager(t *testing.T) {
 		{"CN3A", "", "CN3A is qsling via BUREAU - LOTW - and direct. BURO and Direct QSL VIA IK2OHG see qrz", "M", "IK2OHG", true, true},
 		{"NE1C", "kx1x", "QSL Info: logs are uploaded to LoTW. BURO OK. Direct QSLs must have SASE or will not be returned.", "M", "KX1X", true, true},
 		{"IZ2ABM", "", "conferma QSO solo tramite e-qsl", "", "", false, false},
+		{"JR6IQI", "JARL", "", "B", "", true, false},
+		{"TM40REF", "eQSL & awards via REF server, QRZ.com 3 days, LOTW", "", "", "", false, false},
+		{"TM17FFF", "F4GFE,REF BUREAU or Direct +2$", "", "M", "F4GFE", true, true},
+		{"IQ5AAR", "by bureau, lotw, qrz (DIRECT through IZ5UGE)", "", "M", "IZ5UGE", true, true},
+		{"DL7MDX", "LoTW, QRZ, (Bureau / direct only when other ways impossible)", "", "B", "", true, true},
+		{"EW1ACG", "", "I don't use paper QSL cards", "", "", false, false},
+		{"PD8D", "", "I do not send out physical QSL cards. Please don't send any QSL cards to bureau since I'm not a member.", "", "", false, false},
 		// Routes are read only from the bio's sentences about cards.
 		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
 		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},

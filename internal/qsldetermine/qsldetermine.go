@@ -339,7 +339,7 @@ var managerLeadIn = map[string]bool{"via": true, "qsl": true, "mgr": true, "mana
 // "K2ABC", "via K2ABC", "QSL MGR K2ABC" or "K2ABC (bureau only)". Free text
 // yields false.
 func managerCall(s string) (string, bool) {
-	fields := strings.Fields(s)
+	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' || r == ';' })
 	// Lead-in words: "QSL via K2ABC", "QSL MGR K2ABC", "QSL Manager: K2ABC".
 	for len(fields) > 1 && managerLeadIn[strings.ToLower(strings.Trim(fields[0], ",;:.-"))] {
 		fields = fields[1:]
@@ -371,7 +371,12 @@ var (
 	// address", "P.O.Box 36"); "e-mail" is not one.
 	postalRe = regexp.MustCompile(`\b(by|via|per) (post|snail ?mail|mail|address)\b|snail ?mail|above address|\bp\.? ?o\.? ?box\b|\bpostbox\b|sent by mail`)
 	// dokRe: a DARC DOK ("O 52", "DOK F01") means cards via the DARC bureau.
-	dokRe = regexp.MustCompile(`^\s*(dok:?\s*)?[a-z]\s?\d{2}\s*$|\bdok:?\s*[a-z]\s?\d{2}\b`)
+	// societyRe: a national society's QSL bureau named as the route.
+	societyRe = regexp.MustCompile(`^\s*(via )?(jarl|darc|rsgb|ure|ref|ari|veron|pzk|uba|ssa|nrrl|edr|sral|lrsf|crc|labre)\s*$|\b(via|through) (the )?(jarl|darc|rsgb|ure|ref|ari|veron|pzk|uba|ssa|nrrl|edr|sral)\b`)
+	// societyWebRe: a society's web service is no bureau ("awards via REF
+	// server").
+	societyWebRe = regexp.MustCompile(`\b(jarl|darc|rsgb|ure|ref|ari|veron|pzk|uba|ssa|nrrl|edr|sral) (server|website|web ?site|web|portal|log)\b`)
+	dokRe        = regexp.MustCompile(`^\s*(dok:?\s*)?[a-z]\s?\d{2}\s*$|\bdok:?\s*[a-z]\s?\d{2}\b`)
 	// returnPostageRe: asking for return postage means a card by post
 	// ("LOTW or SASE"); see asked for waivers.
 	returnPostageRe = regexp.MustCompile(`\bs\.?a\.?s?\.?e\b|self[- ]addressed|\birc'?s?\b|green ?stamps?`)
@@ -381,11 +386,15 @@ var (
 	electronicOnlyRe = regexp.MustCompile(`(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)[^.]{0,20}\b(only|solo|nur|seulement|uniquement|tylko)\b|\b(only|solo|nur|seulement|uniquement|tylko)\b[^.]{0,12}(e-?\.?qsl|lotw|electronic|hamaward|qrz|club ?log|e-?mail)`)
 	onlyDirectRe     = regexp.MustCompile(`only direct|direct(ly)? only|direct qsl only|via direct only|direct or nothing|(direct|direkt) (\+|plus) sae`)
 	onlyBureauRe     = regexp.MustCompile(`only (via )?(the )?(bureau|buro)|(bureau|buro) only|via (the )?(bureau|buro) only`)
-	noBureauRe       = regexp.MustCompile(`no (qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer|(no|not|don't|never) send (your |any |me )?(qsl|cards?)( cards?)? (via|through) (the )?(bureau|buro)`)
+	noBureauRe       = regexp.MustCompile(`no[- ](qsl )?(via )?(the )?(bureau|buro)|not (via )?(the )?(bureau|buro)|(bureau|buro) (is )?(not|no)\b|without (the )?(bureau|buro)|(bureau|buro)[^.]{0,30}no longer|(no|not|don't|never) send (your |any |me )?(qsl|cards?)( cards?)? (via|through|to) (the )?(bureau|buro)`)
 	noDirectRe       = regexp.MustCompile(`no (qsl )?(cards? )?(via |by )(post|snail ?mail|mail)\b|no (qsl )?(paper )?(via )?direct|not (via )?direct|direct (is )?(not|no)\b|no direkt`)
-	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)|no need( any)?( more)? (paper )?(qsl|cards?)`)
+	noPaperRe        = regexp.MustCompile(`\b(no|not|don'?t need|do not need) (any )?(paper )?(qsl|cards?)\b|qsl (not needed|not wanted)|paper (qsl )?(not|no)\b|no paper|(don'?t|do not|won'?t|will not|no longer) (answer|accept|reply to|return)( any)? (paper )?(qsl|cards?)|no need( any)?( more)? (paper )?(qsl|cards?)|(don't|do not|never) (use|send out|send|mail|print)( me)?( any)? (paper |physical )?(qsl|cards?)( cards?)?( any ?longer| anymore)?\b`)
 	viaManagerRe     = regexp.MustCompile(`(?i)qsl\s+via\s+([a-z0-9/]{3,10})\b`)
 )
+
+// conditionalOnlyRe: "only when other ways impossible", "only if ..." set a
+// condition, not exclusivity ("direct only when ..." is not "direct only").
+var conditionalOnlyRe = regexp.MustCompile(`\bonly (when|if|in case)\b`)
 
 var apostrophes = strings.NewReplacer("´", "'", "’", "'", "`", "'")
 
@@ -393,8 +402,9 @@ var apostrophes = strings.NewReplacer("´", "'", "’", "'", "`", "'")
 // "no bureau" never counts as a bureau mention.
 func readSignals(text string) signals {
 	lc := strings.Join(strings.Fields(apostrophes.Replace(strings.ToLower(text))), " ")
+	lc = conditionalOnlyRe.ReplaceAllString(lc, " $1")
 	var s signals
-	s.bureauWord = bureauWordRe.MatchString(lc) || dokRe.MatchString(lc)
+	s.bureauWord = bureauWordRe.MatchString(lc) || dokRe.MatchString(lc) || societyRe.MatchString(societyWebRe.ReplaceAllString(lc, " "))
 	s.directWord = directWordRe.MatchString(lc) || returnPostageRe.MatchString(asked(lc)) || postalRe.MatchString(strings.ReplaceAll(lc, "e-mail", "email"))
 	s.electronicOnly = electronicOnlyRe.MatchString(lc)
 	s.onlyDirect = onlyDirectRe.MatchString(lc)
@@ -448,7 +458,7 @@ var (
 	qslSentenceRe = regexp.MustCompile(`qsl|card|karte|tarjeta|carte|bureau|buro|b\x{fc}ro|bur\x{f3}|s\.?a\.?s?\.?e\b|\birc\b|green ?stamp|stamps|envelope|postage|oqrs|manager|\bmgr\b`)
 	bioSentenceRe = regexp.MustCompile(`\n+|[.!?;]\s+`)
 	// textManagerRe: a callsign the cards go via or to, inside free text.
-	textManagerRe = regexp.MustCompile(`(?i)\b(?:via|to|mgr|manager:?)\s+(?:(?:the\s+)?(?:bureau|buro)\s+)?([a-z0-9/]{3,12})\b`)
+	textManagerRe = regexp.MustCompile(`(?i)\b(?:via|to|through|mgr|manager:?)\s+(?:(?:the\s+)?(?:bureau|buro)\s+)?([a-z0-9/]{3,12})\b`)
 )
 
 // qslSentences returns the sentences of a bio that talk about QSL cards.
