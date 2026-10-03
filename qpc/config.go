@@ -45,12 +45,17 @@ type Variant struct {
 	// QRZ postal address becomes unclear. It cannot see an address written in
 	// the bio or other routes the record accepts.
 	AddressGuard bool `yaml:"address_guard" json:"address_guard,omitempty"`
+	// FlagRule applies LABELS.md rule 6 in code when the model answers
+	// "unknown" (the text says nothing about paper cards): mqsl 0 = no-paper,
+	// a full postal address with mqsl 1 or empty = direct, mqsl 1 = bureau.
+	// Prompts that hide the flags from the model (v11) declare it themselves.
+	FlagRule bool `yaml:"flag_rule" json:"flag_rule,omitempty"`
 }
 
 // Defaults applied by WithDefaults.
 const (
 	DefaultBaseURL  = "http://localhost:11434/v1"
-	DefaultPrompt   = "v8"
+	DefaultPrompt   = "v11"
 	DefaultDecision = "d1-split"
 	// DefaultDecisionBioMaxChars fits Tev1's context of about 2,000 tokens.
 	DefaultDecisionBioMaxChars = 1500
@@ -100,6 +105,7 @@ func (v Variant) Over(def Variant) Variant {
 		out.Timeout = v.Timeout
 	}
 	out.AddressGuard = def.AddressGuard || v.AddressGuard
+	out.FlagRule = def.FlagRule || v.FlagRule
 	out.BioFocus = def.BioFocus || v.BioFocus
 	if len(def.Extra) > 0 || len(v.Extra) > 0 {
 		out.Extra = map[string]any{}

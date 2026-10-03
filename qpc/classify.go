@@ -114,6 +114,9 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	}
 	r.PromptTokens, r.CompletionTokens, r.FinishReason = ans.PromptTokens, ans.CompletionTokens, ans.FinishReason
 	parseAnswer(ans.Content, &r)
+	if c.v.FlagRule || c.prompt.FlagRule {
+		flagRule(st, &r)
+	}
 	if c.v.AddressGuard {
 		addressGuard(st, &r)
 	}
@@ -144,6 +147,25 @@ func (c *Classifier) decide(ctx context.Context, st Station) (Result, error) {
 		addressGuard(st, &r)
 	}
 	return r, nil
+}
+
+// flagRule applies LABELS.md rule 6 when the model found nothing about paper
+// cards in the text: the mqsl flag and the postal address decide.
+func flagRule(st Station, r *Result) {
+	if r.Status != Unknown {
+		return
+	}
+	switch strings.TrimSpace(st.MQSL) {
+	case "0":
+		r.Status, r.Guard = NoPaper, "flag rule: mqsl 0, nothing in the text"
+	case "1", "":
+		switch {
+		case st.HasFullAddress():
+			r.Status, r.Routes, r.Guard = Paper, []Route{Direct}, "flag rule: full postal address, nothing in the text"
+		case st.MQSL == "1":
+			r.Status, r.Routes, r.Guard = Paper, []Route{Bureau}, "flag rule: mqsl 1, no full postal address"
+		}
+	}
 }
 
 // addressGuard applies rule 5 in code: without a full QRZ postal address,

@@ -25,7 +25,11 @@ type Prompt struct {
 	Name   string // file name without extension
 	Hash   string // first 8 hex digits of the SHA-256 of the file (and Rules, if used)
 	Answer string // "routes-contribution", "routes" or "label"
-	tmpl   *template.Template
+	// FlagRule: the prompt does not show the model the QRZ flags and
+	// declares {{define "flags"}}code{{end}}: the classifier applies the
+	// mqsl/address rule itself when the model finds nothing in the text.
+	FlagRule bool
+	tmpl     *template.Template
 }
 
 // ID identifies the exact prompt text a result came from.
@@ -86,6 +90,16 @@ func LoadPrompt(nameOrPath string) (*Prompt, error) {
 		default:
 			return nil, fmt.Errorf("prompt %q: answer %q (want routes or label)", nameOrPath, a)
 		}
+	}
+	if t.Lookup("flags") != nil {
+		var b bytes.Buffer
+		if err := t.ExecuteTemplate(&b, "flags", nil); err != nil {
+			return nil, fmt.Errorf("prompt %q: %w", nameOrPath, err)
+		}
+		if f := strings.TrimSpace(b.String()); f != "code" {
+			return nil, fmt.Errorf("prompt %q: flags %q (want code)", nameOrPath, f)
+		}
+		p.FlagRule = true
 	}
 	return p, nil
 }

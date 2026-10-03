@@ -642,3 +642,14 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   assistant's sample: v8 stays the default. qpc runs fine on bwpc's
   Ollama (LAN, `qpc/experiments/bwpc.yaml`), about 1.5 s a station
   against 2.5-3 s on the laptop.
+- **2026-10-03 — Prompt v11: the model reads the text, code applies the
+  flags.** Rewording the mqsl/address rules for qwen3.5:4b only moved its
+  errors around: v9 (an ordered procedure) turned mqsl 0 + address into
+  direct, v10 (mqsl first) let mqsl 0 overrule "VIA BUREAU" - both lost to
+  v8. v11 hides mqsl/eqsl/lotw from the model; it answers "unknown" when
+  qslmgr and the bio say nothing about cards, and the classifier then
+  applies LABELS.md rule 6 itself (the prompt declares it). Fully right on
+  the operator's 250 labelled stations: v11 193, v8 189, heuristic 209;
+  v11 also wins on both assistant-labelled samples (87% / 80% vs 82% /
+  78%) and runs in ~1.4 s a station on bwpc. v11 is the default prompt.
+  The heuristic still leads.

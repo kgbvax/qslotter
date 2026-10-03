@@ -95,10 +95,16 @@ func TestBuiltinPromptRenders(t *testing.T) {
 			t.Errorf("system prompt lacks %q", want)
 		}
 	}
-	for _, want := range []string{"Station: EA8/DL1ABC", "mqsl: 1", "qslmgr: (empty)", "street: (empty)\ncity: Adeje", "QSL via DL1ABC"} {
+	for _, want := range []string{"Station: EA8/DL1ABC", "qslmgr: (empty)", "street: (empty)\ncity: Adeje", "QSL via DL1ABC"} {
 		if !strings.Contains(user, want) {
 			t.Errorf("user prompt lacks %q:\n%s", want, user)
 		}
+	}
+	if !c.prompt.FlagRule || strings.Contains(user, "mqsl") {
+		t.Errorf("v11 hides the flags and declares the flag rule: %v\n%s", c.prompt.FlagRule, user)
+	}
+	if v8, _ := LoadPrompt("v8"); v8.FlagRule {
+		t.Error("v8 shows the flags to the model")
 	}
 	if !strings.HasPrefix(c.PromptID(), DefaultPrompt+"@") {
 		t.Errorf("prompt ID %q", c.PromptID())
@@ -255,6 +261,30 @@ func TestNoInternalImports(t *testing.T) {
 			if strings.Contains(im.Path.Value, "github.com/dl9et/qslotter/") {
 				t.Errorf("%s imports %s", f, im.Path.Value)
 			}
+		}
+	}
+}
+
+func TestFlagRule(t *testing.T) {
+	full := func(s Station) Station { s.Addr1, s.Addr2 = "Street 1", "Town"; return s }
+	for _, c := range []struct {
+		st     Station
+		in     Result
+		status Status
+		routes string
+	}{
+		{Station{MQSL: "0"}, Result{Status: Unknown}, NoPaper, "[]"},
+		{full(Station{MQSL: "1"}), Result{Status: Unknown}, Paper, "[direct]"},
+		{full(Station{}), Result{Status: Unknown}, Paper, "[direct]"},
+		{Station{MQSL: "1"}, Result{Status: Unknown}, Paper, "[bureau]"},
+		{Station{}, Result{Status: Unknown}, Unknown, "[]"},
+		// The text decided: the flags do not matter.
+		{Station{MQSL: "0"}, Result{Status: Paper, Routes: []Route{Bureau}}, Paper, "[bureau]"},
+	} {
+		r := c.in
+		flagRule(c.st, &r)
+		if r.Status != c.status || fmt.Sprint(r.Routes) != c.routes {
+			t.Errorf("%+v %+v -> %s %v", c.st, c.in, r.Status, r.Routes)
 		}
 	}
 }
