@@ -544,6 +544,42 @@ func TestLiveDeskListKeepsChoice(t *testing.T) {
 		` && document.querySelector('#route-pick input[value="D"]').checked`)
 }
 
+// TestLiveDeskManagerAddress: the manager's QRZ data landing refreshes only
+// the manager's address block - the card and the focus in the manager field
+// stay; an update for the station itself waits until no field is being
+// edited.
+func TestLiveDeskManagerAddress(t *testing.T) {
+	e := newBrowserEnv(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	put := func(si *store.StationInfo) {
+		t.Helper()
+		si.FetchedAt = now
+		if err := e.st.PutStation(si); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(&store.StationInfo{Callsign: "DL5EEE", QSLMgr: "K2ABC"})
+	k := e.decided("DL5EEE", "20240105")
+	e.open("/work/card?key=" + url.QueryEscape(k))
+	e.waitFor("the manager QRZ names", `document.getElementById('workcard').dataset.mgr === 'K2ABC' && !document.getElementById('mgr-address')`)
+	e.run(`window.__card = document.getElementById('workcard'); document.querySelector('#route-pick .mgr-in').focus()`)
+	sameCard := `window.__card === document.getElementById('workcard')`
+
+	put(&store.StationInfo{Callsign: "K2ABC", Name: "Bob Manager", Addr1: "1 Main St", Country: "United States"})
+	e.srv.broker.Publish(events.Event{Type: "station_updated", Data: "K2ABC"})
+	e.waitFor("the manager's address", `document.getElementById('mgr-address') && document.getElementById('mgr-address').textContent.indexOf('1 Main St') >= 0`)
+	if e.str(`String(`+sameCard+` && document.activeElement.classList.contains('mgr-in'))`) != "true" {
+		t.Fatal("the manager's address reloaded the card or took the focus")
+	}
+
+	put(&store.StationInfo{Callsign: "DL5EEE", QSLMgr: "K2ABC", Addr1: "Musterweg 7", Country: "Germany"})
+	e.srv.broker.Publish(events.Event{Type: "station_updated", Data: "DL5EEE"})
+	e.still("the card being edited", sameCard)
+	e.run(`document.activeElement.blur()`)
+	e.srv.broker.Publish(events.Event{Type: "station_updated", Data: "DL5EEE"})
+	e.waitFor("the card with the station's new data", `!(`+sameCard+`) && document.getElementById('workcard').textContent.indexOf('Musterweg 7') >= 0`)
+}
+
 // TestLiveCurrentContact: the "QSO in progress" box follows the logger.
 func TestLiveCurrentContact(t *testing.T) {
 	var tracker *contact.Tracker
