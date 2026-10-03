@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -116,6 +117,7 @@ func (c *Classifier) Classify(ctx context.Context, st Station) (Result, error) {
 	parseAnswer(ans.Content, &r)
 	if c.v.FlagRule || c.prompt.FlagRule {
 		flagRule(st, &r)
+		dclRule(st, &r)
 	}
 	if c.v.AddressGuard {
 		addressGuard(st, &r)
@@ -167,6 +169,21 @@ func flagRule(st Station, r *Result) {
 		}
 	}
 }
+
+var dclRe = regexp.MustCompile(`(?i)\bdcl\b|darc community log`)
+
+// dclRule applies LABELS.md rule 6a in code: a station that mentions DCL
+// (DARC Community Logbook) is a DARC member, so the bureau is a route too,
+// unless the answer refuses paper or the text refuses the bureau.
+func dclRule(st Station, r *Result) {
+	if r.Status == NoPaper || HasRoute(r.Routes, Bureau) || !dclRe.MatchString(st.QSLMgr+" "+st.Bio) || noBureauTextRe.MatchString(st.QSLMgr+" "+st.Bio) {
+		return
+	}
+	r.Status, r.Routes = Paper, SortRoutes(append(r.Routes, Bureau))
+	r.Guard = strings.TrimPrefix(r.Guard+"; dcl rule: DARC member, bureau too", "; ")
+}
+
+var noBureauTextRe = regexp.MustCompile(`(?i)\bno[- ](qsl )?(via )?(the )?(bureau|buro)|not (a )?member of (the |a )?(bureau|buro)`)
 
 // addressGuard applies rule 5 in code: without a full QRZ postal address,
 // direct is not a usable route (unless the card goes via another call). It

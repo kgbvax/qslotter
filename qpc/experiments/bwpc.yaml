@@ -18,3 +18,4 @@ variants:
   - {name: qwen3.5-4b-v11, model: "qwen3.5:4b", prompt: v11}
   - {name: qwen3.5-4b-v12, model: "qwen3.5:4b", prompt: v12}
   - {name: qwen3.5-4b-v13, model: "qwen3.5:4b", prompt: v13}
+  - {name: qwen3.5-4b-v14, model: "qwen3.5:4b", prompt: v14}

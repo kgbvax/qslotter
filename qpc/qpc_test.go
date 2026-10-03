@@ -288,3 +288,21 @@ func TestFlagRule(t *testing.T) {
 		}
 	}
 }
+
+func TestDCLRule(t *testing.T) {
+	r := Result{Status: Paper, Routes: []Route{Direct}}
+	dclRule(Station{QSLMgr: "LOTW, DCL(DARC community log, Email request"}, &r)
+	if fmt.Sprint(r.Routes) != "[bureau direct]" {
+		t.Errorf("DCL: %v", r.Routes)
+	}
+	r = Result{Status: NoPaper}
+	dclRule(Station{QSLMgr: "DCL"}, &r)
+	if r.Status != NoPaper {
+		t.Errorf("a refusal stays: %+v", r)
+	}
+	r = Result{Status: Paper, Routes: []Route{Direct}}
+	dclRule(Station{QSLMgr: "LoTW, DCL, no bureau"}, &r)
+	if fmt.Sprint(r.Routes) != "[direct]" {
+		t.Errorf("no bureau: %v", r.Routes)
+	}
+}
