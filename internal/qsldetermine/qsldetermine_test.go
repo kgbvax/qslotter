@@ -232,6 +232,7 @@ func TestPostalDOKAndInlineManager(t *testing.T) {
 		{"EW1ACG", "", "I don't use paper QSL cards", "", "", false, false},
 		{"PD8D", "", "I do not send out physical QSL cards. Please don't send any QSL cards to bureau since I'm not a member.", "", "", false, false},
 		{"DG1NPM", "LOTW, DCL(DARC community log, Email request", "", "B", "", true, true},
+		{"RK3AW", "", "For more information please apply to e-mail. QSL is OK via burea", "B", "", true, false},
 		// Routes are read only from the bio's sentences about cards.
 		{"II6IARU", "", "The rules will be available directly on the HamAward website.", "", "", false, false},
 		{"F8DGY", "", "Pse QSL via LOTW EQSL only OR ( exceptionally direct with self envelope for return with stamps )", "D", "", false, true},
@@ -309,6 +310,7 @@ func TestQSLMgrCallsignForms(t *testing.T) {
 		"QSL MGR EA5GL": "EA5GL", "QSL VIA EC1DD": "EC1DD", "QSL Manager: EA7FTR": "EA7FTR",
 		"PSE QSL via K2ABC direct": "K2ABC",
 		"ONLY VIA EB7DX":           "EB7DX",
+		"MANAGER : IZ8CLM":         "IZ8CLM",
 	} {
 		r := Determine(&qrz.Callsign{QSLMgr: mgr}, "")
 		if r.Method != "M" || r.Manager != want || r.Confidence != "high" {

@@ -82,7 +82,7 @@ var (
 	// oqrsRequestRe: a bureau or direct card that is only sent on an OQRS
 	// request ("Direct via OQRS", "use clublog request for bureau or direct
 	// QSLs", "direct QSL card requests: 3 USD through OQRS").
-	oqrsRequestRe = regexp.MustCompile(`(direct|bureau|buro)\s*(via|through|using|by|\()\s*(club ?log )?(oqrs|request)|(oqrs|club ?log request)[^.;\n]{0,25}\bfor (bureau|buro|direct)( (or|and) (bureau|buro|direct))?|(direct|bureau|buro)[^.;\n]{0,25}requests?[^.;\n]{0,20}(through|via|using) (club ?log|oqrs)`)
+	oqrsRequestRe = regexp.MustCompile(`(direct|bureau|buro)\s*(via|through|using|by|\()\s*(club ?log )?(oqrs|request)|(oqrs|club ?log request)[^.;\n]{0,25}\bfor (bureau|buro|direct)( (or|and) (bureau|buro|direct))?|(direct|bureau|buro)[^.;\n]{0,25}requests?[^.;\n]{0,20}(through|via|using|on|at|in) (club ?log|oqrs)`)
 )
 
 // oqrsOnlyRoutes drops a bureau or direct route the text reaches only through
@@ -352,8 +352,12 @@ var managerLeadIn = map[string]bool{"via": true, "qsl": true, "mgr": true, "mana
 func managerCall(s string) (string, bool) {
 	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' || r == ';' })
 	// Lead-in words: "QSL via K2ABC", "QSL MGR K2ABC", "QSL Manager: K2ABC".
-	for len(fields) > 1 && managerLeadIn[strings.ToLower(strings.Trim(fields[0], ",;:.-"))] {
-		fields = fields[1:]
+	for len(fields) > 1 {
+		w := strings.ToLower(strings.Trim(fields[0], ",;:.-"))
+		if w != "" && !managerLeadIn[w] {
+			break
+		}
+		fields = fields[1:] // a lead-in word or a lone ":" ("MANAGER : IZ8CLM")
 	}
 	if len(fields) == 0 {
 		return "", false
@@ -376,7 +380,7 @@ type signals struct {
 }
 
 var (
-	bureauWordRe = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}`)
+	bureauWordRe = regexp.MustCompile(`bureau|buro|b\x{fc}ro|bur\x{f3}|\bburea\b`)                 // "burea": a common typo
 	directWordRe = regexp.MustCompile(`\bdirect(o|a|ly|ement)?([^a-z]|$)|\bdirekt|\bdirett[ao]\b`) // "Direct3$", not "direction"
 	// postalRe: a card by post in other words ("VIA MAIL", "to the above
 	// address", "P.O.Box 36"); "e-mail" is not one.
