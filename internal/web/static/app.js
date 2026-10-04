@@ -68,3 +68,43 @@ function qslTr(text) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+// Preview (Desk card, key s): a button with data-preview="/url" shows the
+// PDF of the card as it would print, built from the card's form (the ticked
+// QSOs, the chosen route and manager), in an overlay. Escape or Close ends it.
+(function () {
+  var box = null;
+  function close() { if (box) { box.hidden = true; box.querySelector('iframe').src = 'about:blank'; } }
+  function open(url) {
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'lay-pdfview';
+      box.innerHTML = '<div class="lay-pdfbar"><span></span> <button type="button" class="mini"></button></div><iframe title="PDF"></iframe>';
+      box.querySelector('span').textContent = qslTr('The card as it will print');
+      box.querySelector('button').textContent = qslTr('Close');
+      box.querySelector('button').addEventListener('click', close);
+      document.body.appendChild(box);
+    }
+    box.querySelector('iframe').src = url + '#view=Fit&navpanes=0';
+    box.hidden = false;
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-preview]');
+    if (!b) return;
+    var card = b.closest('#workcard');
+    var form = card && card.querySelector('#cardform');
+    if (!form) return;
+    var q = new URLSearchParams();
+    form.querySelectorAll('input[name="key"]').forEach(function (i) {
+      if (i.type !== 'checkbox' || i.checked) q.append('key', i.value);
+    });
+    var r = form.querySelector('input[name="route"]:checked');
+    if (r) q.append('route', r.value);
+    var m = form.querySelector('input[name="manager"]');
+    if (m && m.value.trim()) q.append('manager', m.value.trim());
+    open(b.dataset.preview + '?' + q.toString());
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && box && !box.hidden) { ev.preventDefault(); close(); }
+  });
+})();

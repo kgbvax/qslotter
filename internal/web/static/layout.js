@@ -145,6 +145,7 @@
     $('lay-undo').disabled = !undoStack.length;
     $('lay-redo').disabled = !redoStack.length;
     $('lay-dirty').hidden = !dirty();
+    tools();
     syncProps();
     syncCard();
     buildList();
@@ -259,6 +260,7 @@
     drawSelection();
     buildProps();
     buildList();
+    tools();
   }
 
   // --- dragging ---
@@ -364,6 +366,49 @@
     select(Math.min(i, model.fields.length - 1));
     buildProps();
   }
+
+  // --- cut, copy, paste (the clipboard is kept in localStorage, so an
+  // element can be pasted into another layout) ---
+
+  var CLIP = 'qslLayoutClip';
+  function clip() {
+    try { return JSON.parse(localStorage.getItem(CLIP) || 'null'); } catch (_) { return null; }
+  }
+  function copySel() {
+    if (sel < 0) return;
+    try { localStorage.setItem(CLIP, JSON.stringify(model.fields[sel])); } catch (_) { /* private mode */ }
+    tools();
+  }
+  function cutSel() {
+    if (sel < 0) return;
+    copySel();
+    remove();
+    select(-1);
+  }
+  // paste puts the element back where it was; on top of an equal one it
+  // moves 2 mm down and right, so the copy can be seen and grabbed.
+  function paste() {
+    var f = clip();
+    if (!f) return;
+    function taken(g) {
+      return model.fields.some(function (h) {
+        return h.kind === g.kind && h.name === g.name && h.text === g.text &&
+          Math.abs(h.x_mm - g.x_mm) < 0.05 && Math.abs(h.y_mm - g.y_mm) < 0.05;
+      });
+    }
+    for (var n = 0; n < 50 && taken(f); n++) { f.x_mm = round1(f.x_mm + 2); f.y_mm = round1(f.y_mm + 2); }
+    var at = sel < 0 ? model.fields.length : sel + 1;
+    change(function () { model.fields.splice(at, 0, f); });
+    select(at);
+  }
+  function tools() {
+    $('lay-cut').disabled = $('lay-copyel').disabled = sel < 0;
+    $('lay-paste').disabled = !clip();
+  }
+  $('lay-cut').addEventListener('click', cutSel);
+  $('lay-copyel').addEventListener('click', copySel);
+  $('lay-paste').addEventListener('click', paste);
+  window.addEventListener('storage', function (ev) { if (ev.key === CLIP) tools(); });
 
   // --- the properties of the selected element ---
 
@@ -473,6 +518,19 @@
       pos.appendChild(bl);
     }
     box.appendChild(pos);
+    var w = document.createElement('input');
+    w.type = 'checkbox';
+    w.setAttribute('data-prop', 'when');
+    w.addEventListener('change', function () {
+      var ff = model.fields[sel];
+      change(function () { if (w.checked) ff.when = 'sat'; else delete ff.when; });
+    });
+    var wl = document.createElement('label');
+    wl.className = 'lay-check';
+    wl.title = T('For a satellite column and its heading: an HF card leaves them out.');
+    wl.appendChild(w);
+    wl.appendChild(document.createTextNode(' ' + T('Only on satellite cards')));
+    box.appendChild(wl);
     if (!isShape(f)) {
       var hint = document.createElement('p');
       hint.className = 'muted lay-hint';
@@ -508,6 +566,7 @@
       var p = i.getAttribute('data-prop');
       if (p === 'source') i.value = source(f);
       else if (p === 'style') i.checked = (f.style || '').toUpperCase() === 'B';
+      else if (p === 'when') i.checked = (f.when || '').toLowerCase() === 'sat';
       else if (p === 'stroke_mm') i.value = f.stroke_mm || 0.3;
       else if (p === 'align') i.value = (f.align || 'L').toUpperCase();
       else if (p === 'font') i.value = D.fonts.filter(function (n) { return n.toLowerCase() === (f.font || 'helvetica').toLowerCase(); })[0] || 'Helvetica';
@@ -529,6 +588,12 @@
         s.className = 'muted';
         s.textContent = ' · ' + T('per QSO');
         b.appendChild(s);
+      }
+      if ((f.when || '').toLowerCase() === 'sat') {
+        var sw = document.createElement('span');
+        sw.className = 'muted';
+        sw.textContent = ' · ' + T('satellite cards');
+        b.appendChild(sw);
       }
       b.addEventListener('click', function () { select(i); });
       li.appendChild(b);
@@ -574,9 +639,21 @@
   });
   $('lay-undo').addEventListener('click', undo);
   $('lay-redo').addEventListener('click', redo);
+  // ownLayout makes the layout on screen the operator's own: the built-in
+  // layout (or a file outside cards/) is saved as a new layout, which
+  // prints the cards when this one did. It resolves to {name, location}.
+  function ownLayout() {
+    return post('/settings/cards/save?create=1&auto=1&from=' + encodeURIComponent(D.id), snapshot(), true)
+      .then(function (r) { return r.json(); });
+  }
+  function go(url) { leaving = true; location.href = url; }
   function save() {
-    if (!D.editable || !$('lay-save')) return;
+    if (!$('lay-save')) return;
     var body = snapshot();
+    if (!D.editable) {
+      ownLayout().then(function (a) { go(a.location); }, function () { /* toast shown */ });
+      return;
+    }
     post('/settings/cards/save?name=' + encodeURIComponent(D.id), body, true).then(function () {
       saved = body;
       $('lay-dirty').hidden = !dirty();
@@ -589,7 +666,7 @@
       if (!name) { $('lay-copy-name').focus(); return; }
       post('/settings/cards/save?create=1&name=' + encodeURIComponent(name) + '&from=' + encodeURIComponent(D.id), snapshot(), true)
         .then(function (r) { return r.json(); })
-        .then(function (a) { leaving = true; location.href = a.location; }, function () { /* toast shown */ });
+        .then(function (a) { go(a.location); }, function () { /* toast shown */ });
     });
   }
   $('lay-test').addEventListener('click', function () {
@@ -634,8 +711,17 @@
       if (!input.files.length) return;
       var fd = new FormData();
       fd.append('image', input.files[0]);
-      post('/settings/cards/image?name=' + encodeURIComponent(D.id), fd)
-        .then(function (r) { return r.json(); })
+      function upload(name) {
+        return post('/settings/cards/image?name=' + encodeURIComponent(name), fd).then(function (r) { return r.json(); });
+      }
+      if (!D.editable) {
+        // The built-in layout keeps no picture: the operator's own copy does.
+        ownLayout().then(function (a) {
+          return upload(a.name).then(function () { go(a.location); });
+        }).catch(function () { input.value = ''; });
+        return;
+      }
+      upload(D.id)
         .then(function (a) { setImage(a.image); }, function () { /* toast shown */ })
         .then(function () { input.value = ''; });
     });
@@ -677,6 +763,9 @@
     if (mod && k.toLowerCase() === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); return; }
     if (mod && k.toLowerCase() === 'y') { ev.preventDefault(); redo(); return; }
     if (mod && k.toLowerCase() === 'd') { ev.preventDefault(); duplicate(); return; }
+    if (mod && k.toLowerCase() === 'x') { ev.preventDefault(); cutSel(); return; }
+    if (mod && k.toLowerCase() === 'c') { ev.preventDefault(); copySel(); return; }
+    if (mod && k.toLowerCase() === 'v') { ev.preventDefault(); paste(); return; }
     if (mod || sel < 0) return;
     if (k === 'Escape') { select(-1); return; }
     if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); remove(); return; }

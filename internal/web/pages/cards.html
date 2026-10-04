@@ -20,6 +20,7 @@
   <p class="lay-back"><a href="/settings">&larr; {{t "Settings"}}</a></p>
   {{if .NoConfig}}<p class="err">{{t "Layouts cannot be saved: qslotter was started without a config file. You can still try layouts and print test cards."}}</p>{{end}}
   {{with .Note}}<p class="err">{{.}}</p>{{end}}
+  {{if .Created}}<p class="ok">{{if .Entry.Active}}{{t "Saved as your layout %s. It prints the cards." .Data.ID}}{{else}}{{t "Saved as the layout %s." .Data.ID}}{{end}}</p>{{end}}
 
   <div class="lay-bar">
     <label>{{t "Layout"}} <select id="lay-pick">
@@ -48,7 +49,7 @@
       </div>
     </details>{{end}}
   </div>
-  {{if not .Data.Editable}}{{if not .LoadErr}}<p class="lay-ro">{{if eq .Data.ID ":builtin"}}{{t "The built-in layout cannot be changed. Try it out here, then save it as a new layout to make it yours."}}{{else}}{{t "This layout file lies outside the editor's folder and is not changed here: save it as a new layout to edit it."}}{{end}}</p>{{end}}{{end}}
+  {{if and (not .Data.Editable) (not .NoConfig)}}{{if not .LoadErr}}<p class="lay-ro">{{if eq .Data.ID ":builtin"}}{{t "Change it as you like: when you save or add a card picture, the built-in layout stays as it is and your version is kept as a layout of its own."}}{{else}}{{t "This layout file lies outside the editor's folder and is not changed here: when you save or add a card picture, your version is kept as a layout of its own."}}{{end}}</p>{{end}}{{end}}
 
   {{if .LoadErr}}<p class="err">{{.LoadErr}}</p>{{else}}
   <div class="lay-tools">
@@ -61,7 +62,11 @@
     <button type="button" class="mini" id="lay-undo" title="{{t "Undo"}} (Cmd/Ctrl+Z)" disabled>{{t "Undo"}}</button>
     <button type="button" class="mini" id="lay-redo" title="{{t "Redo"}} (Shift+Cmd/Ctrl+Z)" disabled>{{t "Redo"}}</button>
     <span class="lay-sep"></span>
-    {{if .Data.Editable}}<button type="button" id="lay-save" class="lay-primary" title="Cmd/Ctrl+S">{{t "Save"}}</button>{{end}}
+    <button type="button" class="mini" id="lay-cut" title="{{t "Cut"}} (Cmd/Ctrl+X)" disabled>{{t "Cut"}}</button>
+    <button type="button" class="mini" id="lay-copyel" title="{{t "Copy"}} (Cmd/Ctrl+C)" disabled>{{t "Copy"}}</button>
+    <button type="button" class="mini" id="lay-paste" title="{{t "Paste"}} (Cmd/Ctrl+V)" disabled>{{t "Paste"}}</button>
+    <span class="lay-sep"></span>
+    {{if not .NoConfig}}<button type="button" id="lay-save" class="lay-primary" title="Cmd/Ctrl+S">{{t "Save"}}</button>{{end}}
     <span id="lay-dirty" class="lay-dirty" hidden>{{t "Unsaved changes"}}</span>
     <span class="lay-sep"></span>
     <button type="button" id="lay-pdf">{{t "Show as PDF"}}</button>
@@ -104,9 +109,8 @@
     <div>
       <h3>{{t "Card picture"}}</h3>
       <p class="muted">{{t "A scan or photo of your pre-printed card, cropped to the card's edges: it is stretched to the card size and shown behind the fields - never printed."}}</p>
-      {{if .Data.Editable}}<p><input type="file" id="lay-file" accept="image/png,image/jpeg">
-        <button type="button" class="mini" id="lay-img-del"{{if not .HasImage}} hidden{{end}}>{{t "Remove picture"}}</button></p>
-      {{else}}<p class="muted">{{t "Save this layout as a new one to add a picture."}}</p>{{end}}
+      {{if not .NoConfig}}<p><input type="file" id="lay-file" accept="image/png,image/jpeg">
+        <button type="button" class="mini" id="lay-img-del"{{if not .HasImage}} hidden{{end}}>{{t "Remove picture"}}</button></p>{{end}}
     </div>
     <div>
       <h3>{{t "Printer offset"}}</h3>

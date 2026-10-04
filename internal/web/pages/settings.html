@@ -26,9 +26,22 @@
     <h3>{{t "Clublog (log sync + push-back)"}}</h3>
     {{if .ClublogPaused}}<p class="err">{{t "Clublog refused these credentials (403) %s ago. Automatic sync is paused until you change them here or a pull by hand on the Log page gets through - Clublog bans an IP that keeps failing." (since .ClublogPaused)}}</p>{{end}}
     <label>{{t "Email"}} <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
-    <label>{{t "Application password"}} <input type="password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
+    <div class="labelrow"><label for="clublog_app_password">{{t "Application password"}}</label>
+      <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
+        <p>{{t "Not your Club Log login password: an application password, which only lets programs upload and download your log. Log in at Club Log, open Settings > App Passwords, create one (e.g. named qslotter) and paste it here."}}</p>
+        <p><a href="https://clublog.org/edituser.php" target="_blank" rel="noopener">{{t "Club Log settings"}} &#8599;</a></p>
+      </div></details></div>
+    <input type="password" id="clublog_app_password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
     <label>{{t "Callsign"}} <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>
-    <label>{{t "API key"}} <input type="password" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
+    <div class="labelrow"><label for="clublog_api_key">{{t "API key"}}</label>
+      <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
+        <p>{{t "The API key identifies the program, not your account, and is not shown in your Club Log settings. Club Log issues it on request: ask once with their form (login needed) and use the same key on every computer running qslotter."}}</p>
+        <p><a href="https://clublog.org/requestapikey.php" target="_blank" rel="noopener">{{t "Request an API key"}} &#8599;</a></p>
+      </div></details></div>
+    <input type="password" id="clublog_api_key" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
+    <p class="pullrow"><button type="button" class="mini" hx-post="/sync/pull" hx-target="#settings-sync" hx-swap="innerHTML" hx-disabled-elt="this"
+      title="{{t "Uses the saved credentials: save changes first."}}">{{t "Pull from Clublog"}}</button>
+      <span id="settings-sync" class="sync">{{template "sync_status.html" .}}</span></p>
 
     <h3>{{t "Station identity (printed on cards)"}}</h3>
     <label>{{t "Operator name"}} <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>

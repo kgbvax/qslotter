@@ -99,5 +99,11 @@
   "Not now": "Jetzt nicht",
   "not now": "jetzt nicht",
   "QRZ suggestion": "QRZ-Vorschlag",
-  "Open on QRZ.com": "Auf QRZ.com öffnen"
+  "Open on QRZ.com": "Auf QRZ.com öffnen",
+  "Where do I get this?": "Woher bekomme ich das?",
+  "Not your Club Log login password: an application password, which only lets programs upload and download your log. Log in at Club Log, open Settings > App Passwords, create one (e.g. named qslotter) and paste it here.": "Nicht dein Club-Log-Login-Passwort, sondern ein Anwendungspasswort, mit dem Programme nur dein Log hoch- und herunterladen können. Melde dich bei Club Log an, öffne Settings > App Passwords, lege eines an (z. B. „qslotter“) und füge es hier ein.",
+  "Club Log settings": "Club-Log-Einstellungen",
+  "The API key identifies the program, not your account, and is not shown in your Club Log settings. Club Log issues it on request: ask once with their form (login needed) and use the same key on every computer running qslotter.": "Der API-Schlüssel kennzeichnet das Programm, nicht dein Konto, und steht nicht in deinen Club-Log-Einstellungen. Club Log vergibt ihn auf Anfrage: einmal über das Formular beantragen (Login nötig) und denselben Schlüssel auf jedem Rechner mit qslotter verwenden.",
+  "Request an API key": "API-Schlüssel beantragen",
+  "Uses the saved credentials: save changes first.": "Verwendet die gespeicherten Zugangsdaten: Änderungen zuerst speichern."
 }

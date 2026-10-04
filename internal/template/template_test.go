@@ -62,8 +62,8 @@ func TestMaxRows(t *testing.T) {
 			t.Errorf("%s: MaxRows = %d, want %d", c.name, got, c.want)
 		}
 	}
-	if got := Default().MaxRows(); got != 3 {
-		t.Errorf("Default: MaxRows = %d, want 3", got)
+	if got := Default().MaxRows(); got != 1 {
+		t.Errorf("Default: MaxRows = %d, want 1 (one QSO per card)", got)
 	}
 }
 
@@ -165,11 +165,12 @@ func TestValidate(t *testing.T) {
 	}
 	for name, mod := range map[string]func(*Template){
 		"no width":         func(t *Template) { t.WidthMM = 0 },
-		"rows no pitch":    func(t *Template) { t.Rows.PitchMM = 0 },
+		"rows no pitch":    func(t *Template) { t.Rows.Max, t.Rows.PitchMM = 3, 0 },
 		"unknown kind":     func(t *Template) { t.Fields[0].Kind = "circle" },
 		"unknown font":     func(t *Template) { t.Fields[0].Font = "Comic Sans" },
 		"unknown align":    func(t *Template) { t.Fields[0].Align = "X" },
 		"italic":           func(t *Template) { t.Fields[0].Style = "I" },
+		"unknown when":     func(t *Template) { t.Fields[0].When = "hf" },
 		"font too small":   func(t *Template) { t.Fields[0].FontSize = 2 },
 		"unknown field":    func(t *Template) { t.Fields[1].Name = "callsign" },
 		"empty text":       func(t *Template) { t.Fields[0].Text = "" },

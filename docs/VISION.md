@@ -337,9 +337,9 @@ Remaining gaps (v2 / later):
   `QSL_VIA`, so the route cannot be read back; qslotter keeps it locally and
   treats a QSL sent date from the log as "card sent". Unverified:
   `QSL_RCVD=R`; whether a pull overwrites NAME/QTH/NOTES from UDP.
-- Windows: tray and SumatraPDF paths were not exercised in the rebuild;
-  macOS `lpstat -d` is parsed with an English-only string (a localized
-  system falls back to `lp -d ''`).
+- Windows: tray and SumatraPDF paths were not exercised in the rebuild.
+  (macOS: the default printer is found in any system language since
+  2026-10-04 - `lpstat -d` is matched against the bare names of `lpstat -e`.)
 - Windows exe icon/version embedding: config ready in `winres/winres.json`;
   the one-step `go run github.com/tc-hib/go-winres@latest make` is left to
   the operator.
@@ -505,6 +505,8 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   transaction. "Requested" is its own status (`requested`, `desired_method=R`,
   `channel`, `note`, `sent_at` = when requested) pushing `QSL_RCVD=R`.
   The default card template holds 3 QSO rows; more continue on a second card.
+  (2026-10-04: the built-in 140x90 layout holds one QSO per card for now; a
+  station's open QSOs print as one card each. More rows: layout editor.)
 - **2026-10-01 — Route data model.** `desired_method` = B / D / M (empty while
   a "yes" card waits at the Desk), `send_via` = how the card travelled (B/D,
   also for manager cards), `manager`; `note` marks "written now", "backlog",
@@ -520,6 +522,13 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   Risks accepted: glaze is young (v0.0.x, one maintainer) and uses an
   undocumented WebView2 export - mitigated by the browser fallback and a
   backend that only loads a URL.
+- **2026-10-04/05 — A card is sent when it printed, not when it was queued.**
+  On macOS/Linux qslotter follows each print job in CUPS (IPP) and marks the
+  card sent only when the job completed; a failed or stalled job returns the
+  card to the Desk with the reason, a print list offers Retry / "It did
+  print". Batch prints report per card. A Desk preview shows the PDF first.
+  Windows (SumatraPDF) cannot be followed: sent once handed over. The
+  built-in layout prints one QSO per card for now.
 - **2026-10-04 — Card layout is configured visually.** The operator prints on
   pre-printed stock: the editor shows a scan of the card behind the fields
   and asks the server to lay every change out (the browser never sets text

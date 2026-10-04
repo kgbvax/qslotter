@@ -37,6 +37,16 @@
   }
   es.addEventListener('queue_changed', refreshNav);
 
+  // The print list of the Desk pages: printing, printed, failed (printq.go).
+  var pqTimer = null;
+  es.addEventListener('print_changed', function () {
+    clearTimeout(pqTimer);
+    pqTimer = setTimeout(function () {
+      var pq = byId('printq');
+      if (pq) htmx.ajax('GET', '/work/printq', { source: pq, target: '#printq', swap: 'outerHTML' });
+    }, 200);
+  });
+
   // The QSO in progress (Inbox pages): the box follows the logger's entry
   // field and the station's QRZ data.
   function reloadCurrent() {

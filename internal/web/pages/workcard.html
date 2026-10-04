@@ -20,6 +20,7 @@
     <div class="views" role="group" aria-label="{{t "View"}}"><a href="/work">{{t "List"}}</a><a class="on" href="/work/card" aria-current="page">{{t "card by card"}}</a></div>
   </div></div>
 <main>
+  {{template "printq" .}}
   {{template "workcard_content.html" .}}
 </main>
 <script src="/static/keys.js"></script>

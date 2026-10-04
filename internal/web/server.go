@@ -47,6 +47,7 @@ type Server struct {
 	rules      *qualify.Rules
 	refresher  *station.Refresher // shared with main (also used by the UDP listener)
 	printer    printer.Printer
+	pq         *printQueue                   // the print list (printq.go)
 	tmpls      map[string]*template.Template // per UI language
 	assessMu   sync.Mutex
 	assessMemo map[string]*qsldetermine.Result // see classifyFor
@@ -97,6 +98,7 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		rules:     rules,
 		refresher: refresher,
 		printer:   printer.New(),
+		pq:        newPrintQueue(),
 		now:       time.Now,
 		clublogFn: func(c config.ClublogCfg) *clublog.Client {
 			return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey)
@@ -119,7 +121,8 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 			}
 			return ""
 		},
-		"yn": yn,
+		"yn":        yn,
+		"printJobs": srv.pq.snapshot,
 		// translation (VISION D3), bound per language below
 		"t":    func(text string, args ...any) string { return text },
 		"tm":   func(m i18n.Msg) string { return m.String() },
@@ -173,6 +176,8 @@ func (s *Server) langFuncs(lang string) template.FuncMap {
 // page hands them over translated as window.qslT.
 var jsStrings = []string{
 	"Error",
+	"The card as it will print",
+	"Close",
 	"Network error - is the qslotter server running?",
 	"Skipped %s - your card is still due.",
 }
@@ -277,7 +282,13 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/work/none", s.htmxWorkNone)
 	r.Post("/work/back", s.htmxWorkBack)
 	r.Get("/work/manager", s.htmxWorkManager) // ?manager=CALL: who a manager card goes to
-	r.Get("/nav", s.htmxNav)                  // nav bar fragment, refreshed by live.js
+	r.Get("/work/preview", s.htmxWorkPreview) // key=... per QSO, route=, manager=: the card as a PDF
+	r.Get("/work/printq", s.htmxPrintQueue)   // the print list (live refresh)
+	r.Post("/work/printq/retry", s.htmxPrintRetry)
+	r.Post("/work/printq/sent", s.htmxPrintMarkSent)
+	r.Post("/work/printq/dismiss", s.htmxPrintDismiss)
+	r.Post("/work/printq/clear", s.htmxPrintClear)
+	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
 	r.Post("/api/quit", s.apiQuit)
 	r.Post("/sync/pull", s.htmxSyncPull)

@@ -258,6 +258,25 @@ kbd {
 .settings-form h3 { margin-top: 20px; }
 .settings-form label { display: block; margin: 10px 0 2px; font-size: 13.5px; color: var(--ink-soft); }
 .settings-form input { width: 100%; }
+.settings-form .labelrow { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; }
+.settings-form .labelrow label { display: inline; margin: 0; }
+.settings-form .pullrow { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 10px 0 0; font-size: 13px; }
+
+/* (?) help next to a field: a small popover with where to get the value. */
+details.help { position: relative; display: inline-block; }
+details.help summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--ink-soft);
+  font: 700 11px 'Schibsted Grotesk', sans-serif; color: var(--ink-soft); user-select: none;
+}
+details.help summary::-webkit-details-marker { display: none; }
+details.help summary:hover, details.help[open] summary { background: var(--ink); border-color: var(--ink); color: #fff; }
+details.help .help-body {
+  position: absolute; z-index: 20; left: -8px; top: 24px; width: min(380px, 80vw);
+  background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15); padding: 8px 12px; font-size: 13px; color: var(--ink);
+}
+details.help .help-body p { margin: 4px 0; }
 
 .empty {
   border: 1.5px dashed var(--ink-soft); border-radius: 4px;

@@ -435,7 +435,8 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 		}
 		msg, to = i18n.M("Your card to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
 	case "print":
-		if err := s.printCard(keys, rt); err != nil {
+		async, err := s.printCard(keys, rt)
+		if err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				s.queueErr(w, r, err)
 				return
@@ -448,6 +449,9 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		msg, to = i18n.M("Your card to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
+		if async {
+			msg = i18n.M("Your card to %s is printing (%s) - it counts as sent once the printer has finished; the Desk shows the result.", callFromKey(keys[0]), route)
+		}
 	}
 	for _, k := range keys {
 		s.publishQueueChanged(k, to)

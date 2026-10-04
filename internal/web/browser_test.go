@@ -761,3 +761,41 @@ func TestLayoutEditorDragNudgeSave(t *testing.T) {
 	e.key("z", input.ModifierCtrl)
 	e.waitFor("the undo", `Math.abs(`+callX+` - `+xAt(10)+`) < 0.05 && qslLayoutState().dirty`)
 }
+
+// TestLayoutEditorCutPaste: Ctrl+X takes the selected element off the card,
+// Ctrl+V puts it back where it was; pasted onto itself it lands 2 mm off.
+func TestLayoutEditorCutPaste(t *testing.T) {
+	e := newBrowserEnv(t)
+	if err := chromedp.Run(e.tab, chromedp.Navigate(e.base+"/settings/cards")); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the card", `window.qslLayoutState && qslLayoutState().ops.length > 0`)
+	e.run(`localStorage.removeItem('qslLayoutClip')`)
+	n := len(template.Default().Fields)
+	e.click(`#lay-list li:nth-child(5) button`) // the callsign
+	e.waitFor("the selection", `qslLayoutState().sel === 4 && !document.getElementById('lay-cut').disabled`)
+	e.key("x", input.ModifierCtrl)
+	e.waitFor("the cut", `qslLayoutState().model.fields.length === `+strconv.Itoa(n-1)+` && qslLayoutState().sel === -1 && !document.getElementById('lay-paste').disabled`)
+	e.key("v", input.ModifierCtrl)
+	e.waitFor("the paste", `(function (s) { var f = s.model.fields[s.sel]; return s.model.fields.length === `+strconv.Itoa(n)+` && f.name === 'call' && f.x_mm === `+strconv.FormatFloat(template.Default().Fields[4].X, 'f', -1, 64)+`; })(qslLayoutState())`)
+	e.click(`#lay-paste`)
+	e.waitFor("the second paste, moved", `(function (s) { var f = s.model.fields[s.sel]; return s.model.fields.length === `+strconv.Itoa(n+1)+` && f.name === 'call' && f.x_mm === `+strconv.FormatFloat(template.Default().Fields[4].X+2, 'f', -1, 64)+`; })(qslLayoutState())`)
+}
+
+// TestDeskPreview: s on a Desk card opens the card's PDF - the ticked QSOs,
+// the chosen route - in an overlay; Escape closes it.
+func TestDeskPreview(t *testing.T) {
+	e := newBrowserEnv(t)
+	k := e.decided("DL2ZZZ", "20240103")
+	e.open("/work/card")
+	e.waitFor("the card", decideKeyDesk+` === `+js(k))
+	e.key("m")
+	e.run(`document.querySelector('#route-pick .mgr-in').value = 'K2ABC'; document.activeElement.blur()`)
+	e.key("s")
+	e.waitFor("the preview", `(function () { var b = document.querySelector('.lay-pdfview'); return b && !b.hidden &&
+		b.querySelector('iframe').src.indexOf('/work/preview?key=`+url.QueryEscape(k)+`&route=MD&manager=K2ABC') >= 0; })()`)
+	e.key(kb.Escape)
+	e.waitFor("the preview closed", `document.querySelector('.lay-pdfview').hidden`)
+}
+
+const decideKeyDesk = `((document.querySelector('#workcard') || {dataset: {}}).dataset.qslkey || '')`

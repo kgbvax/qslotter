@@ -50,7 +50,7 @@ func TestMaxRows(t *testing.T) {
 		tmpl *template.Template
 		want int
 	}{
-		{"default", template.Default(), 3},
+		{"default", template.Default(), 1},
 		{"nil template", nil, 1},
 		{"no rows block", &template.Template{}, 1},
 		{"explicit", &template.Template{Rows: template.RowsCfg{Max: 5, PitchMM: 4}}, 5},
@@ -253,7 +253,7 @@ func TestDefaultTemplateFits(t *testing.T) {
 	for _, r := range []QSORow{
 		{QSODate: "20240101", TimeOn: "235959", Band: "2190m", Mode: "DOMINO", RSTSent: "599"},
 		{QSODate: "20241231", TimeOn: "000000", Band: "160m", Mode: "OLIVIA", RSTSent: "59+20"},
-		{QSODate: "20240615", TimeOn: "120000", Band: "70cm", Mode: "PSK31", RSTSent: "579"},
+		{QSODate: "20240615", TimeOn: "120000", Band: "70cm", Mode: "PSK31", RSTSent: "579", SatName: "TEVEL-12"},
 	} {
 		rows = append(rows, r)
 	}
@@ -465,6 +465,7 @@ func TestLayoutShapesBoldSat(t *testing.T) {
 // shapes, as a valid PDF; the label lands on the page.
 func TestRenderOptions(t *testing.T) {
 	tmpl := template.Default()
+	tmpl.Rows.Max = 3
 	tmpl.Fields = append(tmpl.Fields, template.Field{Kind: template.KindRect, X: 1, Y: 1, W: 98, H: 72},
 		template.Field{Name: "sat_name", X: 4, Y: 66, FontSize: 8, Style: "B"})
 	card := CardFields{Call: "DL1ABC", Rows: testRows(4)}
@@ -503,6 +504,7 @@ func TestRenderOptions(t *testing.T) {
 // outside ones marked.
 func TestPreview(t *testing.T) {
 	tmpl := template.Default()
+	tmpl.Rows.Max = 3
 	tmpl.Fields = append(tmpl.Fields,
 		template.Field{Kind: template.KindLine, X: 100, Y: 70, W: 60},                                     // runs off the card
 		template.Field{Name: "text", Text: "low", X: 4, Y: 89.5, FontSize: 12, Align: "L", Font: "Times"}) // below the edge
@@ -525,6 +527,8 @@ func TestPreview(t *testing.T) {
 	for i, f := range tmpl.Fields {
 		want := 1
 		switch {
+		case f.When == template.WhenSat || f.Name == "sat_name":
+			want = 0 // no satellite QSO on this card
 		case template.IsRowField(f.Name):
 			want = 3
 		case f.Name == "via" || f.Name == "my_name":
@@ -557,5 +561,30 @@ func TestPreview(t *testing.T) {
 	// No QSOs (an empty sample): the card fields still show.
 	if ops, pages, err := Preview(tmpl, CardFields{Call: "X1X"}); err != nil || pages != 1 || len(ops) == 0 {
 		t.Errorf("empty-row preview = %d ops, %d pages, %v", len(ops), pages, err)
+	}
+}
+
+// TestSatelliteColumn: the default card carries the satellite column and its
+// heading only when a QSO on that card was made via a satellite.
+func TestSatelliteColumn(t *testing.T) {
+	tmpl := template.Default()
+	hf := CardFields{Call: "DL1ABC", Rows: []QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59"}}}
+	if ops := layout(tmpl, hf, hf.Rows, fpdfWidth()); len(findOps(ops, "Satellite")) != 0 {
+		t.Error("an HF card carries the satellite heading")
+	}
+	sat := CardFields{Call: "DL1ABC", Rows: []QSORow{
+		{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59"},
+		{QSODate: "20240102", TimeOn: "1300", Band: "70cm", Mode: "FM", RSTSent: "59", SatName: "SO-50", FreqRX: "436.795"},
+	}}
+	ops := layout(tmpl, sat, sat.Rows, fpdfWidth())
+	if len(findOps(ops, "Satellite")) != 1 || len(findOps(ops, "SO-50")) != 1 {
+		t.Fatalf("satellite card ops lack the heading or the satellite: %+v", ops)
+	}
+	// Only the card (page) holding the satellite QSO: with one row per card
+	// the HF card stays without the column.
+	one := tmpl.Clone()
+	one.Rows = template.RowsCfg{Max: 1, PitchMM: 6.5}
+	if ops := layout(one, sat, sat.Rows[:1], fpdfWidth()); len(findOps(ops, "Satellite")) != 0 {
+		t.Error("the HF page of a split card carries the satellite heading")
 	}
 }

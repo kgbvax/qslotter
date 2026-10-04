@@ -1,0 +1,16 @@
+{{define "printq"}}{{$items := printJobs}}<section id="printq" class="printq"{{if not $items}} hidden{{end}} aria-live="polite" aria-label="{{t "Print jobs"}}">
+  <div class="pq-head"><h4>{{t "Print jobs"}}</h4>
+    <button type="button" class="mini" hx-post="/work/printq/clear" hx-target="#printq" hx-swap="outerHTML" title="{{t "Remove the finished jobs from this list"}}">{{t "Clear finished"}}</button></div>
+  <ul>{{range $items}}<li class="pq-{{.State}}">
+    <span class="pq-call">{{.Call}}</span>{{if gt (len .Keys) 1}} <span class="muted">{{t "%d QSOs" (len .Keys)}}</span>{{end}}
+    <span class="muted pq-when">{{since .StartedAt}}</span>
+    {{if eq .State "printing"}}<span class="pq-state">{{t "printing..."}}</span>
+    {{else if eq .State "printed"}}<span class="pq-state ok" title="{{if .Verified}}{{t "The print system reported the job as completed."}}{{else}}{{t "Handed to the printer - this system cannot report whether it came out."}}{{end}}">{{if .Verified}}{{t "printed"}}{{else}}{{t "sent to the printer"}}{{end}}</span>{{if not .Reason.IsZero}} <span class="muted">{{tm .Reason}}</span>{{end}}
+      <button type="button" class="pq-x" hx-post="/work/printq/dismiss?id={{.ID}}" hx-target="#printq" hx-swap="outerHTML" title="{{t "Remove from this list"}}" aria-label="{{t "Remove from this list"}}">&times;</button>
+    {{else}}<span class="pq-state err">{{t "not printed"}}</span> <span class="pq-reason">{{tm .Reason}}</span>
+      <span class="pq-acts"><button type="button" class="mini" hx-post="/work/printq/retry?id={{.ID}}" hx-target="#printq" hx-swap="outerHTML" title="{{t "Print this card again"}}">{{t "Retry"}}</button>
+      <button type="button" class="mini" hx-post="/work/printq/sent?id={{.ID}}" hx-target="#printq" hx-swap="outerHTML" title="{{t "The card came out fine after all: mark it sent"}}">{{t "It did print"}}</button>
+      <button type="button" class="pq-x" hx-post="/work/printq/dismiss?id={{.ID}}" hx-target="#printq" hx-swap="outerHTML" title="{{t "Remove from this list - the card stays at the Desk"}}" aria-label="{{t "Remove from this list"}}">&times;</button></span>
+    {{end}}
+  </li>{{end}}</ul>
+</section>{{end}}

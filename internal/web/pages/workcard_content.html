@@ -21,6 +21,7 @@
     {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <div id="cardform">
+  {{if not $c.PrintFailed.IsZero}}<p class="print-failed" role="alert">{{t "Printing this card failed: %s" (tm $c.PrintFailed)}} {{t "Fix the printer, then print again (p)."}}</p>{{end}}
   {{if $c.OQRS}}<p class="oqrs-hint">{{th "QRZ mentions <b>OQRS</b>: their card may be requested instead of sending one (<kbd>r</kbd>)."}}</p>{{end}}
   <article class="qslcard">
     <div class="airmail"></div>
@@ -75,12 +76,13 @@
   <div class="decide-actions">
     <span class="fulfil">
       <button type="button" class="stamp primary" data-key="p" title="{{t "Print the card, mark it sent, next card"}}  (p)" hx-post="/work/print?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Print - sent"}}</button>
+      <button type="button" class="stamp" data-key="s" data-preview="/work/preview" title="{{t "Show exactly what prints: this card with the ticked QSOs, the layout and the printer offset"}}  (s)">{{t "Preview"}}</button>
       <button type="button" class="stamp" data-key="w" title="{{t "Written by hand, mark it sent, next card"}}  (w)" hx-post="/work/written?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Written by hand - sent"}}</button>
       <button type="button" class="mini{{if $c.OQRS}} suggested{{end}}" data-key="r" title="{{t "Request their card instead (OQRS, PayPal, e-mail ...) - no own card"}}  (r)" onclick="var q=document.getElementById('req');q.hidden=!q.hidden;if(!q.hidden)q.querySelector('input[name=note]').focus()">{{t "Request their card"}}&hellip;</button>
       <button type="button" class="mini" data-key="n" title="{{t "No card after all - goes to Done, reopenable"}}  (n)" hx-post="/work/none?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "No card"}}</button>
       <button type="button" class="mini" data-key="u" title="{{t "Take it back to New QSOs"}}  (u)" hx-post="/work/back?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Back to New QSOs"}}</button>
     </span>
   </div>
-  <p class="muted legend">{{t "Keys:"}} {{t "send via"}} <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> {{t "print"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>u</kbd> {{t "back to New QSOs"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Print and Written by hand mark the card as sent."}}</p>
+  <p class="muted legend">{{t "Keys:"}} {{t "send via"}} <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> {{t "print"}} &middot; <kbd>s</kbd> {{t "preview"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>u</kbd> {{t "back to New QSOs"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Print and Written by hand mark the card as sent."}}</p>
 {{end}}
 </div>{{end}}

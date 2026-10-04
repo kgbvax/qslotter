@@ -45,6 +45,8 @@ type DeskCard struct {
 	RouteFrom  string // where it comes from: "chosen earlier", "by QRZ"
 	MgrPrefill string // manager callsign for the manager routes
 	OQRS       bool   // QRZ mentions OQRS: "requested" is the likely outcome
+
+	PrintFailed i18n.Msg // the last print of this card failed: why
 }
 
 // cardTemplate is the card layout in use: the configured template file, else
@@ -77,6 +79,9 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 	var cards []*DeskCard
 	byCall := map[string]*DeskCard{}
 	for _, it := range items {
+		if s.pq.printing(it.QSLKey) {
+			continue // away at the printer: back here only if it fails
+		}
 		call := strings.ToUpper(callFromKey(it.QSLKey))
 		c := byCall[call]
 		row := s.buildRow(it.QSLKey, refresh && c == nil)
@@ -104,6 +109,12 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 		c.Prints = (len(c.Rows) + perCard - 1) / perCard
 		c.Route, c.RouteFrom, c.MgrPrefill = preselectRoute(c)
 		c.OQRS = mentionsOQRS(c.Lead.Info)
+		for _, k := range c.Keys {
+			if m := s.pq.lastFailure(k); !m.IsZero() {
+				c.PrintFailed = m
+				break
+			}
+		}
 	}
 	return cards, nil
 }
@@ -393,6 +404,8 @@ func (s *Server) deskAction(w http.ResponseWriter, r *http.Request, to string, a
 			s.fail(w, r, http.StatusBadRequest, err.Error())
 		case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrBadRoute):
 			s.queueErr(w, r, err)
+		case errors.Is(err, errPrinting):
+			s.fail(w, r, http.StatusConflict, err.Error())
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -427,7 +440,8 @@ func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		return s.printCard(keys, rt)
+		_, err = s.printCard(keys, rt)
+		return err
 	})
 }
 
@@ -466,38 +480,53 @@ func (s *Server) htmxWorkBack(w http.ResponseWriter, r *http.Request) {
 var printMu sync.Mutex
 
 // printCard prints one card for the given Desk QSOs (one row per QSO, further
-// cards when the template holds fewer rows) and marks them sent.
-func (s *Server) printCard(keys []string, rt store.Route) error {
+// cards when the template holds fewer rows). Every attempt lands in the
+// print list (printq.go). When the print system can follow the job, async
+// is true: the card leaves the Desk while it prints and is marked sent when
+// the job completed (watchPrint); otherwise it is marked sent once handed
+// over. An error leaves the card at the Desk.
+func (s *Server) printCard(keys []string, rt store.Route) (async bool, err error) {
 	printMu.Lock()
 	defer printMu.Unlock()
 	var qsos []*store.QSO
 	for _, key := range keys {
+		if s.pq.printing(key) {
+			return false, errPrinting
+		}
 		item, err := s.store.QueueGet(key)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if item == nil || item.Status != "decided" {
-			return store.ErrConflict
+			return false, store.ErrConflict
 		}
 		q, err := s.store.GetQSO(key)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if q == nil {
-			return fmt.Errorf("QSO %s not found", key)
+			return false, fmt.Errorf("QSO %s not found", key)
 		}
 		qsos = append(qsos, q)
 	}
 	cfg := s.config()
+	it := &printItem{Call: strings.ToUpper(qsos[0].Call), Keys: keys, Route: rt}
+	failed := func(err error) (bool, error) {
+		it.State, it.Reason = printFailed, i18n.M("%s", err.Error())
+		s.pq.add(it)
+		s.publishPrint()
+		return false, err
+	}
 	tmpl, err := s.cardTemplate()
 	if err != nil {
-		return err
+		return failed(err)
 	}
 	via := ""
 	if rt.Method == "M" {
 		via = rt.Manager
 	}
 	card := cardFieldsFor(cfg, qsos, via)
+	it.Call = strings.ToUpper(card.Call)
 	pdfPath := printer.TempPDFPath()
 	defer func() {
 		if err := os.Remove(pdfPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -507,16 +536,72 @@ func (s *Server) printCard(keys []string, rt store.Route) error {
 	if err := printer.Render(pdfPath, tmpl, card, printer.RenderOptions{
 		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
 	}); err != nil {
-		return err
+		return failed(err)
 	}
-	if err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
+	job, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
 		PaperWMM: cfg.Printer.PaperSizeMM[0],
 		PaperHMM: cfg.Printer.PaperSizeMM[1],
 		Copies:   1,
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return failed(err)
 	}
-	return s.store.QueuePrinted(keys, rt)
+	it.Job = job
+	if w, ok := s.printer.(printer.Watcher); ok && job.ID > 0 {
+		// The spool has its own copy: the temp file may go now.
+		it.State = printPrinting
+		s.pq.add(it)
+		s.publishPrint()
+		go s.watchPrint(it, w)
+		return true, nil
+	}
+	if err := s.store.QueuePrinted(keys, rt); err != nil {
+		return false, err
+	}
+	it.State = printPrinted
+	s.pq.add(it)
+	s.publishPrint()
+	return false, nil
+}
+
+// htmxWorkPreview answers the card for the QSOs key=... (as ticked on the
+// Desk card) with the chosen route=/manager= as the PDF that would print:
+// the active layout, the printer offset.
+func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
+	keys := deskKeys(r)
+	if len(keys) == 0 {
+		s.fail(w, r, http.StatusBadRequest, errNoKeys.Error())
+		return
+	}
+	var qsos []*store.QSO
+	for _, k := range keys {
+		q, err := s.store.GetQSO(k)
+		if err != nil || q == nil {
+			s.fail(w, r, http.StatusNotFound, "QSO %s not found", k)
+			return
+		}
+		qsos = append(qsos, q)
+	}
+	via := ""
+	if rt, err := routeFrom(r, keys[0]); err == nil && rt.Method == "M" {
+		via = rt.Manager
+	}
+	tmpl, err := s.cardTemplate()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := s.config()
+	raw, err := printer.RenderBytes(tmpl, cardFieldsFor(cfg, qsos, via), printer.RenderOptions{
+		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="card.pdf"`)
+	_, _ = w.Write(raw)
 }
 
 // cardFieldsFor is what a card for these QSOs with one station prints: one
@@ -559,7 +644,8 @@ func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string
 				return "", err
 			}
 			if action == "print" {
-				return "sent", s.printCard(keys, rt)
+				_, err := s.printCard(keys, rt)
+				return "sent", err
 			}
 			return "sent", s.store.QueueWritten(keys, rt)
 		}

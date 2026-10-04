@@ -21,8 +21,10 @@ import (
 // pageSettings renders the service-configuration form (QRZ/Clublog
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt()})
+		"ClublogPaused": s.clublogPausedAt(), "LastPull": lastPull, "LastPush": lastPush})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -85,6 +87,8 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	qrzStatus, clublogStatus := s.validateFn(newCfg)
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{
 		"Cfg":           newCfg,
 		"CanQuit":       s.Quit != nil,
@@ -93,6 +97,8 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"QrzStatus":     qrzStatus,
 		"ClublogStatus": clublogStatus,
 		"ClublogPaused": s.clublogPausedAt(),
+		"LastPull":      lastPull,
+		"LastPush":      lastPush,
 	})
 }
 

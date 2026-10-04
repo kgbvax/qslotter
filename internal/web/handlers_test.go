@@ -104,12 +104,12 @@ type fakePrinter struct {
 
 func (f *fakePrinter) List() ([]string, error)  { return []string{"fake"}, nil }
 func (f *fakePrinter) Default() (string, error) { return "fake", nil }
-func (f *fakePrinter) PrintPDF(path, name string, _ printer.Options) error {
+func (f *fakePrinter) PrintPDF(path, name string, _ printer.Options) (printer.Job, error) {
 	if f.err != nil {
-		return f.err
+		return printer.Job{}, f.err
 	}
 	f.printed = append(f.printed, path)
-	return nil
+	return printer.Job{Printer: "fake"}, nil // no ID: like Windows, not followed
 }
 
 func TestQueuePagesRender(t *testing.T) {

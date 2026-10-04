@@ -169,8 +169,8 @@ func TestLayoutPageBuiltin(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if strings.Contains(body, `id="lay-save"`) {
-		t.Error("the built-in layout offers Save")
+	if !strings.Contains(body, `id="lay-save"`) || !strings.Contains(body, `id="lay-file"`) || !strings.Contains(body, "your version is kept as a layout of its own") {
+		t.Error("the built-in layout must offer Save and the picture upload")
 	}
 	// Settings links to it.
 	if !strings.Contains(get(t, h, "/settings").Body.String(), `href="/settings/cards"`) {
@@ -186,7 +186,7 @@ func TestLayoutLifecycle(t *testing.T) {
 	tmpl := template.Default()
 
 	r := postJSON(t, h, "/settings/cards/save?create=1&name=Stock&from=:builtin", tmpl)
-	if r.Code != 200 || !strings.Contains(r.Body.String(), `"/settings/cards?name=Stock"`) {
+	if r.Code != 200 || !strings.Contains(r.Body.String(), `name=Stock"`) {
 		t.Fatalf("save as = %d: %s", r.Code, r.Body)
 	}
 	if r := postJSON(t, h, "/settings/cards/save?create=1&name=Stock", tmpl); r.Code != http.StatusConflict {
@@ -338,7 +338,7 @@ func TestLayoutImage(t *testing.T) {
 func TestLayoutPreview(t *testing.T) {
 	_, h, st, _ := newLayoutServer(t)
 	a := previewOf(t, h, "long", template.Default())
-	if a.Error != "" || a.Pages != 1 || len(a.Ops) < 20 {
+	if a.Error != "" || a.Pages != 1 || len(a.Ops) < 15 {
 		t.Fatalf("default preview = %+v", a)
 	}
 	if !hasWarning(a, "Name: too long") || hasWarning(a, "on top of each other") || hasWarning(a, "off the card") {
@@ -350,8 +350,11 @@ func TestLayoutPreview(t *testing.T) {
 			rows = max(rows, op.Row+1)
 		}
 	}
-	if rows != 3 {
-		t.Errorf("long sample fills %d rows, want 3", rows)
+	if rows != 1 {
+		t.Errorf("long sample fills %d rows, want 1 (one QSO per card)", rows)
+	}
+	if a := previewOf(t, h, "sat", template.Default()); !opText(a.Ops, "Satellite") || !opText(a.Ops, "RS-44") {
+		t.Errorf("satellite sample lacks the satellite column: %+v", a.Ops)
 	}
 
 	bad := template.Default()
@@ -481,8 +484,8 @@ func TestLayoutMissingFile(t *testing.T) {
 	}
 	srv.cfg.Card.Template = other
 	body = get(t, h, "/settings/cards").Body.String()
-	if !strings.Contains(body, "mine.yaml (configured file)") || !strings.Contains(body, "outside the editor") || strings.Contains(body, `id="lay-save"`) {
-		t.Fatal("configured file outside cards/ not shown read-only")
+	if !strings.Contains(body, "mine.yaml (configured file)") || !strings.Contains(body, "outside the editor") {
+		t.Fatal("configured file outside cards/ not marked")
 	}
 }
 
@@ -502,6 +505,9 @@ func TestLayoutGerman(t *testing.T) {
 	sendJSON(t, h, "/settings/cards/save?name=Nope", template.Default(), de)
 	sendJSON(t, h, "/settings/cards/save?name=..", template.Default(), de)
 	sendJSON(t, h, "/settings/cards/save?name=A", template.Default(), de)
+	sendJSON(t, h, "/settings/cards/save?create=1&auto=1&from=%3Abuiltin", template.Default(), de)
+	requestDE(t, h, http.MethodGet, "/settings/cards?created=1&name=Meine%20Karte", nil)
+	requestDE(t, h, http.MethodGet, "/settings/cards?created=1&name=A", nil)
 	upload(t, h, "A", pngBytes(t))
 	requestDE(t, h, http.MethodPost, "/settings/cards/activate", url.Values{"name": {"A"}})
 	requestDE(t, h, http.MethodPost, "/settings/cards/delete", url.Values{"name": {"A"}})
@@ -564,5 +570,43 @@ func TestLayoutBrokenFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "Bad.yaml")); !os.IsNotExist(err) {
 		t.Fatal("broken layout not deleted")
+	}
+}
+
+// TestLayoutOwnCopy: saving the built-in layout (or adding a picture to it)
+// makes it the operator's own layout, named by the server, which takes over
+// printing when the built-in one printed.
+func TestLayoutOwnCopy(t *testing.T) {
+	srv, h, _, _ := newLayoutServer(t)
+	tmpl := template.Default()
+	tmpl.Fields[4].X = 12
+	r := postJSON(t, h, "/settings/cards/save?create=1&auto=1&from=%3Abuiltin", tmpl)
+	if r.Code != 200 || !strings.Contains(r.Body.String(), `"name":"My card"`) || !strings.Contains(r.Body.String(), "created=1") {
+		t.Fatalf("own copy = %d: %s", r.Code, r.Body)
+	}
+	got, err := srv.cardTemplate()
+	if err != nil || got.Name != "My card" || got.Fields[4].X != 12 {
+		t.Fatalf("printing layout = %+v, %v", got, err)
+	}
+	body := get(t, h, "/settings/cards?created=1&name=My%20card").Body.String()
+	if !strings.Contains(body, "Saved as your layout My card. It prints the cards.") {
+		t.Error("no note about the new layout")
+	}
+	// A second one gets the next name and, the built-in no longer printing,
+	// leaves printing alone.
+	r = postJSON(t, h, "/settings/cards/save?create=1&auto=1&from=%3Abuiltin", template.Default())
+	if !strings.Contains(r.Body.String(), `"name":"My card 2"`) {
+		t.Fatalf("second own copy: %s", r.Body)
+	}
+	if got, _ := srv.cardTemplate(); got.Name != "My card" {
+		t.Fatalf("printing layout changed to %q", got.Name)
+	}
+	if upload(t, h, "My card 2", pngBytes(t)).Code != 200 {
+		t.Fatal("picture upload to the new layout")
+	}
+	// German: the server names it in the operator's language.
+	r = sendJSON(t, h, "/settings/cards/save?create=1&auto=1&from=%3Abuiltin", template.Default(), "de-DE,de;q=0.9")
+	if !strings.Contains(r.Body.String(), `"name":"Meine Karte"`) {
+		t.Fatalf("German own copy: %s", r.Body)
 	}
 }

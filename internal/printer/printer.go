@@ -8,6 +8,7 @@ package printer
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -63,7 +64,23 @@ type QSOFields struct {
 type Printer interface {
 	List() ([]string, error)
 	Default() (string, error)
-	PrintPDF(path, printerName string, opts Options) error
+	// PrintPDF hands the PDF to the print system and returns the job; a
+	// nil error means queued, not printed (see Watcher).
+	PrintPDF(path, printerName string, opts Options) (Job, error)
+}
+
+// Job is a submitted print job. ID 0: the platform cannot follow it
+// (Windows/SumatraPDF), so handing it over is all there is to know.
+type Job struct {
+	Printer string
+	ID      int
+}
+
+// Watcher follows submitted jobs (CUPS on macOS and Linux): whether a job
+// really printed, failed, or waits on a stopped printer.
+type Watcher interface {
+	JobStatus(ctx context.Context, job Job) (JobStatus, error)
+	CancelJob(ctx context.Context, job Job) error
 }
 
 type Options struct {
@@ -290,7 +307,8 @@ const FitMarginMM = fitMarginMM
 // layout places the fields of tmpl for one card page holding rows (at most
 // MaxRows(tmpl)): card fields once, row fields once per row, row i shifted
 // down by i*Rows.PitchMM, lines and rectangles once. Fields with an empty
-// value are left out. Texts too long for the card are shrunk to fit (see
+// value are left out, and fields marked when: sat unless a QSO on this card
+// has a satellite name. Texts too long for the card are shrunk to fit (see
 // fitMarginMM).
 func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure measureFunc) []drawOp {
 	width := tmpl.WidthMM
@@ -298,6 +316,10 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 		width = template.DefaultWidthMM // template.Load's default
 	}
 	var ops []drawOp
+	sat := false // a satellite QSO on this card: fields with when: sat print
+	for _, r := range rows {
+		sat = sat || strings.TrimSpace(r.SatName) != ""
+	}
 	place := func(idx, row int, f template.Field, y float64, text string) {
 		text = cp1252Text(text)
 		if text == "" {
@@ -331,6 +353,9 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 			Field: idx, Row: row, Fitted: fitted})
 	}
 	for i, f := range tmpl.Fields {
+		if strings.EqualFold(f.When, template.WhenSat) && !sat {
+			continue
+		}
 		if f.IsShape() {
 			ops = append(ops, drawOp{Kind: strings.ToLower(f.Kind), X: f.X, Y: f.Y, W: f.W, H: f.H,
 				StrokeMM: f.Stroke(), Field: i, Row: -1})

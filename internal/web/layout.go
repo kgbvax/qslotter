@@ -209,6 +209,8 @@ var layoutJSStrings = []string{
 	"Network error - is the qslotter server running?", "Error", "Discard the unsaved changes?",
 	"X is where the text starts (left), its middle (centre) or where it ends (right).",
 	"The printer is set up for %s x %s mm paper (printer.paper_size_mm in the config file), this card is %s x %s mm.",
+	"Only on satellite cards", "satellite cards",
+	"For a satellite column and its heading: an HF card leaves them out.",
 }
 
 // layoutPageData is what the editor script gets.
@@ -224,6 +226,7 @@ type layoutPageData struct {
 	Image    string             `json:"image,omitempty"` // URL of the card scan
 	Margin   float64            `json:"margin"`          // printer.FitMarginMM
 	Paper    [2]float64         `json:"paper"`           // printer.paper_size_mm
+	CanSave  bool               `json:"can_save"`        // a config file to keep layouts with
 }
 
 // sampleChoice is one entry of the sample select.
@@ -255,7 +258,7 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 	cfg := s.config()
 	data := layoutPageData{ID: id, Editable: entry.Editable && s.cfgPath != "", Model: tmpl,
 		Labels: map[string]string{}, Strings: map[string]string{}, Fonts: template.Fonts, Margin: printer.FitMarginMM,
-		Paper: cfg.Printer.PaperSizeMM}
+		Paper: cfg.Printer.PaperSizeMM, CanSave: s.cfgPath != ""}
 	for _, n := range template.CardFieldNames() {
 		if n != "qslmsg" { // nothing fills it
 			data.Card = append(data.Card, catField{n, s.tr(r, fieldLabels[n])})
@@ -288,6 +291,7 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		"OffsetY":  cfg.Printer.OffsetMM[1],
 		"Printer":  cfg.Printer.Name,
 		"HasImage": data.Image != "",
+		"Created":  r.URL.Query().Get("created") == "1" && entry.Editable,
 	})
 }
 
@@ -297,6 +301,7 @@ func (s *Server) sampleChoices(r *http.Request) []sampleChoice {
 	out := []sampleChoice{
 		{"long", s.tr(r, "Sample: long names, a full card, via manager, satellite")},
 		{"short", s.tr(r, "Sample: one short QSO")},
+		{"sat", s.tr(r, "Sample: a satellite QSO")},
 	}
 	cards, err := s.deskCards(false)
 	if err != nil {
@@ -311,7 +316,7 @@ func (s *Server) sampleChoices(r *http.Request) []sampleChoice {
 	return out
 }
 
-// sampleCard is the card the editor lays out for ?sample=: "short", a Desk
+// sampleCard is the card the editor lays out for ?sample=: "short", "sat", a Desk
 // card's lead key, else "long" - the longest values a card realistically
 // gets, as many QSOs as tmpl holds.
 func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.CardFields {
@@ -322,6 +327,10 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 		return printer.CardFields{Call: "DL1ABC", Name: "Hans", QTH: "Berlin", MyCall: myCall, MyName: cfg.Station.Name,
 			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB",
 				RSTSent: "59", RSTRcvd: "57", Freq: "14.250"}}}
+	case "sat":
+		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name,
+			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240615", TimeOn: "1842", Band: "70cm", Mode: "FM",
+				RSTSent: "59", RSTRcvd: "59", Freq: "145.850", SatName: "RS-44", FreqRX: "435.640"}}}
 	case "long", "":
 	default:
 		if cards, err := s.deskCards(false); err == nil {
@@ -504,14 +513,22 @@ func (s *Server) layoutName(w http.ResponseWriter, r *http.Request, param string
 // htmxCardsSave stores the posted layout as cards/<name>.yaml. With
 // create=1 it makes a new layout (409 when the name is taken), copying the
 // card scan of the layout ?from= along; otherwise the layout must exist and
-// keeps its scan. A new layout answers {"location": its editor URL}.
+// keeps its scan. With auto=1 (and create=1) the server names the new layout
+// ("My card", "My card 2", ...) and, when ?from= is the layout that prints,
+// makes the new one print instead: editing the built-in layout needs no copy
+// step. A new layout answers {"name", "location": its editor URL}.
 func (s *Server) htmxCardsSave(w http.ResponseWriter, r *http.Request) {
 	if !s.canEditLayouts(w, r) {
 		return
 	}
-	name, ok := s.layoutName(w, r, "name")
-	if !ok {
-		return
+	create := r.FormValue("create") == "1"
+	auto := create && r.FormValue("auto") == "1"
+	var name string
+	if !auto {
+		var ok bool
+		if name, ok = s.layoutName(w, r, "name"); !ok {
+			return
+		}
 	}
 	tmpl, err := readLayout(w, r)
 	if err != nil {
@@ -520,9 +537,13 @@ func (s *Server) htmxCardsSave(w http.ResponseWriter, r *http.Request) {
 	}
 	layoutMu.Lock()
 	defer layoutMu.Unlock()
+	from := r.FormValue("from")
+	_, active, _ := s.layouts(r)
+	if auto {
+		name = s.freeLayoutName(r)
+	}
 	path := s.layoutPath(name)
 	_, statErr := os.Stat(path)
-	create := r.FormValue("create") == "1"
 	tmpl.Name = name
 	tmpl.PreviewImage = ""
 	if create {
@@ -530,7 +551,7 @@ func (s *Server) htmxCardsSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusConflict, "A layout named %s exists already.", name)
 			return
 		}
-		if src, srcPath, err := s.loadLayout(r.FormValue("from")); err == nil {
+		if src, srcPath, err := s.loadLayout(from); err == nil {
 			if img := layoutImagePath(src, srcPath); img != "" {
 				ext := strings.ToLower(filepath.Ext(img))
 				if err := copyFile(img, filepath.Join(s.cardsDir(), name+ext)); err == nil {
@@ -553,12 +574,35 @@ func (s *Server) htmxCardsSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, "saving the layout: %s", err.Error())
 		return
 	}
+	if auto && from != "" && from == active {
+		if err := s.setActiveLayout(name); err != nil {
+			s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
+			return
+		}
+	}
 	s.notice(w, r, "Layout %s saved.", name)
 	if create {
-		writeJSON(w, map[string]string{"location": "/settings/cards?name=" + url.QueryEscape(name)})
+		writeJSON(w, map[string]string{"name": name,
+			"location": "/settings/cards?created=1&name=" + url.QueryEscape(name)})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// freeLayoutName is the first unused name of "My card", "My card 2", ...
+// (in the request's language).
+func (s *Server) freeLayoutName(r *http.Request) string {
+	base := s.tr(r, "My card")
+	if !validLayoutName(base) {
+		base = "My card"
+	}
+	name := base
+	for i := 2; ; i++ {
+		if _, err := os.Stat(s.layoutPath(name)); errors.Is(err, fs.ErrNotExist) {
+			return name
+		}
+		name = fmt.Sprintf("%s %d", base, i)
+	}
 }
 
 // copyFile copies src to dst (a new file).
@@ -962,7 +1006,7 @@ func (s *Server) htmxCardsTest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, "rendering the test card: %s", err.Error())
 		return
 	}
-	if err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
+	if _, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
 		PaperWMM: cfg.Printer.PaperSizeMM[0], PaperHMM: cfg.Printer.PaperSizeMM[1], Copies: 1,
 	}); err != nil {
 		s.fail(w, r, http.StatusBadGateway, "printing the test card: %s", err.Error())

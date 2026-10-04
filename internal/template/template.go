@@ -86,7 +86,14 @@ type Field struct {
 	Font  string `yaml:"font,omitempty" json:"font,omitempty"` // "Helvetica" (default), "Times", "Courier"
 	// Style is "" (regular) or "B" (bold).
 	Style string `yaml:"style,omitempty" json:"style,omitempty"`
+	// When limits the field to some cards: "" = every card, "sat" = only a
+	// card with a satellite QSO on it (e.g. the heading of a satellite
+	// column, which an HF card would carry empty).
+	When string `yaml:"when,omitempty" json:"when,omitempty"`
 }
+
+// WhenSat is Field.When for a field printed only on satellite cards.
+const WhenSat = "sat"
 
 // The card size of a template that names none: DL9ET's 140x90 mm cards.
 const (
@@ -249,6 +256,11 @@ func (t *Template) Validate() error {
 }
 
 func (f *Field) validate() error {
+	switch strings.ToLower(f.When) {
+	case "", WhenSat:
+	default:
+		return fmt.Errorf("when %q: must be empty or sat", f.When)
+	}
 	switch strings.ToLower(f.Kind) {
 	case "", KindText:
 		name := strings.ToLower(f.Name)
@@ -347,18 +359,22 @@ func (t *Template) Clone() *Template {
 }
 
 // Default returns a sane built-in template for DL9ET's standard 140x90mm
-// card: up to three QSOs, one row each under small column labels.
+// card: one QSO per card (rows.max 1 - a station with several open QSOs
+// gets one card each; raise it in the layout editor for several rows), under
+// small column labels; the satellite column and its heading print only on a
+// card with a satellite QSO.
 //
 // Vertical budget (Y is the middle of a line; the baseline sits 0.3*size
 // below it, Helvetica caps rise 0.72*size above the baseline, descenders
 // drop 0.21*size below it, size in mm = pt*0.353): title 4.6-11.1,
 // my_call 16.3-23.4, my_name 25.2-29.2, "Confirming" 32.2-36.2,
 // call/name 39.5-46.1, via 48.2-52.2, labels 55.3-57.9, rows 60.1-77.3,
-// 73 line 82.2-86.2.
+// 73 line 82.2-86.2. Columns (13 pt, widest realistic value): date 6-29.5,
+// UTC 36-47.5, band 52-66, mode 70-85, RST 90-103, satellite 108-136.
 func Default() *Template {
 	t := &Template{
 		Name: "default", WidthMM: 140, HeightMM: 90,
-		Rows: RowsCfg{Max: 3, PitchMM: 6.5},
+		Rows: RowsCfg{Max: 1, PitchMM: 6.5},
 		Fields: []Field{
 			{Name: "text", Text: "QSL CARD", X: 70, Y: 7.5, FontSize: 20, Align: "C", Font: "Helvetica"},
 			{Name: "my_call", X: 6, Y: 19.5, FontSize: 22, Align: "L", Font: "Helvetica"},
@@ -369,16 +385,18 @@ func Default() *Template {
 			{Name: "via", X: 6, Y: 50, FontSize: 12, Align: "L", Font: "Helvetica"},
 			// Column labels over the QSO rows.
 			{Name: "text", Text: "Date", X: 6, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "UTC", X: 42, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "Band", X: 64, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "Mode", X: 87, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "RST", X: 115, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
-			// One row per QSO, the first at Y 62, then every 6.5 mm.
+			{Name: "text", Text: "UTC", X: 36, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Band", X: 52, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Mode", X: 70, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "RST", X: 90, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Satellite", X: 108, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica", When: WhenSat},
+			// The QSO row at Y 62 (with rows.max > 1, further rows every 6.5 mm).
 			{Name: "qso_date", X: 6, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
-			{Name: "time_on", X: 42, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
-			{Name: "band", X: 64, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
-			{Name: "mode", X: 87, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
-			{Name: "rst_sent", X: 115, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "time_on", X: 36, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "band", X: 52, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "mode", X: 70, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "rst_sent", X: 90, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "sat_name", X: 108, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
 			{Name: "text", Text: "73 de DL9ET", X: 70, Y: 84, FontSize: 12, Align: "C", Font: "Helvetica"},
 		},
 	}
