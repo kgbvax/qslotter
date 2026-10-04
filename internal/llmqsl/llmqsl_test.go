@@ -23,17 +23,17 @@ func TestIsValidMethod(t *testing.T) {
 func TestMapHeuristic(t *testing.T) {
 	cases := []struct {
 		name string
-		in   qsldetermine.Assessment
+		in   qsldetermine.Result
 		want Method
 	}{
-		{"bureau", qsldetermine.Assessment{Suggest: "B"}, MethodBuero},
-		{"direct", qsldetermine.Assessment{Suggest: "D"}, MethodDirect},
-		{"stated refusal", qsldetermine.Assessment{Suggest: "N"}, MethodNone},
-		{"manager direct", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC", ManagerVia: "D"}, MethodManagerDirect},
-		{"manager buero", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC", ManagerVia: "B"}, MethodManagerBuero},
-		{"manager way not stated", qsldetermine.Assessment{Suggest: "M", Manager: "XX1ABC"}, MethodManagerDirect},
-		{"manager without a call", qsldetermine.Assessment{Suggest: "M"}, MethodUnknown},
-		{"nothing stated is not a refusal", qsldetermine.Assessment{Note: qsldetermine.NoteElectronicOnly}, MethodUnknown},
+		{"bureau", qsldetermine.Result{Method: "B", Bureau: true}, MethodBuero},
+		{"direct", qsldetermine.Result{Method: "D", Direct: true}, MethodDirect},
+		{"stated refusal", qsldetermine.Result{RefusePaper: true}, MethodNone},
+		{"manager direct", qsldetermine.Result{Method: "M", Manager: "XX1ABC", Direct: true}, MethodManagerDirect},
+		{"manager buero", qsldetermine.Result{Method: "M", Manager: "XX1ABC", Bureau: true}, MethodManagerBuero},
+		{"manager way not stated", qsldetermine.Result{Method: "M", Manager: "XX1ABC"}, MethodManagerDirect},
+		{"manager without a call", qsldetermine.Result{Method: "M"}, MethodUnknown},
+		{"nothing stated is not a refusal", qsldetermine.Result{}, MethodUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -195,11 +195,8 @@ func TestDefaultPromptRender(t *testing.T) {
 			MQSL:    "Y",
 			QSLMgr:  "XX1ABC",
 		},
-		Bio: "QSL via bureau.",
-		Heuristic: qsldetermine.Assessment{
-			Suggest: "B",
-			Signals: []qsldetermine.Signal{{Kind: qsldetermine.KindBureau, Source: "qslmgr", Quote: "mqsl=Y", Decisive: true}},
-		},
+		Bio:       "QSL via bureau.",
+		Heuristic: qsldetermine.Result{Method: "B", Bureau: true, Reason: "mqsl=Y"},
 	})
 	if err != nil {
 		t.Fatalf("render: %v", err)

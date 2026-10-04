@@ -63,24 +63,14 @@ func makeTmplData(input EvalInput) promptData {
 		QRZ:             input.QRZ,
 		Bio:             input.Bio,
 		HasQRZ:          input.QRZ != nil,
-		HeuristicMethod: coalesce(input.Heuristic.Suggest, "(nothing stated)"),
+		HeuristicMethod: coalesce(input.Heuristic.Suggest(), "(nothing stated)"),
 		HeuristicReason: heuristicReason(input.Heuristic),
 		HeuristicMapped: MapHeuristic(input.Heuristic),
 	}
 }
 
-// heuristicReason quotes the words the assessment rests on, or says why it
-// suggests nothing.
-func heuristicReason(a qsldetermine.Assessment) string {
-	var q []string
-	for _, s := range a.Decisive() {
-		q = append(q, s.Source+": "+s.Quote)
-	}
-	if len(q) > 0 {
-		return strings.Join(q, "; ")
-	}
-	return string(a.Note)
-}
+// heuristicReason is the classifier's own reason.
+func heuristicReason(a qsldetermine.Result) string { return a.Reason }
 
 // coalesce returns the first non-empty string argument.
 func coalesce(vals ...string) string {

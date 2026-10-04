@@ -180,7 +180,7 @@ func run() error {
 				e.bio = si.BioText
 			}
 			if !*skipCompareFlag {
-				e.heuristic = qsldetermine.Assess(qsldetermine.Input{Call: e.call, QSLMgr: e.cs.QSLMgr, MQSL: e.cs.MQSL, EQSL: e.cs.EQSL, LoTW: e.cs.LoTW, Bio: e.bio})
+				e.heuristic = qsldetermine.Determine(e.cs, e.bio)
 			}
 			enrichedCh <- e
 			if i < len(calls)-1 {
@@ -383,8 +383,8 @@ type outputRecord struct {
 }
 
 type heuristicRecord struct {
-	Raw    qsldetermine.Assessment `json:"raw"`
-	Mapped llmqsl.Method           `json:"mapped"`
+	Raw    qsldetermine.Result `json:"raw"`
+	Mapped llmqsl.Method       `json:"mapped"`
 }
 
 func buildRecord(e enriched, evaluator *llmqsl.Evaluator, meta runMeta) outputRecord {
@@ -472,7 +472,7 @@ func formatText(r outputRecord) string {
 		fmt.Fprintf(&sb, "Bio:\n%s\n", strings.TrimSpace(r.BioText))
 	}
 	if r.Heuristic != nil {
-		fmt.Fprintf(&sb, "Heuristic: %s (mapped: %s)\n", r.Heuristic.Raw.Suggest, r.Heuristic.Mapped)
+		fmt.Fprintf(&sb, "Heuristic: %s (mapped: %s)\n", r.Heuristic.Raw.Suggest(), r.Heuristic.Mapped)
 	}
 	fmt.Fprintf(&sb, "Prompt:\n%s\n", r.Prompt)
 	if r.LLM != nil {
@@ -507,6 +507,6 @@ type enriched struct {
 	info      *store.StationInfo
 	cs        *qrz.Callsign
 	bio       string
-	heuristic qsldetermine.Assessment
+	heuristic qsldetermine.Result
 	qrzErr    string
 }

@@ -50,7 +50,7 @@ type EvalInput struct {
 	Callsign  string
 	QRZ       *qrz.Callsign
 	Bio       string
-	Heuristic qsldetermine.Assessment
+	Heuristic qsldetermine.Result
 }
 
 // EvalResult is the parsed LLM determination.
@@ -99,11 +99,11 @@ func (e *Evaluator) Evaluate(ctx context.Context, input EvalInput) (EvalResult, 
 	return res, nil
 }
 
-// MapHeuristic maps the qsldetermine assessment to the LLM-facing Method
-// vocabulary. "Nothing stated" stays distinct from "no paper": only an explicit
-// refusal is none.
-func MapHeuristic(a qsldetermine.Assessment) Method {
-	switch a.Suggest {
+// MapHeuristic maps the qsldetermine classification to the LLM-facing Method
+// vocabulary. "Nothing stated" stays distinct from "no paper": only a refusal
+// is none.
+func MapHeuristic(a qsldetermine.Result) Method {
+	switch a.Suggest() {
 	case "B":
 		return MethodBuero
 	case "D":
@@ -114,7 +114,7 @@ func MapHeuristic(a qsldetermine.Assessment) Method {
 		if a.Manager == "" {
 			return MethodUnknown
 		}
-		if a.ManagerVia == "B" {
+		if a.ManagerVia() == "B" {
 			return MethodManagerBuero
 		}
 		return MethodManagerDirect

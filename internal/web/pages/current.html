@@ -14,7 +14,7 @@
       <button type="button" class="mini" title="{{t "Card written during the QSO, sent via the bureau - recorded when the QSO is logged"}}" hx-post="/current/written?route=B&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Bureau"}}</button>
       <button type="button" class="mini" title="{{t "Card written during the QSO, sent direct - recorded when the QSO is logged"}}" hx-post="/current/written?route=D&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Direct"}}</button></p>
   {{end}}
-  {{if $.Compact}}{{with $.Row.Research}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{else}}<div class="current-research">{{template "research_panel" $.Row}}</div>{{end}}
+  {{if $.Compact}}{{with $.Row.Research}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{template "sigstrip" $.Row.Sig}}{{else}}<div class="current-research">{{template "research_panel" $.Row}}</div>{{end}}
 {{end}}
 {{range .Others}}<p class="muted current-other">{{if eq .Decision "yes"}}{{t "%s: card wanted, waiting for the QSO to be logged (forgotten after %d h if it never is)." .Call $.WaitHours}}{{else if eq .Decision "no"}}{{t "%s: no card, waiting for the QSO to be logged (forgotten after %d h if it never is)." .Call $.WaitHours}}{{else}}{{t "%s: card written during the QSO (%s), waiting for the QSO to be logged (forgotten after %d h if it never is)." .Call (t .RouteName) $.WaitHours}}{{end}}
   <button type="button" class="mini" hx-post="/current/cancel?call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Undo"}}</button></p>{{end}}

@@ -49,7 +49,7 @@ type Server struct {
 	printer    printer.Printer
 	tmpls      map[string]*template.Template // per UI language
 	assessMu   sync.Mutex
-	assessMemo map[string]*qsldetermine.Assessment // see assessFor
+	assessMemo map[string]*qsldetermine.Result // see classifyFor
 	i18n       *i18n.Bundle
 
 	// OpenExternal opens a URL in the system browser; set by main in the

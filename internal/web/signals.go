@@ -1,161 +1,135 @@
 package web
 
 import (
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dl9et/qslotter/internal/i18n"
+	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
-// assessFor returns what QRZ states about QSL cards for a cached station
-// (nil without station info). It is computed from the stored raw fields, so a
-// change of the reading rules shows up at once; the result is memoised per
-// (call, fetch time) because every row of every list asks for it.
-func (s *Server) assessFor(info *store.StationInfo) *qsldetermine.Assessment {
+// classifyFor reads a cached station's QRZ record with the QSL classifier
+// (qsldetermine, the operator's labelling rules in qpc/LABELS.md): status,
+// accepted routes, preferred route, via, contribution. It is computed from
+// the stored raw fields, so a change of the rules shows up at once; the
+// result is memoised per (call, fetch time, fields) because every row of
+// every list asks for it. nil without station info.
+func (s *Server) classifyFor(info *store.StationInfo) *qsldetermine.Result {
 	if info == nil || info.NotFound {
 		return nil
 	}
-	key := strings.Join([]string{info.Callsign, info.FetchedAt, info.QSLMgr, info.MQSL, info.EQSL, info.LoTW, strconv.Itoa(len(info.BioText))}, "|")
+	key := strings.Join([]string{info.Callsign, info.FetchedAt, info.QSLMgr, info.MQSL, info.EQSL, info.LoTW,
+		info.Addr1, info.Addr2, strconv.Itoa(len(info.BioText))}, "|")
 	s.assessMu.Lock()
 	defer s.assessMu.Unlock()
-	if a, ok := s.assessMemo[key]; ok {
-		return a
+	if r, ok := s.assessMemo[key]; ok {
+		return r
 	}
-	a := qsldetermine.Assess(qsldetermine.Input{Call: info.Callsign, QSLMgr: info.QSLMgr,
-		MQSL: info.MQSL, EQSL: info.EQSL, LoTW: info.LoTW, Bio: info.BioText})
+	r := qsldetermine.Determine(&qrz.Callsign{Call: info.Callsign, QSLMgr: info.QSLMgr, MQSL: info.MQSL,
+		EQSL: info.EQSL, LoTW: info.LoTW, Addr1: info.Addr1, Addr2: info.Addr2, State: info.State,
+		Zip: info.Zip, Country: info.Country, DXCC: info.DXCC}, info.BioText)
 	if s.assessMemo == nil || len(s.assessMemo) > 2000 {
-		s.assessMemo = map[string]*qsldetermine.Assessment{}
+		s.assessMemo = map[string]*qsldetermine.Result{}
 	}
-	s.assessMemo[key] = &a
-	return &a
+	s.assessMemo[key] = &r
+	return &r
 }
 
-// SigChip is one stated fact in the signal strip.
+// SigChip is one part of the classification in the strip.
 type SigChip struct {
 	Kind     string // css class suffix
 	Text     i18n.Msg
-	Title    i18n.Msg // source and the quoted words
-	Decisive bool     // the suggestion rests on it
-	Scoped   bool     // limited to a case, never decisive
+	Title    i18n.Msg
+	Decisive bool // the preferred route, or the status when it decides alone
 }
 
-// SigView is what the research panel shows about a station's QSL wishes: the
-// stated facts as chips, then either the suggestion with its reason or the
-// reason there is none.
+// SigView is what the research panel (Inbox, QSO in progress, Desk card)
+// shows about a station's QSL wishes: the classification as chips - status,
+// accepted routes (preferred marked), via, contribution - and the route the
+// Desk preselects with the classifier's reason.
 type SigView struct {
+	Status  string // paper, no-paper, unclear, unknown
 	Chips   []SigChip
 	Suggest string   // "B", "D", "M", "N" or ""
 	Manager string   // callsign for "M"
-	Why     i18n.Msg // the words the suggestion rests on
-	Note    i18n.Msg // why there is no suggestion
+	Why     i18n.Msg // the classifier's reason
+	Note    i18n.Msg // why nothing is preselected
 }
 
-// sigViewFor renders an assessment (nil for no station info).
-func sigViewFor(a *qsldetermine.Assessment) *SigView {
-	if a == nil {
+// sigViewFor renders a classification (nil for no station info).
+func sigViewFor(r *qsldetermine.Result) *SigView {
+	if r == nil {
 		return nil
 	}
-	v := &SigView{Suggest: a.Suggest, Manager: a.Manager}
-	type chipKey struct {
-		kind, value string
-		scoped      bool
-	}
-	seen := map[chipKey]int{}
-	for _, sg := range a.Signals {
-		if sg.Kind == qsldetermine.KindFlag {
-			continue // the flags line shows them
-		}
-		// the same statement in the field and in the bio is one chip (the first source wins the tooltip)
-		k := chipKey{string(sg.Kind), sg.Value, sg.Scoped}
-		if i, dup := seen[k]; dup {
-			v.Chips[i].Decisive = v.Chips[i].Decisive || sg.Decisive
-			continue
-		}
-		seen[k] = len(v.Chips)
-		c := SigChip{Kind: string(sg.Kind), Decisive: sg.Decisive, Scoped: sg.Scoped}
-		c.Text = sigText(sg)
-		src := i18n.M("bio")
-		if sg.Source == qsldetermine.SourceQSLMgr {
-			src = i18n.M("qslmgr field")
-		}
-		if sg.Scoped {
-			c.Title = i18n.M("%s: \"%s\" - limited to a case, not used", src, sg.Quote)
-		} else {
-			c.Title = i18n.M("%s: \"%s\"", src, sg.Quote)
+	v := &SigView{Status: r.Status(), Suggest: r.Suggest(), Manager: r.Manager}
+	why := i18n.M("%s", r.Reason)
+	st := SigChip{Kind: "status-" + v.Status, Text: statusText(v.Status), Title: why, Decisive: v.Status != "paper"}
+	v.Chips = append(v.Chips, st)
+	pref := map[string]string{"B": "bureau", "D": "direct", "O": "oqrs"}[r.Preferred]
+	for _, rt := range r.Routes() {
+		c := SigChip{Kind: rt, Text: routeText(rt), Title: why, Decisive: rt == pref}
+		if rt == pref {
+			c.Text = map[string]i18n.Msg{"bureau": i18n.M("Bureau (preferred)"), "direct": i18n.M("Direct (preferred)"), "oqrs": i18n.M("OQRS (preferred)")}[rt]
+			c.Title = i18n.M("The station prefers this route")
 		}
 		v.Chips = append(v.Chips, c)
 	}
-	sort.SliceStable(v.Chips, func(i, j int) bool { return chipRank[v.Chips[i].Kind] < chipRank[v.Chips[j].Kind] })
-
-	switch {
-	case a.Suggest != "" && a.Both:
-		v.Why = i18n.M("bureau and direct both listed - bureau is cheaper")
-	case a.Suggest != "":
-		if d := a.Decisive(); len(d) > 0 {
-			src := i18n.M("bio")
-			if d[0].Source == qsldetermine.SourceQSLMgr {
-				src = i18n.M("qslmgr field")
-			}
-			v.Why = i18n.M("%s: \"%s\"", src, d[0].Quote)
+	if r.Manager != "" {
+		v.Chips = append(v.Chips, SigChip{Kind: "manager", Text: i18n.M("via %s", r.Manager), Title: i18n.M("QSL manager or home call")})
+	}
+	switch r.Contribution {
+	case "required":
+		v.Chips = append(v.Chips, SigChip{Kind: "contribution", Text: i18n.M("asks for return postage"),
+			Title: i18n.M("SAE/SASE, IRC, green stamps, money, PayPal or a fee - see the bio")})
+	case "not-needed":
+		v.Chips = append(v.Chips, SigChip{Kind: "no-contribution", Text: i18n.M("no return postage needed")})
+	}
+	v.Why = why
+	switch v.Status {
+	case "unknown":
+		v.Note = i18n.M("QRZ says nothing about QSL cards - nothing preselected.")
+	case "unclear":
+		if r.Manager != "" {
+			v.Note = i18n.M("Manager %s named, but no route for it.", r.Manager)
+		} else {
+			v.Note = i18n.M("Paper cards wanted, but no usable route (direct without a full postal address).")
 		}
-	default:
-		switch a.Note {
-		case qsldetermine.NoteElectronicOnly:
-			v.Note = i18n.M("Only electronic confirmations listed - no paper route stated.")
-		case qsldetermine.NotePaperNoRoute:
-			v.Note = i18n.M("Paper QSL accepted, no route stated.")
-		case qsldetermine.NoteConflict:
-			v.Note = i18n.M("qslmgr and bio contradict each other - nothing suggested.")
-		case qsldetermine.NoteScopedRefusal:
-			v.Note = i18n.M("A refusal limited to a case (see the chip) - nothing suggested.")
-		default:
-			v.Note = i18n.M("No QSL route found in QRZ's qslmgr or bio.")
+	case "paper":
+		if v.Suggest == "" {
+			v.Note = i18n.M("Cards only through OQRS - request one instead of sending a card.")
 		}
 	}
 	return v
 }
 
-var chipRank = map[string]int{
-	"manager": 0, "bureau": 1, "only-bureau": 1, "direct": 2, "only-direct": 2, "no-bureau": 3, "no-direct": 3,
-	"refuses-paper": 4, "accepts-paper": 5, "oqrs": 6, "electronic": 7,
+func statusText(s string) i18n.Msg {
+	switch s {
+	case "paper":
+		return i18n.M("Paper QSL")
+	case "no-paper":
+		return i18n.M("No paper QSL")
+	case "unclear":
+		return i18n.M("Unclear")
+	}
+	return i18n.M("Nothing stated")
 }
 
-func sigText(sg qsldetermine.Signal) i18n.Msg {
-	switch sg.Kind {
-	case qsldetermine.KindBureau:
+func routeText(r string) i18n.Msg {
+	switch r {
+	case "bureau":
 		return i18n.M("Bureau")
-	case qsldetermine.KindDirect:
+	case "direct":
 		return i18n.M("Direct")
-	case qsldetermine.KindOnlyBureau:
-		return i18n.M("Bureau only")
-	case qsldetermine.KindOnlyDirect:
-		return i18n.M("Direct only")
-	case qsldetermine.KindNoBureau:
-		return i18n.M("No bureau")
-	case qsldetermine.KindNoDirect:
-		return i18n.M("No direct")
-	case qsldetermine.KindManager:
-		return i18n.M("Manager %s", sg.Value)
-	case qsldetermine.KindRefusesPaper:
-		if sg.Value == "electronic-only" {
-			return i18n.M("Electronic only")
-		}
-		return i18n.M("No paper QSL")
-	case qsldetermine.KindAcceptsPaper:
-		return i18n.M("Paper QSL")
-	case qsldetermine.KindOQRS:
-		return i18n.M("OQRS")
 	}
-	return i18n.M("%s", strings.TrimSpace(sg.Value))
+	return i18n.M("OQRS")
 }
 
 // routeFromAssessment is the route the Desk (and a reply to a received card)
-// offers first when QRZ states one: B and D as stated, a manager as via
-// manager - bureau when QRZ says so, else direct. Refusals and silence
-// preselect nothing: the operator chooses.
+// offers first: B and D as classified (the preferred one when stated), a
+// manager as via manager - bureau when only that is named for it, else
+// direct. Refusals, OQRS-only and silence preselect nothing.
 func routeFromAssessment(row *QueueRow) (code, manager string) {
 	manager = row.MgrPrefill
 	switch row.Suggested {

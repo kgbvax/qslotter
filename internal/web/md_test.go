@@ -84,7 +84,7 @@ func TestDeskMasterDetail(t *testing.T) {
 	kd := addQueued(t, st, "DL2ZZZ", "20240103")
 	kb := addQueued(t, st, "DL4WWW", "20240105")
 	for call, m := range map[string]string{"DL2ZZZ": "direct", "DL4WWW": "bureau"} {
-		if err := st.PutStation(&store.StationInfo{Callsign: call, QSLMgr: m}); err != nil {
+		if err := st.PutStation(&store.StationInfo{Callsign: call, QSLMgr: m, Addr1: "Street 1", Addr2: "Town"}); err != nil {
 			t.Fatal(err)
 		}
 	}

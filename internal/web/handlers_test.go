@@ -369,7 +369,7 @@ func TestWorkQueue(t *testing.T) {
 	km := addQueued(t, st, "DL3YYY", "20240104")
 	kb := addQueued(t, st, "DL4WWW", "20240105")
 	for call, info := range map[string]*store.StationInfo{
-		"DL2ZZZ": {QSLMgr: "direct"}, "DL3YYY": {QSLMgr: "K2ABC"}, "DL4WWW": {QSLMgr: "bureau"},
+		"DL2ZZZ": {QSLMgr: "direct", Addr1: "Hauptstr. 1", Addr2: "Berlin"}, "DL3YYY": {QSLMgr: "K2ABC"}, "DL4WWW": {QSLMgr: "bureau"},
 	} {
 		info.Callsign = call
 		if err := st.PutStation(info); err != nil {

@@ -162,15 +162,20 @@ radio. Here the route is chosen.
 
 ## 3. Decision model: suggestion ≠ decision
 
-- `internal/qsldetermine` reads the QRZ qslmgr field and bio into *signals*
-  (bureau, direct, only/no..., manager, refuses/accepts paper, OQRS,
-  electronic), each with its source and the quoted words. A *suggestion* (B, D,
-  M, N) exists only when those signals state a route or a refusal. Flags
-  (mQSL/eQSL/LoTW) and mere mentions of eQSL/LoTW are facts shown as chips,
-  never a reason to suggest. No confidence rating: either QRZ states it or it
-  does not.
-- The suggestion is displayed, never silently acted on. Where QRZ states no
-  route the Desk preselects nothing.
+- `internal/qsldetermine` classifies the QRZ record by the operator's
+  labelling rules (`qpc/LABELS.md` on the qpc branch, 2026-10-02/03): status
+  (paper / no-paper / unclear / unknown), every accepted route (bureau,
+  direct, OQRS), the preferred one, a via callsign and a contribution flag.
+  What qslmgr and the bio's card sentences state decides; when they state
+  nothing, mQSL and the postal address do (full address = direct, mQSL 1 =
+  bureau, mQSL 0 = no paper); direct needs a full address. Shown as chips
+  with the classifier's reason in the Inbox, the QSO in progress and on the
+  Desk card. It replaced the "never guess" `Assess` (2026-10-04): on the
+  operator's 350 labelled stations it is right on 314 (status, routes, via),
+  `Assess` on 149 (silent on 150).
+- The suggestion is displayed, never silently acted on. The Desk preselects
+  the suggested route (the preferred one when stated); unclear, unknown and
+  OQRS-only preselect nothing.
 - Two decisions: the Inbox decision (yes / no card / written now) is recorded
   on the queue item and survives queue recompute; the route (bureau, direct,
   via manager direct, via manager bureau) - or "requested (OQRS)" - is

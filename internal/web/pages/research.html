@@ -1,5 +1,5 @@
-{{define "sigstrip"}}{{with .}}<p class="sigs">{{range .Chips}}<span class="chip sig-{{.Kind}}{{if .Decisive}} decisive{{end}}{{if .Scoped}} scoped{{end}}" title="{{tm .Title}}">{{tm .Text}}</span> {{end}}</p>
-{{if .Suggest}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggest)))}}{{if .Manager}} {{.Manager}}{{end}} <span class="muted">- {{tm .Why}}</span></p>{{else}}<p class="why">{{tm .Note}}</p>{{end}}{{end}}{{end}}
+{{define "sigstrip"}}{{with .}}<p class="sigs">{{range .Chips}}<span class="chip sig-{{.Kind}}{{if .Decisive}} decisive{{end}}" title="{{tm .Title}}">{{tm .Text}}</span> {{end}}</p>
+{{if .Suggest}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggest)))}}{{if .Manager}} {{.Manager}}{{end}} <span class="muted">- {{tm .Why}}</span></p>{{else}}<p class="why">{{tm .Note}} <span class="muted">- {{tm .Why}}</span></p>{{end}}{{end}}{{end}}
 
 {{define "research_panel"}}{{$row := .}}
 {{with .Research}}

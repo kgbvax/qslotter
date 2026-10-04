@@ -17,29 +17,46 @@ func putStation(t *testing.T, st store.Store, in *store.StationInfo) {
 	}
 }
 
-// The case that started the redesign: eQSL/LoTW listed next to "QSL Card" with
-// mQSL=yes. The stored legacy verdict ("no card") must not matter any more.
-func TestResearchStatesFactsNotAGuess(t *testing.T) {
+// The research panel shows the classification: status, every accepted route
+// (the preferred one marked), the contribution flag, and the route the Desk
+// preselects with the classifier's reason.
+func TestResearchShowsClassification(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	putStation(t, st, &store.StationInfo{Callsign: "DL1ABC", QSLMgr: "LOTW, QRZ, EQSL, QSL Card", MQSL: "1", EQSL: "1", LoTW: "1"})
-
+	putStation(t, st, &store.StationInfo{Callsign: "DL1ABC", QSLMgr: "VIA BUREAU OR DIRECT, DIRECT PREFERRED, SASE",
+		MQSL: "1", Addr1: "Hauptstr. 1", Addr2: "Berlin"})
 	body := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String()
-	for _, want := range []string{"Paper QSL accepted, no route stated.", `class="chip sig-accepts-paper`, `class="chip sig-electronic`, "LoTW"} {
+	for _, want := range []string{`chip sig-status-paper"`, `chip sig-bureau"`, `chip sig-direct decisive`, "Direct (preferred)",
+		"asks for return postage", `Suggests <b class="tentative">Direct</b>`, "stamp yes suggested"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("research panel misses %q:\n%s", want, body)
 		}
 	}
-	for _, bad := range []string{"Suggests", "confidence", "stamp none suggested", "stamp yes suggested"} {
-		if strings.Contains(body, bad) {
-			t.Errorf("research panel must not say %q:\n%s", bad, body)
-		}
-	}
-	// Yes sends it to the Desk, which preselects nothing: QRZ stated no route.
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
-	card := get(t, h, "/work/card").Body.String()
-	if !strings.Contains(card, `data-route=""`) || strings.Contains(card, "suggested: by QRZ") || strings.Contains(card, " checked") {
-		t.Fatalf("the Desk must preselect nothing:\n%s", card)
+	if card := get(t, h, "/work/card").Body.String(); !strings.Contains(card, `value="D" data-key="d" checked`) {
+		t.Fatalf("the Desk must preselect the preferred route:\n%s", card)
+	}
+}
+
+// Nothing about cards in the text: mqsl and the postal address decide (the
+// operator's rule, LABELS.md 6); direct needs a full address (rule 5).
+func TestFlagsAndAddressDecideWhenNothingIsStated(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	h := srv.Routes()
+	for _, c := range []struct {
+		info *store.StationInfo
+		want string
+	}{
+		{&store.StationInfo{Callsign: "DL1ABC", MQSL: "1", Addr1: "Hauptstr. 1", Addr2: "Berlin"}, `Suggests <b class="tentative">Direct</b>`},
+		{&store.StationInfo{Callsign: "DL1ABC", MQSL: "1"}, `Suggests <b class="tentative">Bureau</b>`},
+		{&store.StationInfo{Callsign: "DL1ABC", MQSL: "0", Addr1: "Hauptstr. 1", Addr2: "Berlin"}, `Suggests <b class="tentative">No card</b>`},
+		{&store.StationInfo{Callsign: "DL1ABC"}, "QRZ says nothing about QSL cards - nothing preselected."},
+		{&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "Direct only", Addr2: "Berlin"}, `chip sig-status-unclear`},
+	} {
+		putStation(t, st, c.info)
+		if b := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String(); !strings.Contains(b, c.want) {
+			t.Errorf("%+v: want %q:\n%s", c.info, c.want, b)
+		}
 	}
 }
 
@@ -48,7 +65,7 @@ func TestStatedRouteIsSuggestedWithItsWords(t *testing.T) {
 	h := srv.Routes()
 	putStation(t, st, &store.StationInfo{Callsign: "DL1ABC", QSLMgr: "VIA BUREAU / eQSL", MQSL: "0"})
 	body := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String()
-	for _, want := range []string{`Suggests <b class="tentative">Bureau</b>`, "VIA BUREAU / eQSL", "stamp yes suggested", `chip sig-bureau decisive`} {
+	for _, want := range []string{`Suggests <b class="tentative">Bureau</b>`, "VIA BUREAU / eQSL", "stamp yes suggested", `chip sig-bureau"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q:\n%s", want, body)
 		}
@@ -88,7 +105,7 @@ func TestManagerWayDecidesTheDeskRoute(t *testing.T) {
 func TestAssessmentIsNotStale(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	putStation(t, st, &store.StationInfo{Callsign: "DL1ABC", QSLMgr: "direct"})
+	putStation(t, st, &store.StationInfo{Callsign: "DL1ABC", QSLMgr: "direct", Addr1: "Hauptstr. 1", Addr2: "Berlin"})
 	if b := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String(); !strings.Contains(b, `tentative">Direct`) {
 		t.Fatalf("direct expected:\n%s", b)
 	}

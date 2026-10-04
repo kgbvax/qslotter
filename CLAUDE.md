@@ -134,7 +134,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 
 ### QRZ station info
 
-`internal/qrz` calls the QRZ XML API (bio HTML is stripped of style/script; "Not found" is an answer, not an error). `internal/station.Refresher` (always constructed; nil client until credentials exist, swapped live from `/settings`) caches results in the `station_info` table - including a 24 h negative entry for stations QRZ does not know - and publishes `station_updated` so open pages refresh asynchronously. Automatic lookups use `Get` (TTL, in-flight dedup, 2 min cooldown after a failure); only the Refresh button in the research panel (`POST /station/refresh?call=`, answers 204; the `station_updated` event reloads the open panels) forces one. `internal/qsldetermine.Assess` reads the stored raw fields (qslmgr, mqsl/eqsl/lotw, bio) into signals with their source and quoted words and suggests (B/D/M/N) only from *stated* evidence; flags and eQSL/LoTW mentions are facts, never a route. It is computed on read (memoised in `web.assessFor`), not stored: `station_info.qsl_method/qsl_route/refuse_paper/qsl_confidence/qsl_reason` are legacy columns, written empty. Suggestions are shown tentatively (chip strip + dashed hint); the Desk preselects a route only when QRZ states one. `internal/qsldetermine/testdata/corpus.json` is the golden set of real records.
+`internal/qrz` calls the QRZ XML API (bio HTML is stripped of style/script; "Not found" is an answer, not an error). `internal/station.Refresher` (always constructed; nil client until credentials exist, swapped live from `/settings`) caches results in the `station_info` table - including a 24 h negative entry for stations QRZ does not know - and publishes `station_updated` so open pages refresh asynchronously. Automatic lookups use `Get` (TTL, in-flight dedup, 2 min cooldown after a failure); only the Refresh button in the research panel (`POST /station/refresh?call=`, answers 204; the `station_updated` event reloads the open panels) forces one. `internal/qsldetermine.Determine` classifies the stored raw fields (qslmgr, mqsl/eqsl/lotw, postal address, bio) by the operator's labelling rules: status (paper/no-paper/unclear/unknown), accepted routes (bureau/direct/OQRS), preferred route, via (manager or home call), contribution (return postage asked or waived) and a reason. The text decides; when it is silent, mqsl and the address do (full address = direct, mqsl 1 = bureau, mqsl 0 = no paper); direct needs a full address. It is computed on read (memoised in `web.classifyFor`), not stored: `station_info.qsl_method/qsl_route/refuse_paper/qsl_confidence/qsl_reason` are legacy columns, written empty. Shown as a chip strip with the suggestion and reason in the research panel (Inbox, QSO in progress, Desk card); the Desk preselects the suggested route (`Result.Suggest`, the preferred one when stated).
 
 ### PDF cards and printing
 
@@ -144,7 +144,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 
 - `cmd/qslotter`: entrypoint, wiring, config bootstrap (user config dir on first start), log file, shutdown.
 - `cmd/ocr-eval`: offline calibration CLI for received-card photo intake. Runs OCR output (from `tools/ocr-dump.swift`, Apple Vision) through `internal/intake` against a copy of the database and reports auto/pick/miss rates. Working data lives in `/eval/` (git-ignored). Not part of the app.
-- `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against `qsldetermine.Assess`. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
+- `cmd/qsl-eval`: offline calibration CLI comparing LLM-based (Ollama) QSL-method determination against `qsldetermine.Determine`. Not part of the app; scratch outputs (`qsl-eval`, `qsl-eval.jsonl`, `ww` in the repo root) are not shipped artifacts.
 - `internal/adif`: minimal ADIF reader/writer used for Clublog round-trip.
 - `internal/clublog`: Clublog HTTP client (`getadif.php`, `putlogs.php`).
 - `internal/config`: YAML loader with `${ENV}` expansion.
@@ -154,7 +154,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 - `internal/printer`: PDF rendering and platform print shims.
 - `internal/qualify`: eligibility rules and auto-enqueue logic.
 - `internal/qrz`: QRZ XML session, lookup, and bio parsing.
-- `internal/qsldetermine`: what QRZ states about QSL (signals + suggestion, `Assess`).
+- `internal/qsldetermine`: the QSL classifier (`Determine`: status, routes, preferred, via, contribution; `Result.Status/Routes/Suggest/ManagerVia` for display and Desk preselection), the operator's labelling rules; shown by `internal/web/signals.go` (`classifyFor`, computed on read, memoised).
 - `internal/station`: QRZ cache refresher.
 - `internal/store`: `Store` interface and SQLite implementation.
 - `internal/sync`: pull/parse/diff/upsert plus push-back orchestration and background loop.

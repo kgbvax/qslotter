@@ -129,14 +129,15 @@ func (s *Server) buildRow(key string, refresh bool) *QueueRow {
 	return row
 }
 
-// applyAssessment fills the QRZ-derived fields of a row from its station info.
+// applyAssessment fills the QRZ-derived fields of a row from its station
+// info: the classification and the route it preselects.
 func (s *Server) applyAssessment(row *QueueRow) {
-	a := s.assessFor(row.Info)
-	if a == nil {
+	r := s.classifyFor(row.Info)
+	if r == nil {
 		return
 	}
-	row.Suggested, row.MgrPrefill, row.MgrVia = a.Suggest, a.Manager, a.ManagerVia
-	row.Sig = sigViewFor(a)
+	row.Suggested, row.MgrPrefill, row.MgrVia = r.Suggest(), r.Manager, r.ManagerVia()
+	row.Sig = sigViewFor(r)
 }
 
 // routeCode is the form value of a route: B, D, MD (via manager, direct) or MB

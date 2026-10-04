@@ -253,7 +253,7 @@ func TestDeskStaleAfterBack(t *testing.T) {
 func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "direct"}); err != nil {
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", QSLMgr: "direct", Addr1: "Hauptstr. 1", Addr2: "Berlin"}); err != nil {
 		t.Fatal(err)
 	}
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
