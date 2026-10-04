@@ -733,20 +733,22 @@ func TestLayoutEditorDragNudgeSave(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	e.waitFor("the callsign at 14 mm", `Math.abs(`+callX+` - 14) < 0.15 && qslLayoutState().sel === 4`)
+	x0 := template.Default().Fields[4].X
+	xAt := func(d float64) string { return strconv.FormatFloat(x0+d, 'f', 2, 64) }
+	e.waitFor("the callsign 10 mm on", `Math.abs(`+callX+` - `+xAt(10)+`) < 0.15 && qslLayoutState().sel === 4`)
 	e.waitFor("the card redrawn", `Math.abs(`+call+`.getBoundingClientRect().x - `+strconv.FormatFloat(at.Left+10*at.Scale, 'f', 2, 64)+`) < 2`)
-	if !strings.Contains(e.str(`document.querySelector('#lay-props [data-prop="x_mm"]').value`), "14") {
+	if !strings.Contains(e.str(`document.querySelector('#lay-props [data-prop="x_mm"]').value`), strconv.FormatFloat(x0+10, 'f', -1, 64)) {
 		t.Errorf("the X field does not show the new position")
 	}
 
 	e.key(kb.ArrowRight)
-	e.waitFor("the nudge", `Math.abs(`+callX+` - 14.5) < 0.05`)
+	e.waitFor("the nudge", `Math.abs(`+callX+` - `+xAt(10.5)+`) < 0.05`)
 	e.waitFor("the unsaved mark", `!document.getElementById('lay-dirty').hidden`)
 	e.key("s", input.ModifierCtrl)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		saved, err := template.Load(path)
-		if err == nil && math.Abs(saved.Fields[4].X-14.5) < 0.05 {
+		if err == nil && math.Abs(saved.Fields[4].X-(x0+10.5)) < 0.05 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -757,5 +759,5 @@ func TestLayoutEditorDragNudgeSave(t *testing.T) {
 	e.waitFor("the saved state", `document.getElementById('lay-dirty').hidden && !qslLayoutState().dirty`)
 	// Undo brings the nudge back, and the page knows it differs from the file.
 	e.key("z", input.ModifierCtrl)
-	e.waitFor("the undo", `Math.abs(`+callX+` - 14) < 0.05 && qslLayoutState().dirty`)
+	e.waitFor("the undo", `Math.abs(`+callX+` - `+xAt(10)+`) < 0.05 && qslLayoutState().dirty`)
 }

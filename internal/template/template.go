@@ -88,6 +88,12 @@ type Field struct {
 	Style string `yaml:"style,omitempty" json:"style,omitempty"`
 }
 
+// The card size of a template that names none: DL9ET's 140x90 mm cards.
+const (
+	DefaultWidthMM  = 140.0
+	DefaultHeightMM = 90.0
+)
+
 // DefaultStrokeMM is the line width of a shape whose stroke_mm is not set.
 const DefaultStrokeMM = 0.3
 
@@ -186,14 +192,14 @@ func Load(path string) (*Template, error) {
 	return &t, nil
 }
 
-// ApplyDefaults fills in what a file may leave out: the 100x74 mm card and,
+// ApplyDefaults fills in what a file may leave out: the 140x90 mm card and,
 // per text field, 12 pt Helvetica aligned left.
 func (t *Template) ApplyDefaults() {
 	if t.WidthMM == 0 {
-		t.WidthMM = 100
+		t.WidthMM = DefaultWidthMM
 	}
 	if t.HeightMM == 0 {
-		t.HeightMM = 74
+		t.HeightMM = DefaultHeightMM
 	}
 	for i := range t.Fields {
 		f := &t.Fields[i]
@@ -340,39 +346,40 @@ func (t *Template) Clone() *Template {
 	return &c
 }
 
-// Default returns a sane built-in template for DL9ET's standard 100x74mm
+// Default returns a sane built-in template for DL9ET's standard 140x90mm
 // card: up to three QSOs, one row each under small column labels.
 //
-// Vertical budget (Y is the middle of a line; Helvetica caps reach about
-// 0.42*size above it, descenders 0.51*size below, size in mm = pt*0.353):
-// title 3.6-8.9, my_call 13.3-19.2, my_name 21.0-24.3, "Confirming" 26.5-29.8,
-// call/name 32.6-37.9, via 40.0-43.3, labels 46.0-48.3, rows 49.9-64.5,
-// 73 line 67.5-70.8.
+// Vertical budget (Y is the middle of a line; the baseline sits 0.3*size
+// below it, Helvetica caps rise 0.72*size above the baseline, descenders
+// drop 0.21*size below it, size in mm = pt*0.353): title 4.6-11.1,
+// my_call 16.3-23.4, my_name 25.2-29.2, "Confirming" 32.2-36.2,
+// call/name 39.5-46.1, via 48.2-52.2, labels 55.3-57.9, rows 60.1-77.3,
+// 73 line 82.2-86.2.
 func Default() *Template {
 	t := &Template{
-		Name: "default", WidthMM: 100, HeightMM: 74,
-		Rows: RowsCfg{Max: 3, PitchMM: 5.5},
+		Name: "default", WidthMM: 140, HeightMM: 90,
+		Rows: RowsCfg{Max: 3, PitchMM: 6.5},
 		Fields: []Field{
-			{Name: "text", Text: "QSL CARD", X: 50, Y: 6, FontSize: 16, Align: "C", Font: "Helvetica"},
-			{Name: "my_call", X: 4, Y: 16, FontSize: 18, Align: "L", Font: "Helvetica"},
-			{Name: "my_name", X: 4, Y: 22.5, FontSize: 10, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "Confirming 2-way QSO with:", X: 4, Y: 28, FontSize: 10, Align: "L", Font: "Helvetica"},
-			{Name: "call", X: 4, Y: 35, FontSize: 16, Align: "L", Font: "Helvetica"},
-			{Name: "name", X: 60, Y: 35, FontSize: 12, Align: "L", Font: "Helvetica"},
-			{Name: "via", X: 4, Y: 41.5, FontSize: 10, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "QSL CARD", X: 70, Y: 7.5, FontSize: 20, Align: "C", Font: "Helvetica"},
+			{Name: "my_call", X: 6, Y: 19.5, FontSize: 22, Align: "L", Font: "Helvetica"},
+			{Name: "my_name", X: 6, Y: 27, FontSize: 12, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Confirming 2-way QSO with:", X: 6, Y: 34, FontSize: 12, Align: "L", Font: "Helvetica"},
+			{Name: "call", X: 6, Y: 42.5, FontSize: 20, Align: "L", Font: "Helvetica"},
+			{Name: "name", X: 84, Y: 42.5, FontSize: 14, Align: "L", Font: "Helvetica"},
+			{Name: "via", X: 6, Y: 50, FontSize: 12, Align: "L", Font: "Helvetica"},
 			// Column labels over the QSO rows.
-			{Name: "text", Text: "Date", X: 4, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "UTC", X: 30, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "Band", X: 46, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "Mode", X: 62, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "RST", X: 82, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
-			// One row per QSO, the first at Y 51.5, then every 5.5 mm.
-			{Name: "qso_date", X: 4, Y: 51.5, FontSize: 11, Align: "L", Font: "Helvetica"},
-			{Name: "time_on", X: 30, Y: 51.5, FontSize: 11, Align: "L", Font: "Helvetica"},
-			{Name: "band", X: 46, Y: 51.5, FontSize: 11, Align: "L", Font: "Helvetica"},
-			{Name: "mode", X: 62, Y: 51.5, FontSize: 11, Align: "L", Font: "Helvetica"},
-			{Name: "rst_sent", X: 82, Y: 51.5, FontSize: 11, Align: "L", Font: "Helvetica"},
-			{Name: "text", Text: "73 de DL9ET", X: 50, Y: 69, FontSize: 10, Align: "C", Font: "Helvetica"},
+			{Name: "text", Text: "Date", X: 6, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "UTC", X: 42, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Band", X: 64, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "Mode", X: 87, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "RST", X: 115, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
+			// One row per QSO, the first at Y 62, then every 6.5 mm.
+			{Name: "qso_date", X: 6, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "time_on", X: 42, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "band", X: 64, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "mode", X: 87, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "rst_sent", X: 115, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			{Name: "text", Text: "73 de DL9ET", X: 70, Y: 84, FontSize: 12, Align: "C", Font: "Helvetica"},
 		},
 	}
 	t.ApplyDefaults()

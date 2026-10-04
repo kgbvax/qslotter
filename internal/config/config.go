@@ -169,7 +169,7 @@ func Load(path string) (*Config, error) {
 		cfg.Qualify.OverrideMarker = "QSL!"
 	}
 	if cfg.Printer.PaperSizeMM == [2]float64{0, 0} {
-		cfg.Printer.PaperSizeMM = [2]float64{100, 74}
+		cfg.Printer.PaperSizeMM = [2]float64{140, 90}
 	}
 	if cfg.UDP.Listen == "" {
 		cfg.UDP.Listen = "127.0.0.1:1273"
@@ -241,7 +241,7 @@ qrz:
     cache_ttl: 168h
 printer:
     name: ""                  # empty = system default
-    paper_size_mm: [100, 74]
+    paper_size_mm: [140, 90]
     offset_mm: [0, 0]         # x, y: shifts every print (Settings > Card layout)
 card:
     template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Card layout)

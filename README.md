@@ -127,7 +127,7 @@ which is why it is the primary feed and Clublog is the backstop.
 coordinates, see `internal/template`) and sends it to the printer — on
 Windows through SumatraPDF's silent print, elsewhere through `lp`. Set
 `printer.name` to pin a printer; otherwise the system default is used.
-Card defaults: 100 × 74 mm.
+Card defaults: 140 × 90 mm.
 
 **Settings > Card layout** edits the template visually: upload a scan of
 your pre-printed card, drag the fields (call, name, date, band, ... plus

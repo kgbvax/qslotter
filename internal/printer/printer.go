@@ -295,7 +295,7 @@ const FitMarginMM = fitMarginMM
 func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure measureFunc) []drawOp {
 	width := tmpl.WidthMM
 	if width <= 0 {
-		width = 100 // template.Load's default
+		width = template.DefaultWidthMM // template.Load's default
 	}
 	var ops []drawOp
 	place := func(idx, row int, f template.Field, y float64, text string) {

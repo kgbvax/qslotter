@@ -31,7 +31,7 @@ qrz:
 printer:
   name: ""              # empty = system default
   command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
-  paper_size_mm: [100, 74]
+  paper_size_mm: [140, 90]
   offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
                         # (measure a test card under Settings > Card layout)
 

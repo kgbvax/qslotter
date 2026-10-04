@@ -300,8 +300,8 @@ func TestDefaultTemplateFits(t *testing.T) {
 		// Centred fields are centred on their X (the old renderer ignored Align).
 		for _, text := range []string{"QSL CARD", "73 de DL9ET"} {
 			got := findOps(ops, text)
-			if len(got) != 1 || math.Abs(got[0].X+got[0].W/2-50) > 1e-9 {
-				t.Errorf("%q ops = %+v, want one centred on X 50", text, got)
+			if len(got) != 1 || math.Abs(got[0].X+got[0].W/2-tmpl.WidthMM/2) > 1e-9 {
+				t.Errorf("%q ops = %+v, want one centred on X %v", text, got, tmpl.WidthMM/2)
 			}
 		}
 	}
@@ -504,8 +504,8 @@ func TestRenderOptions(t *testing.T) {
 func TestPreview(t *testing.T) {
 	tmpl := template.Default()
 	tmpl.Fields = append(tmpl.Fields,
-		template.Field{Kind: template.KindLine, X: 50, Y: 70, W: 60},                                      // runs off the card
-		template.Field{Name: "text", Text: "low", X: 4, Y: 73.5, FontSize: 12, Align: "L", Font: "Times"}) // below the edge
+		template.Field{Kind: template.KindLine, X: 100, Y: 70, W: 60},                                     // runs off the card
+		template.Field{Name: "text", Text: "low", X: 4, Y: 89.5, FontSize: 12, Align: "L", Font: "Times"}) // below the edge
 	card := CardFields{Call: "DL1ABC", Name: "Hans-Joachim Müller-Lüdenscheidt von und zu Hohenzollern", MyCall: "DL9ET",
 		Rows: testRows(5)}
 	ops, pages, err := Preview(tmpl, card)

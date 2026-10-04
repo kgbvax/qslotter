@@ -355,9 +355,9 @@ func TestLayoutPreview(t *testing.T) {
 	}
 
 	bad := template.Default()
-	bad.Fields[5].X, bad.Fields[5].Y = 6, 35 // name onto the call
+	bad.Fields[5].X, bad.Fields[5].Y = 8, bad.Fields[4].Y // name onto the call
 	bad.Rows.PitchMM = 2
-	bad.Fields = append(bad.Fields, template.Field{Kind: template.KindRect, X: 50, Y: 50, W: 60, H: 10})
+	bad.Fields = append(bad.Fields, template.Field{Kind: template.KindRect, X: 50, Y: 50, W: 100, H: 10})
 	bad.Rows.Max = 2 // 3 QSOs on the Desk card below: two cards
 	a = previewOf(t, h, "long", bad)
 	for _, want := range []string{"Callsign and Name print on top of each other", "The rows of Date run into each other", "Box: partly off the card"} {
@@ -509,9 +509,9 @@ func TestLayoutGerman(t *testing.T) {
 	requestDE(t, h, http.MethodPost, "/settings/cards/offset", url.Values{"x": {"99"}})
 	sendJSON(t, h, "/settings/cards/test?sample=short", template.Default(), de)
 	bad := template.Default()
-	bad.Fields[5].X, bad.Fields[5].Y, bad.Rows.PitchMM, bad.Rows.Max = 6, 35, 2, 2
-	bad.Fields = append(bad.Fields, template.Field{Kind: template.KindRect, X: 50, Y: 50, W: 60, H: 10},
-		template.Field{Kind: template.KindLine, X: 50, Y: 72, W: 60})
+	bad.Fields[5].X, bad.Fields[5].Y, bad.Rows.PitchMM, bad.Rows.Max = 8, bad.Fields[4].Y, 2, 2
+	bad.Fields = append(bad.Fields, template.Field{Kind: template.KindRect, X: 50, Y: 50, W: 100, H: 10},
+		template.Field{Kind: template.KindLine, X: 50, Y: 89, W: 60, H: 5})
 	sendJSON(t, h, "/settings/cards/preview?sample=long", bad, de)
 	for _, p := range []string{"/settings/cards", "/settings/cards?name=A", "/settings/cards?name=%3Abuiltin", "/settings"} {
 		if r := requestDE(t, h, http.MethodGet, p, nil); r.Code != 200 {

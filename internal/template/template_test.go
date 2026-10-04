@@ -84,8 +84,8 @@ func TestIsRowField(t *testing.T) {
 // on: a via field and one field per row column.
 func TestDefaultLayout(t *testing.T) {
 	d := Default()
-	if d.WidthMM != 100 || d.HeightMM != 74 {
-		t.Fatalf("size = %vx%v, want 100x74", d.WidthMM, d.HeightMM)
+	if d.WidthMM != 140 || d.HeightMM != 90 {
+		t.Fatalf("size = %vx%v, want 140x90", d.WidthMM, d.HeightMM)
 	}
 	have := map[string]bool{}
 	for _, f := range d.Fields {
