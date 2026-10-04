@@ -89,7 +89,7 @@ func TestGermanComplete(t *testing.T) {
 	sync.NoteLogin(st, srv.clublogFn(srv.cfg.Clublog), clublog.ErrForbidden)
 
 	pages := []string{"/", "/queue", "/queue?compact=1", "/decide", "/decide?key=" + url.QueryEscape(key),
-		"/work", "/work/card", "/work/card?filter=O", "/done", "/log", "/settings", "/receive",
+		"/work", "/work/card", "/work/card?filter=O", "/done", "/log", "/settings", "/settings/cards", "/receive",
 		"/nav", "/queue/list", "/work/list", "/work/manager?manager=K2ABC", "/work/manager?manager=",
 		"/receive?call=DL3YYY"}
 	for _, p := range pages {

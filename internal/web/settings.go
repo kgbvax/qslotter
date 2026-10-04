@@ -3,9 +3,11 @@ package web
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,14 +68,11 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
 		return
 	}
-	newCfg, err := config.Load(s.cfgPath)
+	newCfg, err := s.reloadConfig()
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, "config saved, but reloading it failed: %s", err.Error())
 		return
 	}
-	s.cfgMu.Lock()
-	s.cfg = newCfg
-	s.cfgMu.Unlock()
 
 	// Live-swap the QRZ client: the shared refresher serves both the web UI
 	// and the UDP listener's lookups.
@@ -144,11 +143,46 @@ func (s *Server) validateCredentials(cfg *config.Config) (qrzStatus, clublogStat
 	return qrzStatus, clublogStatus
 }
 
+// reloadConfig loads the config file again and makes it the live config.
+func (s *Server) reloadConfig() (*config.Config, error) {
+	newCfg, err := config.Load(s.cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	s.cfgMu.Lock()
+	s.cfg = newCfg
+	s.cfgMu.Unlock()
+	return newCfg, nil
+}
+
 // updateConfigFile edits section.key = value pairs in a YAML config file
 // in place. It re-marshals the parsed node tree, so comments and unknown
 // keys survive; written values are double-quoted so passwords that look
 // like numbers or booleans stay strings on reload.
 func updateConfigFile(path string, vals map[string]string) error {
+	nodes := map[string]*yaml.Node{}
+	for k, v := range vals {
+		nodes[k] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v, Style: yaml.DoubleQuotedStyle}
+	}
+	return updateConfigNodes(path, nodes)
+}
+
+// floatPair is a YAML flow sequence of two numbers ("[1.5, -0.5]"), for
+// settings such as printer.offset_mm.
+func floatPair(a, b float64) *yaml.Node {
+	num := func(v float64) *yaml.Node {
+		tag := "!!float" // a whole number reads as !!int: tagged as float, it would print the tag
+		if v == math.Trunc(v) {
+			tag = "!!int"
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: strconv.FormatFloat(v, 'f', -1, 64)}
+	}
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle, Content: []*yaml.Node{num(a), num(b)}}
+}
+
+// updateConfigNodes sets section.key to the given nodes in a YAML config
+// file in place, like updateConfigFile, for values that are not strings.
+func updateConfigNodes(path string, vals map[string]*yaml.Node) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read: %w", err)
@@ -172,7 +206,7 @@ func updateConfigFile(path string, vals map[string]string) error {
 	sort.Strings(keys)
 	for _, k := range keys {
 		parts := strings.SplitN(k, ".", 2)
-		if err := setConfigValue(root, parts[0], parts[1], vals[k]); err != nil {
+		if err := setConfigNode(root, parts[0], parts[1], vals[k]); err != nil {
 			return err
 		}
 	}
@@ -183,7 +217,10 @@ func updateConfigFile(path string, vals map[string]string) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
-func setConfigValue(root *yaml.Node, section, key, val string) error {
+// setConfigNode sets section.key to val (a node built by the caller),
+// creating the section and the key when missing. The existing value node is
+// replaced in place, so a comment on its line survives.
+func setConfigNode(root *yaml.Node, section, key string, val *yaml.Node) error {
 	sec := mappingValue(root, section)
 	if sec == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: section}
@@ -196,11 +233,11 @@ func setConfigValue(root *yaml.Node, section, key, val string) error {
 	valueNode := mappingValue(sec, key)
 	if valueNode == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-		valueNode = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str"}
-		sec.Content = append(sec.Content, keyNode, valueNode)
+		sec.Content = append(sec.Content, keyNode, val)
+		return nil
 	}
-	valueNode.SetString(val)
-	valueNode.Style = yaml.DoubleQuotedStyle
+	val.LineComment, val.HeadComment, val.FootComment = valueNode.LineComment, valueNode.HeadComment, valueNode.FootComment
+	*valueNode = *val
 	return nil
 }
 

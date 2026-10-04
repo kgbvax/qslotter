@@ -32,9 +32,12 @@ printer:
   name: ""              # empty = system default
   command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
   paper_size_mm: [100, 74]
+  offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
+                        # (measure a test card under Settings > Card layout)
 
 card:
-  template: default.yaml
+  template: ""          # active card layout: cards/<name>.yaml, edited under Settings > Card layout;
+                        # "" = the built-in layout
 
 qualify:
   exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]

@@ -7,12 +7,14 @@
 package printer
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,12 +26,16 @@ import (
 // QSORow is one confirmed QSO on a card.
 type QSORow struct {
 	QSODate, TimeOn, Band, Mode, RSTSent, RSTRcvd, Freq string
+	// SatName and FreqRX are the satellite name (ADIF SAT_NAME) and the
+	// receive frequency (FREQ_RX) of a satellite or split QSO.
+	SatName, FreqRX string
 }
 
 // CardFields is everything printed on one card (or one card per page when
 // Rows exceed the template).
 type CardFields struct {
 	Call, Name, QTH, MyCall, MyName, QSLMsg string
+	MyQTH                                   string // station.qth (field my_qth)
 	// Via is the manager callsign for a manager card ("" otherwise); the
 	// template field "via" prints "via <CALL>" when set, nothing otherwise.
 	Via  string
@@ -66,6 +72,18 @@ type Options struct {
 	Copies   int
 }
 
+// RenderOptions adjust a rendered card beyond its template.
+type RenderOptions struct {
+	// OffsetXMM and OffsetYMM shift everything printed (printer.offset_mm):
+	// they make up for a printer that feeds the card a little off.
+	OffsetXMM, OffsetYMM float64
+	// Ruler adds millimetre ticks along the top and left edge (a test card:
+	// measure where the 10 mm tick lands to find the offset).
+	Ruler bool
+	// Label is printed small in the bottom right corner (a test card).
+	Label string
+}
+
 // New returns the platform-specific Printer. Defined in printer_unix.go
 // (//go:build darwin || linux) and printer_windows.go.
 
@@ -87,11 +105,30 @@ func RenderPDF(path string, tmpl *template.Template, fields QSOFields) error {
 // continue on further pages (one page = one physical card; the shared fields
 // repeat on every page). Zero rows is an error.
 func RenderCard(path string, tmpl *template.Template, card CardFields) error {
-	pdf, err := buildPDF(tmpl, card)
+	return Render(path, tmpl, card, RenderOptions{})
+}
+
+// Render is RenderCard with options: a printer offset, a test card's ruler
+// and label.
+func Render(path string, tmpl *template.Template, card CardFields, opts RenderOptions) error {
+	pdf, err := buildPDF(tmpl, card, opts)
 	if err != nil {
 		return err
 	}
 	return pdf.OutputFileAndClose(path)
+}
+
+// RenderBytes is Render into memory (the layout editor's PDF view).
+func RenderBytes(tmpl *template.Template, card CardFields, opts RenderOptions) ([]byte, error) {
+	pdf, err := buildPDF(tmpl, card, opts)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // MaxRows reports how many QSO rows one card of this template holds (>= 1).
@@ -102,9 +139,12 @@ func MaxRows(tmpl *template.Template) int {
 	return tmpl.MaxRows()
 }
 
+// ptToMM converts a font size in points to millimetres.
+func ptToMM(pt float64) float64 { return pt * 25.4 / 72 }
+
 // buildPDF lays out the whole card document, one page per MaxRows(tmpl)
 // rows, without writing it.
-func buildPDF(tmpl *template.Template, card CardFields) (*fpdf.Fpdf, error) {
+func buildPDF(tmpl *template.Template, card CardFields, opts RenderOptions) (*fpdf.Fpdf, error) {
 	if tmpl == nil {
 		return nil, errors.New("printer: no card template")
 	}
@@ -123,22 +163,78 @@ func buildPDF(tmpl *template.Template, card CardFields) (*fpdf.Fpdf, error) {
 	// would print as two garbage characters each. layout has already
 	// replaced what cp1252 cannot hold (see cp1252Text).
 	tr := pdf.UnicodeTranslatorFromDescriptor("")
-	measure := func(font string, size float64, s string) float64 {
-		pdf.SetFont(font, "", size)
+	measure := func(font, style string, size float64, s string) float64 {
+		pdf.SetFont(font, style, size)
 		return pdf.GetStringWidth(tr(s))
 	}
+	ox, oy := opts.OffsetXMM, opts.OffsetYMM
 	for _, rows := range chunkRows(card.Rows, MaxRows(tmpl)) {
 		pdf.AddPage()
 		for _, op := range layout(tmpl, card, rows, measure) {
-			pdf.SetFont(op.Font, "", op.FontSize)
-			pdf.SetXY(op.X, op.Y)
-			pdf.CellFormat(op.W, 0, tr(op.Text), "", 0, "L", false, 0, "")
+			switch op.Kind {
+			case template.KindLine:
+				pdf.SetLineWidth(op.StrokeMM)
+				pdf.Line(op.X+ox, op.Y+oy, op.X+op.W+ox, op.Y+op.H+oy)
+			case template.KindRect:
+				pdf.SetLineWidth(op.StrokeMM)
+				pdf.Rect(op.X+ox, op.Y+oy, op.W, op.H, "D")
+			default:
+				// Y is the middle of the line: the baseline sits 0.3 of the
+				// font size below it (fpdf's CellFormat with h=0 does the
+				// same). Text takes the position as is - SetXY would read a
+				// negative coordinate (an offset past the edge) as measured
+				// from the other edge.
+				pdf.SetFont(op.Font, op.Style, op.FontSize)
+				pdf.Text(op.X+ox, op.Y+oy+0.3*ptToMM(op.FontSize), tr(op.Text))
+			}
+		}
+		if opts.Ruler {
+			drawRuler(pdf, tmpl.WidthMM, tmpl.HeightMM, ox, oy)
+		}
+		if opts.Label != "" {
+			pdf.SetFont("Helvetica", "", 5)
+			s := tr(cp1252Text(opts.Label))
+			pdf.Text(tmpl.WidthMM-2-pdf.GetStringWidth(s)+ox, tmpl.HeightMM-2+oy, s)
 		}
 	}
 	if err := pdf.Error(); err != nil {
 		return nil, err
 	}
 	return pdf, nil
+}
+
+// drawRuler draws millimetre ticks along the top and the left edge of a
+// width x height card, shifted by the offset like everything else: 1 mm
+// ticks short, every 5 mm longer, every 10 mm long with its number. On the
+// printed card, the distance from the card edge to the tick marked 10 tells
+// the offset (11.5 mm: the printer shifts by +1.5, set -1.5).
+func drawRuler(pdf *fpdf.Fpdf, width, height, ox, oy float64) {
+	pdf.SetLineWidth(0.1)
+	pdf.SetFont("Helvetica", "", 4.5)
+	tick := func(i int) float64 {
+		switch {
+		case i%10 == 0:
+			return 3.5
+		case i%5 == 0:
+			return 2.2
+		}
+		return 1.2
+	}
+	for i := 1; float64(i) < width; i++ {
+		x, l := float64(i)+ox, tick(i)
+		pdf.Line(x, oy, x, oy+l)
+		if i%10 == 0 {
+			s := strconv.Itoa(i)
+			pdf.Text(x-pdf.GetStringWidth(s)/2, oy+l+1.8, s)
+		}
+	}
+	for i := 1; float64(i) < height; i++ {
+		y, l := float64(i)+oy, tick(i)
+		pdf.Line(ox, y, ox+l, y)
+		if i%10 == 0 {
+			pdf.Text(ox+l+0.6, y+0.55, strconv.Itoa(i))
+		}
+	}
 }
 
 // chunkRows splits rows into cards of at most n rows each.
@@ -151,20 +247,31 @@ func chunkRows(rows []QSORow, n int) [][]QSORow {
 	return append(cards, rows)
 }
 
-// drawOp is one text placed on a card page. X is the left edge of the text
-// (the field's alignment already applied, kept on the card), Y the line
-// position from the template (row fields shifted to their row), W the text
-// width. Text and FontSize are what is printed: the field value made
-// printable in cp1252 and, when it was too long, shrunk and cut to fit.
+// drawOp is one element placed on a card page. For a text, X is the left
+// edge of the text (the field's alignment already applied, kept on the
+// card), Y the line position from the template (row fields shifted to their
+// row), W the text width; Text, Style and FontSize are what is printed: the
+// field value made printable in cp1252 and, when it was too long, shrunk and
+// cut to fit (Fitted). For a line or rectangle (Kind), X/Y/W/H come from the
+// template as they are. Field is the index of the template field, Row the
+// QSO row (-1 for a once-per-card element).
 type drawOp struct {
+	Kind     string // "" text, template.KindLine, template.KindRect
 	X, Y, W  float64
+	H        float64
 	Text     string
 	Font     string
+	Style    string
 	FontSize float64
+	StrokeMM float64
+	Field    int
+	Row      int
+	Fitted   bool
 }
 
-// measureFunc returns the width in mm of s set in font at size points.
-type measureFunc func(font string, size float64, s string) float64
+// measureFunc returns the width in mm of s set in font and style ("" or
+// "B") at size points.
+type measureFunc func(font, style string, size float64, s string) float64
 
 // Shrink-to-fit: a text that would come closer than fitMarginMM to the card
 // edge it grows towards is set smaller, fontStepPt at a time down to
@@ -176,17 +283,22 @@ const (
 	ellipsis    = "..."
 )
 
+// FitMarginMM is how close shrink-to-fit lets a text come to the card edge
+// it grows towards (the layout editor draws it as a guide).
+const FitMarginMM = fitMarginMM
+
 // layout places the fields of tmpl for one card page holding rows (at most
 // MaxRows(tmpl)): card fields once, row fields once per row, row i shifted
-// down by i*Rows.PitchMM. Fields with an empty value are left out. Texts
-// too long for the card are shrunk to fit (see fitMarginMM).
+// down by i*Rows.PitchMM, lines and rectangles once. Fields with an empty
+// value are left out. Texts too long for the card are shrunk to fit (see
+// fitMarginMM).
 func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure measureFunc) []drawOp {
 	width := tmpl.WidthMM
 	if width <= 0 {
 		width = 100 // template.Load's default
 	}
 	var ops []drawOp
-	place := func(f template.Field, y float64, text string) {
+	place := func(idx, row int, f template.Field, y float64, text string) {
 		text = cp1252Text(text)
 		if text == "" {
 			return
@@ -198,26 +310,42 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 		if size == 0 {
 			size = 12
 		}
+		style := ""
+		if strings.EqualFold(f.Style, "B") {
+			style = "B"
+		}
+		fitted := false
 		room := roomFor(f.Align, f.X, width)
-		w := measure(font, size, text)
+		w := measure(font, style, size, text)
 		for w > room && size > minFontPt {
 			size = math.Max(size-fontStepPt, minFontPt)
-			w = measure(font, size, text)
+			w = measure(font, style, size, text)
+			fitted = true
 		}
 		if w > room {
-			text, w = cutToFit(text, room, func(s string) float64 { return measure(font, size, s) })
+			text, w = cutToFit(text, room, func(s string) float64 { return measure(font, style, size, s) })
+			fitted = true
 		}
 		x := clampX(anchor(f.Align, f.X, w), w, width)
-		ops = append(ops, drawOp{X: x, Y: y, W: w, Text: text, Font: font, FontSize: size})
+		ops = append(ops, drawOp{X: x, Y: y, W: w, Text: text, Font: font, Style: style, FontSize: size,
+			Field: idx, Row: row, Fitted: fitted})
 	}
-	for _, f := range tmpl.Fields {
+	for i, f := range tmpl.Fields {
+		if f.IsShape() {
+			ops = append(ops, drawOp{Kind: strings.ToLower(f.Kind), X: f.X, Y: f.Y, W: f.W, H: f.H,
+				StrokeMM: f.Stroke(), Field: i, Row: -1})
+			continue
+		}
+		if !f.IsText() {
+			continue // an unknown kind (Validate rejects it) prints nothing
+		}
 		if template.IsRowField(f.Name) {
-			for i, r := range rows {
+			for r, qso := range rows {
 				val := f.Text
 				if val == "" {
-					val = rowValue(f.Name, r)
+					val = rowValue(f.Name, qso)
 				}
-				place(f, f.Y+float64(i)*tmpl.Rows.PitchMM, val)
+				place(i, r, f, f.Y+float64(r)*tmpl.Rows.PitchMM, val)
 			}
 			continue
 		}
@@ -225,9 +353,76 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 		if val == "" {
 			val = cardValue(f.Name, card)
 		}
-		place(f, f.Y, val)
+		place(i, -1, f, f.Y, val)
 	}
 	return ops
+}
+
+// Op is one element of a card as the layout editor draws it: the same
+// placement the printed card gets (layout), in millimetres from the card's
+// top-left corner.
+type Op struct {
+	Kind  string  `json:"kind"`  // "text", "line" or "rect"
+	Field int     `json:"field"` // index of the template field
+	Row   int     `json:"row"`   // QSO row, -1 for a once-per-card element
+	X     float64 `json:"x"`     // text: left edge; shape: as in the template
+	Y     float64 `json:"y"`     // text: middle of the line; shape: as in the template
+	W     float64 `json:"w"`
+	H     float64 `json:"h"` // text: the font size in mm
+	// Baseline is where the text sits (Y + 0.3 * the font size in mm).
+	Baseline float64 `json:"baseline,omitempty"`
+	Text     string  `json:"text,omitempty"`
+	Font     string  `json:"font,omitempty"`
+	Style    string  `json:"style,omitempty"`
+	FontSize float64 `json:"font_size,omitempty"` // points, after shrink-to-fit
+	Stroke   float64 `json:"stroke,omitempty"`
+	// Fitted: the text was too long and printed smaller or cut.
+	Fitted bool `json:"fitted,omitempty"`
+	// Outside: part of the element is off the card.
+	Outside bool `json:"outside,omitempty"`
+}
+
+// Preview lays out the first card of card with tmpl as the printer would
+// and returns its elements, plus how many cards the QSOs fill.
+func Preview(tmpl *template.Template, card CardFields) ([]Op, int, error) {
+	if tmpl == nil {
+		return nil, 0, errors.New("printer: no card template")
+	}
+	rows := card.Rows
+	if len(rows) == 0 {
+		rows = []QSORow{{}}
+	}
+	chunks := chunkRows(rows, MaxRows(tmpl))
+	pdf := fpdf.New("P", "mm", "A4", "")
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
+	measure := func(font, style string, size float64, s string) float64 {
+		pdf.SetFont(font, style, size)
+		return pdf.GetStringWidth(tr(s))
+	}
+	w, h := tmpl.WidthMM, tmpl.HeightMM
+	const eps = 1e-9
+	var out []Op
+	for _, d := range layout(tmpl, card, chunks[0], measure) {
+		op := Op{Kind: d.Kind, Field: d.Field, Row: d.Row, X: d.X, Y: d.Y, W: d.W, H: d.H,
+			Stroke: d.StrokeMM, Fitted: d.Fitted}
+		if d.Kind == "" {
+			sz := ptToMM(d.FontSize)
+			op.Kind = template.KindText
+			op.H = sz
+			op.Baseline = d.Y + 0.3*sz
+			op.Text, op.Font, op.Style, op.FontSize = d.Text, d.Font, d.Style, d.FontSize
+			// Caps rise about 0.72 of the size above the baseline,
+			// descenders drop about 0.21 below it.
+			op.Outside = d.X < -eps || d.X+d.W > w+eps || op.Baseline-0.72*sz < -eps || op.Baseline+0.21*sz > h+eps
+		} else {
+			op.Outside = d.X < -eps || d.Y < -eps || d.X+d.W > w+eps || d.Y+d.H > h+eps
+		}
+		out = append(out, op)
+	}
+	if pdf.Error() != nil {
+		return nil, 0, pdf.Error()
+	}
+	return out, len(chunks), nil
 }
 
 // anchor returns the left edge of a text w mm wide whose template anchor is
@@ -295,6 +490,8 @@ func cardValue(name string, c CardFields) string {
 		return strings.ToUpper(c.MyCall)
 	case "my_name":
 		return c.MyName
+	case "my_qth":
+		return c.MyQTH
 	case "qslmsg":
 		return c.QSLMsg
 	case "via":
@@ -322,6 +519,10 @@ func rowValue(name string, r QSORow) string {
 		return r.RSTRcvd
 	case "freq":
 		return r.Freq
+	case "sat_name":
+		return r.SatName
+	case "freq_rx":
+		return r.FreqRX
 	}
 	return ""
 }

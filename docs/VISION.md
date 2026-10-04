@@ -55,7 +55,8 @@ where it stands today.
   2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
   asynchronous = the Desk, card by card or batch Print (B1, B5).
 - **Print QSO data onto the card via a configurable template.** Done: YAML
-  templates with millimetre coordinates; DX name and QTH included.
+  templates with millimetre coordinates; DX name and QTH included. Since
+  2026-10-04 configured visually (Settings > Card layout, see section 4).
 - **Hand-written QSL cards supported**, usually synchronously. Partly done:
   Written at the Desk records the decided route and shows the data to copy;
   written now in the Inbox is still route-less (A3: it must record bureau or
@@ -194,7 +195,16 @@ radio. Here the route is chosen.
 
 Two parallel paths, equal citizens:
 
-- **Print:** PDF via the YAML template → printer (existing path).
+- **Print:** PDF via the YAML template → printer (existing path). The
+  layout is set visually under **Settings > Card layout** (2026-10-04): the
+  fields are dragged onto a scan of the pre-printed card (shown, never
+  printed); the card is drawn from the printer's own layout code, so
+  shrink-to-fit, overlaps and off-card elements show before printing. Several
+  layouts live in `cards/` next to the config, one active (`card.template`).
+  Fields: data fields (incl. satellite name / RX frequency per QSO row and
+  the operator's QTH), fixed text, lines and boxes, bold. A test card prints
+  a millimetre ruler; the measured feed error goes into `printer.offset_mm`,
+  which shifts every print.
 - **Handwritten:** the operator writes the card; the UI's job is to put the
   right data in front of them — their name and address, date, call, band,
   mode, RST, my call, manager if via-manager — and record the outcome.
@@ -288,7 +298,8 @@ stays the only source of truth.
   loop; the button stays for on-demand pushes.
 - SQLite now; CouchDB remains the v2 target (the `Store` interface is already
   backend-agnostic).
-- Card templates stay YAML with millimetre coordinates.
+- Card templates stay YAML with millimetre coordinates (the layout editor
+  writes them; hand-editing still works).
 
 ## 7. Where we are today: gaps vs. this vision
 
@@ -372,6 +383,10 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 13. Top menu = Eingang/Inbox, Schreibtisch/Desk, Posteingang/Incoming QSLs;
     `/` opens the Inbox; German and English UI (D1, D2, D3). **Done 2026-10-01.**
 14. QSO in progress from Log4OM's call broadcast (A1b). **Done 2026-10-01.**
+14a. Visual card layout editor: several layouts, a scan of the card behind
+    the fields, live preview from the printer's layout code, test card with
+    ruler and printer offset; bold, lines/boxes, satellite row fields.
+    **Done 2026-10-04.**
 
 **v2 — platform (stage 2: AI support):**
 
@@ -505,3 +520,13 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   Risks accepted: glaze is young (v0.0.x, one maintainer) and uses an
   undocumented WebView2 export - mitigated by the browser fallback and a
   backend that only loads a URL.
+- **2026-10-04 — Card layout is configured visually.** The operator prints on
+  pre-printed stock: the editor shows a scan of the card behind the fields
+  and asks the server to lay every change out (the browser never sets text
+  itself, so the preview cannot drift from the print). Layouts stay YAML in
+  `cards/` next to the config, several kept, one active via `card.template`
+  (empty = built-in). The printer's feed error is corrected globally
+  (`printer.offset_mm`), measured on a test card with a millimetre ruler.
+  Out of scope: envelope/label printing, per-row shapes, perspective
+  correction of a skewed scan (it is stretched to the card), fonts beyond the
+  PDF core three.

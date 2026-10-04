@@ -8,6 +8,7 @@ package web
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,6 +30,7 @@ import (
 	"github.com/dl9et/qslotter/internal/contact"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/store"
+	"github.com/dl9et/qslotter/internal/template"
 )
 
 // One headless Chrome for the package; each test gets its own tab.
@@ -690,4 +692,70 @@ func TestToastOnError(t *testing.T) {
 			e.waitFor("the network error toast", toast+` === `+strconv.QuoteToASCII(c.offline))
 		})
 	}
+}
+
+// TestLayoutEditorDragNudgeSave: the layout editor's script against the
+// real server - dragging the callsign moves it on the card, an arrow key
+// nudges it, Ctrl+S writes it to the layout file.
+func TestLayoutEditorDragNudgeSave(t *testing.T) {
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfgFile, []byte(layoutTestConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := newBrowserEnv(t, func(s *Server) { s.cfgPath = cfgFile })
+	path := filepath.Join(filepath.Dir(cfgFile), "cards", "A.yaml")
+	if err := template.Default().Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(e.tab, chromedp.Navigate(e.base+"/settings/cards?name=A")); err != nil {
+		t.Fatal(err)
+	}
+	const call = `document.querySelector('[data-field="4"] text.lay-op')`
+	const callX = `(qslLayoutState().model.fields[4].x_mm)`
+	e.waitFor("the card", `window.qslLayoutState && qslLayoutState().ops.length > 0 && !!`+call)
+	// Drag 10 mm to the right (the SVG's scale: screen pixels per mm).
+	var at struct{ X, Y, Scale, Left float64 }
+	if err := chromedp.Run(e.tab, chromedp.Evaluate(`(function () {
+		var hit = document.querySelector('[data-field="4"] .lay-hit');
+		hit.scrollIntoView({block: 'center'});
+		var r = hit.getBoundingClientRect();
+		return {X: r.x + r.width / 2, Y: r.y + r.height / 2, Scale: document.getElementById('lay-svg').getScreenCTM().a,
+			Left: document.querySelector('[data-field="4"] text.lay-op').getBoundingClientRect().x};
+	})()`, &at)); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(e.tab,
+		input.DispatchMouseEvent(input.MouseMoved, at.X, at.Y),
+		input.DispatchMouseEvent(input.MousePressed, at.X, at.Y).WithButton(input.Left).WithButtons(1).WithClickCount(1),
+		input.DispatchMouseEvent(input.MouseMoved, at.X+5*at.Scale, at.Y).WithButton(input.Left).WithButtons(1),
+		input.DispatchMouseEvent(input.MouseMoved, at.X+10*at.Scale, at.Y).WithButton(input.Left).WithButtons(1),
+		input.DispatchMouseEvent(input.MouseReleased, at.X+10*at.Scale, at.Y).WithButton(input.Left).WithClickCount(1),
+	); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the callsign at 14 mm", `Math.abs(`+callX+` - 14) < 0.15 && qslLayoutState().sel === 4`)
+	e.waitFor("the card redrawn", `Math.abs(`+call+`.getBoundingClientRect().x - `+strconv.FormatFloat(at.Left+10*at.Scale, 'f', 2, 64)+`) < 2`)
+	if !strings.Contains(e.str(`document.querySelector('#lay-props [data-prop="x_mm"]').value`), "14") {
+		t.Errorf("the X field does not show the new position")
+	}
+
+	e.key(kb.ArrowRight)
+	e.waitFor("the nudge", `Math.abs(`+callX+` - 14.5) < 0.05`)
+	e.waitFor("the unsaved mark", `!document.getElementById('lay-dirty').hidden`)
+	e.key("s", input.ModifierCtrl)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		saved, err := template.Load(path)
+		if err == nil && math.Abs(saved.Fields[4].X-14.5) < 0.05 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("layout file not saved: %+v, %v", saved, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.waitFor("the saved state", `document.getElementById('lay-dirty').hidden && !qslLayoutState().dirty`)
+	// Undo brings the nudge back, and the page knows it differs from the file.
+	e.key("z", input.ModifierCtrl)
+	e.waitFor("the undo", `Math.abs(`+callX+` - 14) < 0.05 && qslLayoutState().dirty`)
 }

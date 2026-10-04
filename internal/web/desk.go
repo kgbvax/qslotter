@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
@@ -487,36 +488,25 @@ func (s *Server) printCard(keys []string, rt store.Route) error {
 		}
 		qsos = append(qsos, q)
 	}
-	sort.SliceStable(qsos, func(i, j int) bool {
-		if qsos[i].QSODate != qsos[j].QSODate {
-			return qsos[i].QSODate < qsos[j].QSODate
-		}
-		return qsos[i].TimeOn < qsos[j].TimeOn
-	})
 	cfg := s.config()
 	tmpl, err := s.cardTemplate()
 	if err != nil {
 		return err
 	}
-	card := printer.CardFields{
-		Call: qsos[0].Call, MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name,
-	}
+	via := ""
 	if rt.Method == "M" {
-		card.Via = rt.Manager
+		via = rt.Manager
 	}
-	for _, q := range qsos {
-		card.Name = cmpOr(q.Name, card.Name) // newest non-empty wins, as on the Desk
-		card.QTH = cmpOr(q.QTH, card.QTH)
-		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
-			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq})
-	}
+	card := cardFieldsFor(cfg, qsos, via)
 	pdfPath := printer.TempPDFPath()
 	defer func() {
 		if err := os.Remove(pdfPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			log.Printf("print: removing %s: %v", pdfPath, err)
 		}
 	}()
-	if err := printer.RenderCard(pdfPath, tmpl, card); err != nil {
+	if err := printer.Render(pdfPath, tmpl, card, printer.RenderOptions{
+		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
+	}); err != nil {
 		return err
 	}
 	if err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
@@ -527,6 +517,31 @@ func (s *Server) printCard(keys []string, rt store.Route) error {
 		return err
 	}
 	return s.store.QueuePrinted(keys, rt)
+}
+
+// cardFieldsFor is what a card for these QSOs with one station prints: one
+// row per QSO, oldest first, the newest non-empty name and QTH (as on the
+// Desk), via = the manager of a manager card ("" otherwise). The layout
+// editor's sample from a Desk card is built the same way.
+func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.CardFields {
+	qsos = slices.Clone(qsos)
+	sort.SliceStable(qsos, func(i, j int) bool {
+		if qsos[i].QSODate != qsos[j].QSODate {
+			return qsos[i].QSODate < qsos[j].QSODate
+		}
+		return qsos[i].TimeOn < qsos[j].TimeOn
+	})
+	card := printer.CardFields{MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, MyQTH: cfg.Station.QTH, Via: via}
+	if len(qsos) > 0 {
+		card.Call = qsos[0].Call
+	}
+	for _, q := range qsos {
+		card.Name = cmpOr(q.Name, card.Name) // newest non-empty wins, as on the Desk
+		card.QTH = cmpOr(q.QTH, card.QTH)
+		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
+			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq, SatName: q.SatName, FreqRX: q.FreqRX})
+	}
+	return card
 }
 
 // batchDesk applies one action to every ticked card of the Desk list. Each

@@ -509,3 +509,94 @@ main { padding-top: 22px; }
 .chip.sig-oqrs { color: var(--ink-soft); }
 .chip.sig-contribution { border-color: var(--blue); color: var(--blue); }
 .chip.sig-no-contribution { color: var(--ink-soft); }
+
+/* --- Card layout editor (Settings > Card layout, static/layout.js) --- */
+main.lay { max-width: 1240px; }
+.lay-back { margin: 0 0 10px; }
+.lay-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 0 0 10px; }
+.lay-bar > label { font-weight: 600; }
+.lay-form { display: inline; margin: 0; }
+.lay-active { font-size: 13px; font-weight: 600; color: var(--ok); }
+.lay-manage summary { cursor: pointer; font-size: 13.5px; color: var(--ink-soft); }
+.lay-manage[open] summary { margin-bottom: 6px; }
+.lay-manage-in { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.lay-row { display: inline-flex; gap: 6px; align-items: center; }
+.lay-ro { font-size: 13.5px; color: var(--ink-soft); border-left: 3px solid var(--rule); padding: 2px 0 2px 12px; }
+button.danger { border-color: var(--red); color: var(--red); }
+button.danger:hover { background: var(--red); color: #fff; }
+.lay-tools {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 8px;
+  padding: 8px 0; border-top: 1.5px solid var(--ink); border-bottom: 1px solid var(--rule);
+}
+.lay-sep { width: 1px; height: 22px; background: var(--rule); margin: 0 4px; }
+button.lay-primary { background: var(--ink); color: #fff; }
+button.lay-primary:hover { background: var(--blue); border-color: var(--blue); }
+.lay-dirty { font-size: 12.5px; color: var(--inbox); font-weight: 600; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:disabled:hover { background: var(--card); color: var(--ink); }
+
+.lay-main { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 22px; align-items: start; }
+@media (max-width: 900px) { .lay-main { grid-template-columns: 1fr; } }
+#lay-svg {
+  display: block; width: 100%; height: auto; max-height: 72vh;
+  background: var(--paper-deep); border-radius: 3px;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#lay-svg .lay-paper { fill: #fff; }
+#lay-svg .lay-edge { fill: none; stroke: var(--ink); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+#lay-svg .lay-grid line { stroke: var(--ink); stroke-opacity: 0.07; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+#lay-svg .lay-grid line.major { stroke-opacity: 0.15; }
+#lay-svg .lay-grid, #lay-svg image, #lay-svg .lay-margin { pointer-events: none; }
+#lay-svg .lay-margin { fill: none; stroke: var(--teal); stroke-opacity: 0.6; stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+#lay-svg text.lay-op { fill: #10161e; }
+#lay-svg .lay-op.later { fill-opacity: 0.5; stroke-opacity: 0.5; }
+#lay-svg text.lay-op.fitted { fill: var(--inbox); }
+#lay-svg text.lay-op.outside { fill: var(--red); }
+#lay-svg .lay-op.shape { fill: none; stroke: #10161e; }
+#lay-svg .lay-op.shape.outside { stroke: var(--red); }
+#lay-svg .lay-ghost { fill: var(--ink-soft); fill-opacity: 0.6; font-family: 'Schibsted Grotesk', sans-serif; font-style: italic; }
+#lay-svg .lay-hit { fill: transparent; cursor: move; }
+#lay-svg .lay-hit-stroke { fill: none; stroke: transparent; stroke-width: 2; pointer-events: stroke; cursor: move; }
+#lay-svg .lay-el:hover text.lay-op, #lay-svg .lay-el.sel text.lay-op { fill: var(--blue); }
+#lay-svg .lay-el:hover .lay-op.shape, #lay-svg .lay-el.sel .lay-op.shape { stroke: var(--blue); }
+#lay-svg .lay-selbox { fill: none; stroke: var(--blue); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+#lay-svg .lay-handle { fill: var(--blue); cursor: nwse-resize; }
+.lay-view { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 8px 0 0; font-size: 13px; color: var(--ink-soft); }
+.lay-view select { font-size: 13px; padding: 3px 6px; max-width: 340px; }
+.lay-view input[type=range] { width: 90px; vertical-align: middle; }
+.lay-warn { margin: 8px 0 0; padding: 0 0 0 18px; font-size: 13px; color: var(--inbox); }
+.lay-help { font-size: 12.5px; margin-top: 8px; }
+
+.lay-side { background: var(--card); border: 1.5px solid var(--ink); border-radius: 3px; padding: 10px 14px 12px; }
+.lay-side h4 { margin: 12px 0 6px; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+.lay-props h4 { margin-top: 2px; color: var(--ink); font-size: 15px; }
+.lay-props label, .lay-card label { display: block; font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 0; }
+.lay-props label input, .lay-props label select { display: block; width: 100%; margin-top: 2px; }
+.lay-props label.lay-check { display: flex; align-items: center; gap: 6px; margin-top: 20px; color: var(--ink); }
+.lay-props label.lay-check input { width: auto; display: inline; margin: 0; }
+.lay-hint { font-size: 12px; margin: 6px 0 0; }
+.lay-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+input[type=number] {
+  font: 400 14px 'IBM Plex Mono', monospace; color: var(--ink); background: var(--card);
+  border: 1.5px solid var(--ink-soft); border-radius: 3px; padding: 4px 6px; width: 100%;
+}
+.lay-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.lay-list .lay-item {
+  display: block; width: 100%; text-align: left; border: none; border-radius: 2px;
+  padding: 3px 6px; font: 400 13px 'Schibsted Grotesk', sans-serif; background: transparent;
+}
+.lay-list .lay-item:hover { background: var(--paper-deep); color: var(--ink); }
+.lay-list .lay-item.sel { background: var(--blue); color: #fff; }
+.lay-list .lay-item.sel .muted { color: rgba(255, 255, 255, 0.8); }
+
+.lay-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 26px; border-top: 1.5px solid var(--ink); }
+.lay-card p { font-size: 13px; }
+@media (max-width: 900px) { .lay-card { grid-template-columns: 1fr; } }
+
+.lay-pdfview {
+  position: fixed; inset: 4vh 4vw; z-index: 50; display: flex; flex-direction: column;
+  background: var(--card); border: 2px solid var(--ink); border-radius: 4px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.lay-pdfview[hidden] { display: none; }
+.lay-pdfbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--rule); }
+.lay-pdfview iframe { flex: 1; border: 0; width: 100%; }

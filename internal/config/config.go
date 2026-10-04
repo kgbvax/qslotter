@@ -97,8 +97,15 @@ type PrinterCfg struct {
 	Name        string     `yaml:"name"`
 	Command     string     `yaml:"command"`
 	PaperSizeMM [2]float64 `yaml:"paper_size_mm"`
+	// OffsetMM shifts everything printed by x, y millimetres: it makes up
+	// for a printer that feeds the card a little off (set under Settings >
+	// Card layout from a printed test card).
+	OffsetMM [2]float64 `yaml:"offset_mm"`
 }
 
+// CardCfg selects the card layout: Template is the active layout file
+// (empty = the built-in default). The layout editor keeps its layouts in
+// cards/ next to the config file and points Template at the active one.
 type CardCfg struct {
 	Template string `yaml:"template"`
 }
@@ -235,6 +242,9 @@ qrz:
 printer:
     name: ""                  # empty = system default
     paper_size_mm: [100, 74]
+    offset_mm: [0, 0]         # x, y: shifts every print (Settings > Card layout)
+card:
+    template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Card layout)
 qualify:
     exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
     first_contact_only: false
