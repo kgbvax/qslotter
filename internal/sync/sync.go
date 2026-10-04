@@ -240,6 +240,8 @@ func toQSO(rec adif.Record) (*store.QSO, error) {
 		Notes:       rec.Get("NOTES"),
 		Name:        rec.Get("NAME"),
 		QTH:         rec.Get("QTH"),
+		SatName:     rec.Get("SAT_NAME"),
+		FreqRX:      rec.Get("FREQ_RX"),
 		Hash:        hashRecord(rec),
 	}
 	return q, nil

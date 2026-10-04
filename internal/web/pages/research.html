@@ -1,3 +1,4 @@
+{{define "satline"}}{{t "Satellite"}}{{if .SatName}} <b>{{.SatName}}</b>{{end}}{{if .Freq}} &middot; TX {{.Freq}}{{end}}{{if .FreqRX}} &middot; RX {{.FreqRX}}{{end}}{{if or .Freq .FreqRX}} MHz{{end}}{{end}}
 {{define "sigchips"}}{{range .Chips}}<span class="chip sig-{{.Kind}}{{if .Decisive}} decisive{{end}}" title="{{tm .Title}}">{{tm .Text}}</span> {{end}}{{end}}
 {{define "sugline"}}{{if .Suggest}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggest)))}}{{if .Manager}} {{.Manager}}{{end}} <span class="muted">- {{tm .Why}}</span></p>{{else}}<p class="why">{{tm .Note}} <span class="muted">- {{tm .Why}}</span></p>{{end}}{{end}}
 {{define "sigstrip"}}{{with .}}<p class="sigs">{{template "sigchips" .}}</p>

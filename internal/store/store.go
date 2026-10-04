@@ -109,6 +109,16 @@ func (s *SQLiteStore) ensureSchema() error {
 		{"qsl_work_queue", "send_via", `ALTER TABLE qsl_work_queue ADD COLUMN send_via TEXT DEFAULT ''`},
 		{"qsl_work_queue", "note", `ALTER TABLE qsl_work_queue ADD COLUMN note TEXT DEFAULT ''`},
 		{"qsl_work_queue", "channel", `ALTER TABLE qsl_work_queue ADD COLUMN channel TEXT DEFAULT ''`},
+		{"qsos", "freq_rx", `ALTER TABLE qsos ADD COLUMN freq_rx TEXT DEFAULT ''`},
+	}
+	// sat_name came with freq_rx. Satellite QSOs stored before have neither:
+	// clearing their hash makes the next Clublog pull store them again.
+	if _, err := s.db.Exec(`ALTER TABLE qsos ADD COLUMN sat_name TEXT DEFAULT ''`); err == nil {
+		if _, err := s.db.Exec(`UPDATE qsos SET hash='' WHERE upper(prop_mode)='SAT'`); err != nil {
+			return fmt.Errorf("migrate qsos.sat_name: %w", err)
+		}
+	} else if !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("migrate qsos.sat_name: %w", err)
 	}
 	for _, m := range migrations {
 		if _, err := s.db.Exec(m.ddl); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -180,6 +190,8 @@ CREATE TABLE IF NOT EXISTS qsos (
   notes      TEXT,
   name       TEXT,                      -- operator name (ADIF NAME)
   qth        TEXT,                      -- station location (ADIF QTH)
+  sat_name   TEXT DEFAULT '',           -- satellite (ADIF SAT_NAME) for PROP_MODE SAT
+  freq_rx    TEXT DEFAULT '',           -- receive frequency, MHz (ADIF FREQ_RX), split/satellite
   hash       TEXT NOT NULL,             -- sha256 of canonical ADIF repr
   first_seen_at TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
@@ -289,6 +301,8 @@ type QSO struct {
 	Notes              string
 	Name               string
 	QTH                string
+	SatName            string // ADIF SAT_NAME (PROP_MODE SAT)
+	FreqRX             string // ADIF FREQ_RX, MHz: the receive frequency of a split or satellite QSO
 	Hash               string
 	FirstSeenAt        string
 	UpdatedAt          string
@@ -321,9 +335,9 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth,
+		name, qth, sat_name, freq_rx,
 		hash, first_seen_at, updated_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?)
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?)
 	ON CONFLICT(qsl_key) DO UPDATE SET
 		call=excluded.call, qso_date=excluded.qso_date, time_on=excluded.time_on,
 		band=excluded.band, mode=excluded.mode, freq=excluded.freq,
@@ -333,14 +347,14 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		lotw_qsl_rcvd=excluded.lotw_qsl_rcvd, dxcc=excluded.dxcc,
 		prop_mode=excluded.prop_mode, gridsquare=excluded.gridsquare,
 		operator=excluded.operator, notes=excluded.notes,
-		name=excluded.name, qth=excluded.qth,
+		name=excluded.name, qth=excluded.qth, sat_name=excluded.sat_name, freq_rx=excluded.freq_rx,
 		hash=excluded.hash, updated_at=excluded.updated_at,
 		qsl_rcvd_local=CASE WHEN excluded.qsl_rcvd='Y' AND qsos.qsl_rcvd_local='R' THEN NULL ELSE qsos.qsl_rcvd_local END
 	WHERE qsos.hash <> excluded.hash`,
 		q.QSLKey, q.Call, q.QSODate, q.TimeOn, q.Band, q.Mode, q.Freq,
 		q.RSTSent, q.RSTRcvd, q.QSLSent, q.QSLRcvd, q.QSLSDate, q.QSLRDate,
 		q.LoTWQSLRcvd, q.DXCC, q.PropMode, q.Gridsquare, q.Operator, q.Notes,
-		q.Name, q.QTH,
+		q.Name, q.QTH, q.SatName, q.FreqRX,
 		q.Hash, q.FirstSeenAt, q.UpdatedAt)
 	if err != nil {
 		return false, false, err
@@ -355,7 +369,7 @@ func (s *SQLiteStore) RecentQSOsByCall(call string, n int) ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos WHERE call=? ORDER BY qso_date DESC, time_on DESC LIMIT ?`,
 		call, n)
@@ -373,7 +387,7 @@ func (s *SQLiteStore) GetQSO(qslKey string) (*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos WHERE qsl_key=?`, qslKey)
 	if err != nil {
@@ -396,7 +410,7 @@ func (s *SQLiteStore) AllQSOs() ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos ORDER BY qso_date DESC, time_on DESC`)
 	if err != nil {
@@ -424,7 +438,7 @@ func qsoColumns(prefix string) string {
 	cols := []string{"qsl_key", "call", "qso_date", "time_on", "band", "mode", "freq",
 		"rst_sent", "rst_rcvd", "qsl_sent", "qsl_rcvd", "qslsdate", "qslrdate",
 		"lotw_qsl_rcvd", "dxcc", "prop_mode", "gridsquare", "operator", "notes",
-		"name", "qth", "hash", "first_seen_at", "updated_at",
+		"name", "qth", "sat_name", "freq_rx", "hash", "first_seen_at", "updated_at",
 		"qsl_sent_local", "qsl_sent_method_local", "qsl_rcvd_local", "qslsdate_local", "qslrdate_local", "qsl_sent_as"}
 	for i := range cols {
 		cols[i] = prefix + cols[i]
@@ -439,7 +453,7 @@ func scanQSOInto(q *QSO, sc interface{ Scan(dest ...any) error }, extra ...any) 
 		&q.QSLKey, &q.Call, &q.QSODate, &q.TimeOn, &q.Band, &q.Mode, &q.Freq,
 		&q.RSTSent, &q.RSTRcvd, &q.QSLSent, &q.QSLRcvd, &q.QSLSDate, &q.QSLRDate,
 		&q.LoTWQSLRcvd, &q.DXCC, &q.PropMode, &q.Gridsquare, &q.Operator, &q.Notes,
-		&q.Name, &q.QTH,
+		&q.Name, &q.QTH, &q.SatName, &q.FreqRX,
 		&q.Hash, &q.FirstSeenAt, &q.UpdatedAt,
 		&q.QSLSentLocal, &q.QSLSentMethodLocal, &q.QSLRcvdLocal, &q.QSLSDateLocal, &q.QSLRDateLocal, &q.QSLSentAs,
 	}
@@ -589,7 +603,7 @@ func (s *SQLiteStore) PendingPushBack() ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos
 		WHERE ` + pendingPushWhere)

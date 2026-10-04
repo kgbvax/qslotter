@@ -30,7 +30,7 @@
       <thead><tr>{{if $c.Extra}}<th title="{{t "On this card"}}">{{t "on card"}}</th>{{end}}<th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST sent"}}</th><th>{{t "RST rcvd"}}</th><th>{{t "Freq"}}</th><th>{{t "Notes"}}</th></tr></thead>
       <tbody>{{range $c.Rows}}<tr>
         {{if $c.Extra}}<td><input type="checkbox" name="key" value="{{.Item.QSLKey}}"{{if not (index $skip .Item.QSLKey)}} checked{{end}} title="{{t "Put this QSO on the card (unticked QSOs stay at the Desk)"}}"></td>{{end}}
-        <td>{{if not $c.Extra}}<input type="hidden" name="key" value="{{.Item.QSLKey}}">{{end}}{{fmtDate .QSO.QSODate}}</td><td>{{fmtTime .QSO.TimeOn}}</td><td>{{.QSO.Band}}</td><td>{{.QSO.Mode}}</td><td>{{.QSO.RSTSent}}</td><td>{{.QSO.RSTRcvd}}</td><td>{{.QSO.Freq}}</td><td>{{.QSO.Notes}}</td>
+        <td>{{if not $c.Extra}}<input type="hidden" name="key" value="{{.Item.QSLKey}}">{{end}}{{fmtDate .QSO.QSODate}}</td><td>{{fmtTime .QSO.TimeOn}}</td><td>{{.QSO.Band}}</td><td>{{.QSO.Mode}}</td><td>{{.QSO.RSTSent}}</td><td>{{.QSO.RSTRcvd}}</td><td>{{if or .QSO.SatName (and (eq (upper .QSO.PropMode) "SAT") .QSO.FreqRX)}}{{template "satline" .QSO}}{{else}}{{.QSO.Freq}}{{end}}</td><td>{{.QSO.Notes}}</td>
       </tr>{{end}}</tbody>
     </table>
     <div class="routes" id="route-pick" role="radiogroup" aria-label="{{t "Send via"}}">
@@ -44,7 +44,6 @@
       <span class="muted">{{if $c.RouteFrom}}{{t "suggested: %s" (t $c.RouteFrom)}}{{else}}<span class="route-hint">{{t "choose how to send"}}</span>{{end}}</span>
     </div>
     <div class="pref sendto">
-      <div class="for-none"><p class="why">{{t "Pick how to send the card - the address (if needed) appears here."}}</p></div>
       <div class="for-D">
         <h4>{{t "Send direct to"}}</h4>
         {{with $c.Lead.Info}}{{if or .Addr1 .Addr2 .Country}}

@@ -19,6 +19,7 @@
       <div><span class="lbl">{{t "Mode"}}</span><span class="val">{{.Row.QSO.Mode}}</span></div>
       <div><span class="lbl">{{t "RST"}}</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
+    {{if or .Row.QSO.SatName (and (eq (upper .Row.QSO.PropMode) "SAT") .Row.QSO.FreqRX)}}<p class="qsoextra">{{template "satline" .Row.QSO}}</p>{{end}}
     {{if .Row.QSO.Notes}}<p class="qsoextra">{{t "notes: %s" .Row.QSO.Notes}}</p>{{end}}
     <div class="at-call">{{template "research_panel" .Row}}</div>
   </article>
