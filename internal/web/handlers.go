@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/events"
@@ -281,6 +282,10 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	case row.Info != nil:
 		res.QRZState = "ok"
 		res.QRZAge = sinceMsg(row.Info.FetchedAt)
+		// A fresh entry needs no forced re-lookup: offer it from one day on.
+		if ts, err := time.Parse(time.RFC3339, row.Info.FetchedAt); err == nil && time.Since(ts) < 24*time.Hour {
+			res.CanRefresh = false
+		}
 	case !res.CanRefresh:
 		res.QRZState = "off"
 	default:

@@ -19,7 +19,7 @@
       <div><span class="lbl">{{t "Mode"}}</span><span class="val">{{.Row.QSO.Mode}}</span></div>
       <div><span class="lbl">{{t "RST"}}</span><span class="val">{{.Row.QSO.RSTSent}}</span></div>
     </div>
-    {{if or .Row.QSO.Freq .Row.QSO.Notes}}<p class="qsoextra">{{if .Row.QSO.Freq}}{{t "freq %s" .Row.QSO.Freq}}{{end}}{{if .Row.QSO.Notes}}{{if .Row.QSO.Freq}} &middot; {{end}}{{t "notes: %s" .Row.QSO.Notes}}{{end}}</p>{{end}}
+    {{if .Row.QSO.Notes}}<p class="qsoextra">{{t "notes: %s" .Row.QSO.Notes}}</p>{{end}}
     <div class="at-call">{{template "research_panel" .Row}}</div>
   </article>
   <div class="decide-actions">

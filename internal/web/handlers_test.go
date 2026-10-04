@@ -675,6 +675,13 @@ func TestStationRefresh(t *testing.T) {
 	}
 	var down atomic.Bool
 	srv.refresher = station.New(st, fakeQRZ(t, &down), srv.broker, time.Hour)
+	if b := get(t, h, "/decide").Body.String(); strings.Contains(b, `hx-post="/station/refresh?call=DL1ABC"`) {
+		t.Fatalf("Refresh offered for an entry younger than a day:\n%s", b)
+	}
+	// From one day on the forced re-lookup is offered.
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", FetchedAt: time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
 	if b := get(t, h, "/decide").Body.String(); !strings.Contains(b, `hx-post="/station/refresh?call=DL1ABC"`) {
 		t.Fatalf("research panel without Refresh:\n%s", b)
 	}
@@ -884,10 +891,9 @@ func TestDecideCardShowsResearch(t *testing.T) {
 		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table
 		"VIA BUREAU, DIRECT. LotW.", // raw qslmgr text shown verbatim
-		"paper (mQSL): yes",         // QRZ 1/0 flags read
-		"eQSL: no",
+		`chip sig-status-paper"`,    // the classification, in the QRZ line
 		"QSL via bureau is fine, direct needs SAE",
-		"cached ",
+		`<span class="qrzstate q-ok">`, // the cache age, without "cached"
 		"Hans Meier", "Hauptstr. 1", "10115",
 	} {
 		if !strings.Contains(body, want) {

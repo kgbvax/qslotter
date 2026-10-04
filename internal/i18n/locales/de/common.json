@@ -34,7 +34,7 @@
   "QRZ lookups are off - add credentials under Settings": "QRZ-Abfragen sind aus - Zugangsdaten unter Einstellungen eintragen",
   "looking up...": "wird abgefragt…",
   "station not on QRZ": "Station nicht bei QRZ",
-  "cached %s ago": "Stand: vor %s",
+  "%s ago": "vor %s",
   "Refresh": "Aktualisieren",
   "Look the station up on QRZ again now": "Station jetzt erneut bei QRZ abfragen",
   "Suggests <b class=\"tentative\">%s</b>": "Vorschlag: <b class=\"tentative\">%s</b>",
