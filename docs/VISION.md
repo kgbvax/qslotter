@@ -39,7 +39,7 @@ where it stands today.
   anything UDP missed. The system never depends on UDP alone.
 - **Automatic qualification with simple, configurable rules** (skip FT\*
   modes, first-contact-only). Done: `qualify.exclude_modes`,
-  `first_contact_only`.
+  `first_contact_only`, `include_digital` (Settings checkbox, 2026-10-06).
 - **Override for memorable QSOs, controlled via notes.** Done: the `QSL!`
   marker (`qualify.override_marker`) force-includes a QSO.
 - **Smart method determination from QRZ and other sources — none, "no paper
@@ -501,6 +501,13 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   `QSL_SENT_VIA`); cards from older builds keep `M`/`W`. Desk keys: `b d m v`
   pick the route, `p`/`w` finish; Inbox "written now" is `w` then `b`/`d`.
 
+- **2026-10-06 — Digital modes are a switch, not a hard rule.** The digital
+  filter (FT8/FT4/FT2, FST4, JS8, WSPR, MSK144 - any mode starting with FT,
+  JS8, WSPR, MSK, FST) stays on by default but can be turned off under
+  Settings (`qualify.include_digital`), live for UDP, sync and Recompute;
+  switched on, a scan queues the digital QSOs since the cutoff at once. The
+  switch alone decides for digital modes - also over FT4/FT8 in an older
+  config's `exclude_modes`, which now covers the other modes only.
 - **2026-10-05 — Printing is two-step: print queue, print run, confirm.**
   "Print" no longer prints and sends at once (it replaces every print-and-send
   path: Desk card, Desk batch, Incoming reply). A card is sent to printing

@@ -14,7 +14,6 @@ import (
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
-	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/sync"
 	"gopkg.in/yaml.v3"
 )
@@ -38,29 +37,16 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.config()
 	vals := map[string]any{
-		"qrz.username":         strings.TrimSpace(r.FormValue("qrz_username")),
-		"qrz.password":         r.FormValue("qrz_password"),
-		"clublog.email":        strings.TrimSpace(r.FormValue("clublog_email")),
-		"clublog.app_password": r.FormValue("clublog_app_password"),
-		"clublog.call":         strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
-		"clublog.api_key":      strings.TrimSpace(r.FormValue("clublog_api_key")),
-		"station.name":         strings.TrimSpace(r.FormValue("station_name")),
-		"station.qth":          strings.TrimSpace(r.FormValue("station_qth")),
-		"ui.language":          "",
+		"qrz.username":            strings.TrimSpace(r.FormValue("qrz_username")),
+		"qrz.password":            r.FormValue("qrz_password"),
+		"clublog.email":           strings.TrimSpace(r.FormValue("clublog_email")),
+		"clublog.app_password":    r.FormValue("clublog_app_password"),
+		"clublog.call":            strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
+		"clublog.api_key":         strings.TrimSpace(r.FormValue("clublog_api_key")),
+		"station.name":            strings.TrimSpace(r.FormValue("station_name")),
+		"station.qth":             strings.TrimSpace(r.FormValue("station_qth")),
+		"ui.language":             "",
 		"qualify.include_digital": r.FormValue("qualify_include_digital") == "1",
-	}
-	// With digital modes let in, digital entries in exclude_modes (the old
-	// default config listed FT4/FT8/...) would keep them out: drop those.
-	if vals["qualify.include_digital"] == true {
-		var keep []string
-		for _, m := range cur.Qualify.ExcludeModes {
-			if !qualify.IsDigital(m) {
-				keep = append(keep, m)
-			}
-		}
-		if len(keep) != len(cur.Qualify.ExcludeModes) {
-			vals["qualify.exclude_modes"] = keep
-		}
 	}
 	// The UI language: one with a catalog, or empty = the browser's.
 	for _, l := range s.i18n.Languages() {
@@ -181,8 +167,8 @@ func (s *Server) validateCredentials(cfg *config.Config) (qrzStatus, clublogStat
 // updateConfigFile edits section.key = value pairs in a YAML config file
 // in place. It re-marshals the parsed node tree, so comments and unknown
 // keys survive; string values are double-quoted so passwords that look
-// like numbers or booleans stay strings on reload, bools are written as
-// true/false and []string as a flow list.
+// like numbers or booleans stay strings on reload; bools are written as
+// true/false.
 func updateConfigFile(path string, vals map[string]any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -241,13 +227,6 @@ func setConfigValue(root *yaml.Node, section, key string, val any) error {
 	case bool:
 		*valueNode = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(v),
 			LineComment: valueNode.LineComment, HeadComment: valueNode.HeadComment, FootComment: valueNode.FootComment}
-	case []string:
-		seq := yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle,
-			LineComment: valueNode.LineComment, HeadComment: valueNode.HeadComment, FootComment: valueNode.FootComment}
-		for _, s := range v {
-			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s, Style: yaml.DoubleQuotedStyle})
-		}
-		*valueNode = seq
 	default:
 		return fmt.Errorf("config value %s.%s: unsupported type %T", section, key, val)
 	}

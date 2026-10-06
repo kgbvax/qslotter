@@ -116,8 +116,8 @@ type QualifyCfg struct {
 	ExcludeModes []string `yaml:"exclude_modes"`
 	// IncludeDigital lets the digital modes (FT8, FT4, FT2, FST4, JS8, WSPR,
 	// MSK144 - any mode starting with FT, JS8, WSPR, MSK or FST) into the
-	// decision queue. Off by default: they are skipped. Exact modes in
-	// ExcludeModes stay excluded either way.
+	// decision queue. Off by default: they are skipped. It alone decides for
+	// them; ExcludeModes (exact names) covers the other modes.
 	IncludeDigital bool `yaml:"include_digital"`
 	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
 	// default: repeat contacts are shown with their history instead, and the

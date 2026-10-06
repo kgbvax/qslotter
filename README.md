@@ -16,7 +16,7 @@ logbook's job.
    within a second. A Clublog pull mirrors the full log as a reconciliation
    backstop; a card Clublog already shows as sent is closed, not duplicated.
 2. **Qualify** — QSOs enter the *decision queue* unless they are digital
-   (FT\*, JS8, ...), excluded by mode, older than the `qualify.since` cutoff, or
+   (FT\*, JS8, ...; switchable under Settings), excluded by mode, older than the `qualify.since` cutoff, or
    already carded. Repeat contacts enter too, shown with their history. A
    marker (`QSL!`) in the notes force-includes a QSO.
 3. **Decide** (New QSOs) — each new QSO is presented with what helps you

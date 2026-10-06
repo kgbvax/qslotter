@@ -109,14 +109,20 @@ func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool,
 	if r.Since != "" && q.QSODate < r.Since {
 		return false, "before qualify.since (" + r.Since + ")"
 	}
+	// Digital modes follow qualify.include_digital alone - also those listed
+	// in exclude_modes (older configs listed FT4/FT8/...); exclude_modes
+	// covers the other modes.
 	mode := strings.ToUpper(q.Mode)
-	for _, ex := range r.ExcludeModes {
-		if mode == strings.ToUpper(ex) {
-			return false, "mode " + q.Mode + " excluded"
+	if IsDigital(mode) {
+		if !r.IncludeDigital() {
+			return false, "mode " + q.Mode + " excluded (digital)"
 		}
-	}
-	if !r.IncludeDigital() && IsDigital(mode) {
-		return false, "mode " + q.Mode + " excluded (digital prefix)"
+	} else {
+		for _, ex := range r.ExcludeModes {
+			if mode == strings.ToUpper(ex) {
+				return false, "mode " + q.Mode + " excluded"
+			}
+		}
 	}
 	// First-contact-only: only the first-ever QSO with a station is eligible;
 	// a later QSO with the same call is not.

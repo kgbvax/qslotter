@@ -92,8 +92,8 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 }
 
 // TestSettingsIncludeDigital: the digital-mode checkbox is written as a YAML
-// bool, drops digital entries from exclude_modes (they would keep FT8 out),
-// switches the shared rules at once and queues the skipped FT8 QSO.
+// bool, switches the shared rules at once and queues the skipped FT8 QSO -
+// even with FT8 in an old config's exclude_modes.
 func TestSettingsIncludeDigital(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
 	src := "qualify:\n  exclude_modes: [\"FT4\", \"FT8\", \"SSTV\"]\n  since: all\n"
@@ -134,8 +134,8 @@ func TestSettingsIncludeDigital(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reloaded.Qualify.IncludeDigital || strings.Join(reloaded.Qualify.ExcludeModes, ",") != "SSTV" {
-		t.Fatalf("after save: include_digital=%v exclude_modes=%v", reloaded.Qualify.IncludeDigital, reloaded.Qualify.ExcludeModes)
+	if !reloaded.Qualify.IncludeDigital {
+		t.Fatal("include_digital not on after reload")
 	}
 	if !srv.Rules().IncludeDigital() {
 		t.Fatal("rules not switched live")
@@ -154,5 +154,8 @@ func TestSettingsIncludeDigital(t *testing.T) {
 	}
 	if srv.Rules().IncludeDigital() {
 		t.Fatal("rules still include digital after unticking")
+	}
+	if reloaded, err = config.Load(cfgFile); err != nil || reloaded.Qualify.IncludeDigital {
+		t.Fatalf("include_digital on disk after unticking: %v %v", reloaded.Qualify.IncludeDigital, err)
 	}
 }
