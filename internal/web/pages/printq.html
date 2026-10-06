@@ -33,7 +33,7 @@
 </div>{{end}}
 </section>{{end}}
 
-{{define "printq_badge"}}<a id="printq-view" href="/work/printq"{{if .On}} class="on" aria-current="page"{{end}} title="{{t "cards waiting to be printed"}}">{{t "Print queue"}}{{if .Queued}} <span class="cnt">{{.Queued}}</span>{{end}}{{if .RunOpen}} <span class="cnt exp" title="{{t "a printed run waits for your check"}}">{{t "check"}}</span>{{end}}</a>{{end}}
+{{define "printq_badge"}}<a id="printq-view" href="/work/printq" class="{{if .On}}on{{end}}{{if or .Queued .RunOpen}} busy{{end}}"{{if .On}} aria-current="page"{{end}} title="{{t "cards waiting to be printed"}}">{{t "Print queue"}}{{if .Queued}} <span class="cnt">{{.Queued}}</span>{{end}}{{if .RunOpen}} <span class="cnt exp" title="{{t "a printed run waits for your check"}}">{{t "check"}}</span>{{end}}</a>{{end}}
 
 {{define "printq.html"}}<!DOCTYPE html>
 <html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Desk"}} - {{t "Print queue"}}</title>

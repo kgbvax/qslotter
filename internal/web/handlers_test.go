@@ -414,7 +414,7 @@ func TestWorkPrintQueueRunConfirm(t *testing.T) {
 		t.Fatalf("empty Desk:\n%s", r.Body)
 	}
 	body := get(t, h, "/work/printq").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", `id="printq"`, "To print", "Print 2 card(s)", "tnx QSO", "/work/unprint", `id="printq-view" href="/work/printq" class="on"`} {
+	for _, want := range []string{"<!DOCTYPE html>", `id="printq"`, "To print", "Print 2 card(s)", "tnx QSO", "/work/unprint", `id="printq-view" href="/work/printq" class="on busy"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/work/printq missing %q:\n%s", want, body)
 		}
