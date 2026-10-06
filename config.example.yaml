@@ -30,10 +30,14 @@ qrz:
 
 printer:
   name: ""              # empty = system default
-  paper_size_mm: [100, 74]
+  command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
+  paper_size_mm: [140, 90]
+  offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
+                        # (measure a test card under Settings > Card layout)
 
 card:
-  template: default.yaml
+  template: ""          # active card layout: cards/<name>.yaml, edited under Settings > Card layout;
+                        # "" = the built-in layout
   # export_dir: exports   # ADIF files for a QSL print service; default: "exports" next to the database
 
 qualify:

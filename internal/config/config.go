@@ -96,8 +96,15 @@ type QRZCfg struct {
 type PrinterCfg struct {
 	Name        string     `yaml:"name"`
 	PaperSizeMM [2]float64 `yaml:"paper_size_mm"`
+	// OffsetMM shifts everything printed by x, y millimetres: it makes up
+	// for a printer that feeds the card a little off (set under Settings >
+	// Card layout from a printed test card).
+	OffsetMM [2]float64 `yaml:"offset_mm"`
 }
 
+// CardCfg selects the card layout: Template is the active layout file
+// (empty = the built-in default). The layout editor keeps its layouts in
+// cards/ next to the config file and points Template at the active one.
 type CardCfg struct {
 	Template string `yaml:"template"`
 	// ExportDir is where the ADIF files for a QSL print service are written
@@ -169,7 +176,7 @@ func Load(path string) (*Config, error) {
 		cfg.Qualify.OverrideMarker = "QSL!"
 	}
 	if cfg.Printer.PaperSizeMM == [2]float64{0, 0} {
-		cfg.Printer.PaperSizeMM = [2]float64{100, 74}
+		cfg.Printer.PaperSizeMM = [2]float64{140, 90}
 	}
 	if cfg.UDP.Listen == "" {
 		cfg.UDP.Listen = "127.0.0.1:1273"
@@ -244,7 +251,10 @@ qrz:
     cache_ttl: 168h
 printer:
     name: ""                  # empty = system default
-    paper_size_mm: [100, 74]
+    paper_size_mm: [140, 90]
+    offset_mm: [0, 0]         # x, y: shifts every print (Settings > Card layout)
+card:
+    template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Card layout)
 qualify:
     include_digital: false    # true = FT8/FT4/FT2, FST4, JS8 & co. enter the queue too
     exclude_modes: []         # further modes to skip, exact names

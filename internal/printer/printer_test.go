@@ -1,6 +1,7 @@
 package printer
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func TestMaxRows(t *testing.T) {
 		tmpl *template.Template
 		want int
 	}{
-		{"default", template.Default(), 3},
+		{"default", template.Default(), 1},
 		{"nil template", nil, 1},
 		{"no rows block", &template.Template{}, 1},
 		{"explicit", &template.Template{Rows: template.RowsCfg{Max: 5, PitchMM: 4}}, 5},
@@ -99,7 +100,7 @@ func TestRenderCardPages(t *testing.T) {
 			Call: "DL1ABC", Name: "Jürgen Müller", MyCall: "DL9ET", Via: "K2ABC",
 			Rows: testRows(c.rows),
 		}
-		pdf, err := buildPDF(tmpl, []CardFields{card})
+		pdf, err := buildPDF(tmpl, []CardFields{card}, RenderOptions{})
 		if err != nil {
 			t.Fatalf("%d rows: %v", c.rows, err)
 		}
@@ -127,13 +128,13 @@ func TestRenderCardsOneJob(t *testing.T) {
 		{Call: "JA1XYZ", MyCall: "DL9ET", Rows: testRows(max)},
 	}
 	out := filepath.Join(t.TempDir(), "run.pdf")
-	if err := RenderCards(out, tmpl, cards); err != nil {
+	if err := RenderCards(out, tmpl, cards, RenderOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := pageCount(t, out); got != 4 {
 		t.Errorf("run has %d pages, want 4", got)
 	}
-	if err := RenderCards(out, tmpl, append(cards, CardFields{Call: "EMPTY"})); err == nil {
+	if err := RenderCards(out, tmpl, append(cards, CardFields{Call: "EMPTY"}), RenderOptions{}); err == nil {
 		t.Error("a card without rows in the run succeeded, want error")
 	}
 }
@@ -165,7 +166,7 @@ func TestChunkRows(t *testing.T) {
 }
 
 // fixedWidth measures every rune as 2 mm, so alignment offsets are exact.
-func fixedWidth(_ string, _ float64, s string) float64 {
+func fixedWidth(_, _ string, _ float64, s string) float64 {
 	return 2 * float64(len([]rune(s)))
 }
 
@@ -259,8 +260,8 @@ func TestLayoutVia(t *testing.T) {
 func fpdfWidth() measureFunc {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	tr := pdf.UnicodeTranslatorFromDescriptor("")
-	return func(font string, size float64, s string) float64 {
-		pdf.SetFont(font, "", size)
+	return func(font, style string, size float64, s string) float64 {
+		pdf.SetFont(font, style, size)
 		return pdf.GetStringWidth(tr(s))
 	}
 }
@@ -274,7 +275,7 @@ func TestDefaultTemplateFits(t *testing.T) {
 	for _, r := range []QSORow{
 		{QSODate: "20240101", TimeOn: "235959", Band: "2190m", Mode: "DOMINO", RSTSent: "599"},
 		{QSODate: "20241231", TimeOn: "000000", Band: "160m", Mode: "OLIVIA", RSTSent: "59+20"},
-		{QSODate: "20240615", TimeOn: "120000", Band: "70cm", Mode: "PSK31", RSTSent: "579"},
+		{QSODate: "20240615", TimeOn: "120000", Band: "70cm", Mode: "PSK31", RSTSent: "579", SatName: "TEVEL-12"},
 	} {
 		rows = append(rows, r)
 	}
@@ -321,8 +322,8 @@ func TestDefaultTemplateFits(t *testing.T) {
 		// Centred fields are centred on their X (the old renderer ignored Align).
 		for _, text := range []string{"QSL CARD", "73 de DL9ET"} {
 			got := findOps(ops, text)
-			if len(got) != 1 || math.Abs(got[0].X+got[0].W/2-50) > 1e-9 {
-				t.Errorf("%q ops = %+v, want one centred on X 50", text, got)
+			if len(got) != 1 || math.Abs(got[0].X+got[0].W/2-tmpl.WidthMM/2) > 1e-9 {
+				t.Errorf("%q ops = %+v, want one centred on X %v", text, got, tmpl.WidthMM/2)
 			}
 		}
 	}
@@ -332,7 +333,7 @@ func TestDefaultTemplateFits(t *testing.T) {
 // smaller font, then, at minFontPt, cutting it.
 func TestLayoutShrinkToFit(t *testing.T) {
 	// 0.2 mm per rune and point: 20 runes at 12 pt = 48 mm, at 9 pt = 36 mm.
-	scaled := func(_ string, size float64, s string) float64 {
+	scaled := func(_, _ string, size float64, s string) float64 {
 		return 0.2 * size * float64(len([]rune(s)))
 	}
 	tmpl := &template.Template{WidthMM: 100, Fields: []template.Field{
@@ -435,5 +436,177 @@ func TestTempPDFPathUnique(t *testing.T) {
 	a, b = TempPDFPath(), TempPDFPath()
 	if a == b {
 		t.Fatalf("fallback TempPDFPath returned %q twice", a)
+	}
+}
+
+// TestLayoutShapesBoldSat: shapes come out as they are, once per card;
+// bold text is measured bold; the satellite fields print per row.
+func TestLayoutShapesBoldSat(t *testing.T) {
+	tmpl := &template.Template{WidthMM: 100, HeightMM: 74, Rows: template.RowsCfg{Max: 2, PitchMM: 5},
+		Fields: []template.Field{
+			{Kind: template.KindLine, X: 4, Y: 45, W: 92},
+			{Kind: template.KindRect, X: 2, Y: 2, W: 96, H: 70, StrokeMM: 0.5},
+			{Name: "call", X: 4, Y: 30, FontSize: 16, Style: "B"},
+			{Name: "call", X: 4, Y: 40, FontSize: 16},
+			{Name: "sat_name", X: 4, Y: 50, FontSize: 10},
+			{Name: "freq_rx", X: 40, Y: 50, FontSize: 10},
+		}}
+	card := CardFields{Call: "DL1ABC", Rows: []QSORow{{SatName: "RS-44", FreqRX: "435.645"}, {SatName: "QO-100", FreqRX: "10489.750"}}}
+	ops := layout(tmpl, card, card.Rows, fpdfWidth())
+	var line, rect []drawOp
+	for _, op := range ops {
+		switch op.Kind {
+		case template.KindLine:
+			line = append(line, op)
+		case template.KindRect:
+			rect = append(rect, op)
+		}
+	}
+	if len(line) != 1 || line[0].W != 92 || line[0].StrokeMM != template.DefaultStrokeMM || line[0].Row != -1 {
+		t.Fatalf("line ops = %+v", line)
+	}
+	if len(rect) != 1 || rect[0].H != 70 || rect[0].StrokeMM != 0.5 || rect[0].Field != 1 {
+		t.Fatalf("rect ops = %+v", rect)
+	}
+	calls := findOps(ops, "DL1ABC")
+	if len(calls) != 2 || calls[0].Style != "B" || calls[1].Style != "" || calls[0].W <= calls[1].W {
+		t.Fatalf("call ops = %+v, want the bold one wider", calls)
+	}
+	for i, want := range []string{"RS-44", "QO-100"} {
+		got := findOps(ops, want)
+		if len(got) != 1 || got[0].Row != i || got[0].Field != 4 || math.Abs(got[0].Y-(50+5*float64(i))) > 1e-9 {
+			t.Errorf("sat ops %q = %+v", want, got)
+		}
+	}
+	if got := findOps(ops, "10489.750"); len(got) != 1 || got[0].Row != 1 {
+		t.Errorf("freq_rx ops = %+v", got)
+	}
+}
+
+// TestRenderOptions: offset, ruler and label render, with bold text and
+// shapes, as a valid PDF; the label lands on the page.
+func TestRenderOptions(t *testing.T) {
+	tmpl := template.Default()
+	tmpl.Rows.Max = 3
+	tmpl.Fields = append(tmpl.Fields, template.Field{Kind: template.KindRect, X: 1, Y: 1, W: 98, H: 72},
+		template.Field{Name: "sat_name", X: 4, Y: 66, FontSize: 8, Style: "B"})
+	card := CardFields{Call: "DL1ABC", Rows: testRows(4)}
+	card.Rows[0].SatName = "RS-44"
+	pdf, err := buildPDF(tmpl, []CardFields{card}, RenderOptions{OffsetXMM: -1.5, OffsetYMM: 0.5, Ruler: true, Label: "test card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf.SetCompression(false)
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	if !strings.HasPrefix(s, "%PDF-") || !strings.Contains(s, "(test card)") || !strings.Contains(s, "(RS-44)") || !strings.Contains(s, "(90)") {
+		t.Fatal("PDF lacks the label, the satellite or the ruler numbers")
+	}
+	if pdf.PageCount() != 2 {
+		t.Fatalf("pages = %d, want 2", pdf.PageCount())
+	}
+	out := filepath.Join(t.TempDir(), "test.pdf")
+	if err := Render(out, tmpl, card, RenderOptions{Ruler: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pageCount(t, out); got != 2 {
+		t.Fatalf("file pages = %d, want 2", got)
+	}
+	raw, err := RenderBytes(tmpl, card, RenderOptions{})
+	if err != nil || !bytes.HasPrefix(raw, []byte("%PDF-")) {
+		t.Fatalf("RenderBytes = %d bytes, %v", len(raw), err)
+	}
+}
+
+// TestPreview: one card's elements as the editor draws them - every card
+// field once, row fields per row of the first card, the fitted and the
+// outside ones marked.
+func TestPreview(t *testing.T) {
+	tmpl := template.Default()
+	tmpl.Rows.Max = 3
+	tmpl.Fields = append(tmpl.Fields,
+		template.Field{Kind: template.KindLine, X: 100, Y: 70, W: 60},                                     // runs off the card
+		template.Field{Name: "text", Text: "low", X: 4, Y: 89.5, FontSize: 12, Align: "L", Font: "Times"}) // below the edge
+	card := CardFields{Call: "DL1ABC", Name: "Hans-Joachim Müller-Lüdenscheidt von und zu Hohenzollern", MyCall: "DL9ET",
+		Rows: testRows(5)}
+	ops, pages, err := Preview(tmpl, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages != 2 {
+		t.Errorf("pages = %d, want 2", pages)
+	}
+	count := map[int]int{}
+	for _, op := range ops {
+		count[op.Field]++
+		if op.Kind == "text" && (op.Baseline <= op.Y || op.H <= 0 || op.Font == "") {
+			t.Errorf("text op %+v lacks its metrics", op)
+		}
+	}
+	for i, f := range tmpl.Fields {
+		want := 1
+		switch {
+		case f.When == template.WhenSat || f.Name == "sat_name":
+			want = 0 // no satellite QSO on this card
+		case template.IsRowField(f.Name):
+			want = 3
+		case f.Name == "via" || f.Name == "my_name" || f.Name == "qslmsg":
+			want = 0 // no value on this card
+		}
+		if count[i] != want {
+			t.Errorf("field %d (%s %q): %d ops, want %d", i, f.Name, f.Text, count[i], want)
+		}
+	}
+	var name, line, low *Op
+	for i := range ops {
+		switch {
+		case ops[i].Kind == "line":
+			line = &ops[i]
+		case strings.HasPrefix(ops[i].Text, "Hans"):
+			name = &ops[i]
+		case ops[i].Text == "low":
+			low = &ops[i]
+		}
+	}
+	if name == nil || !name.Fitted || name.Outside {
+		t.Errorf("long name op = %+v, want fitted, on the card", name)
+	}
+	if line == nil || !line.Outside || low == nil || !low.Outside {
+		t.Errorf("line %+v / low text %+v, want both outside", line, low)
+	}
+	if _, _, err := Preview(nil, card); err == nil {
+		t.Error("Preview without a template succeeded")
+	}
+	// No QSOs (an empty sample): the card fields still show.
+	if ops, pages, err := Preview(tmpl, CardFields{Call: "X1X"}); err != nil || pages != 1 || len(ops) == 0 {
+		t.Errorf("empty-row preview = %d ops, %d pages, %v", len(ops), pages, err)
+	}
+}
+
+// TestSatelliteColumn: the default card carries the satellite column and its
+// heading only when a QSO on that card was made via a satellite.
+func TestSatelliteColumn(t *testing.T) {
+	tmpl := template.Default()
+	hf := CardFields{Call: "DL1ABC", Rows: []QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59"}}}
+	if ops := layout(tmpl, hf, hf.Rows, fpdfWidth()); len(findOps(ops, "Satellite")) != 0 {
+		t.Error("an HF card carries the satellite heading")
+	}
+	sat := CardFields{Call: "DL1ABC", Rows: []QSORow{
+		{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59"},
+		{QSODate: "20240102", TimeOn: "1300", Band: "70cm", Mode: "FM", RSTSent: "59", SatName: "SO-50", FreqRX: "436.795"},
+	}}
+	ops := layout(tmpl, sat, sat.Rows, fpdfWidth())
+	if len(findOps(ops, "Satellite")) != 1 || len(findOps(ops, "SO-50")) != 1 {
+		t.Fatalf("satellite card ops lack the heading or the satellite: %+v", ops)
+	}
+	// Only the card (page) holding the satellite QSO: with one row per card
+	// the HF card stays without the column.
+	one := tmpl.Clone()
+	one.Rows = template.RowsCfg{Max: 1, PitchMM: 6.5}
+	if ops := layout(one, sat, sat.Rows[:1], fpdfWidth()); len(findOps(ops, "Satellite")) != 0 {
+		t.Error("the HF page of a split card carries the satellite heading")
 	}
 }

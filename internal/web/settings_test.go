@@ -159,3 +159,14 @@ func TestSettingsIncludeDigital(t *testing.T) {
 		t.Fatalf("include_digital on disk after unticking: %v %v", reloaded.Qualify.IncludeDigital, err)
 	}
 }
+
+// TestSettingsPullButton: the Clublog section offers a pull with its status.
+func TestSettingsPullButton(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv.Routes(), "/settings").Body.String()
+	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings page lacks %q", want)
+		}
+	}
+}

@@ -48,7 +48,8 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 		}
 	}
 	list := get(t, h, "/work").Body.String()
-	if strings.Count(list, `class="md-row"`) != 2 || !strings.Contains(list, "2 QSOs, one card") {
+	// The built-in layout holds one QSO per card: the card prints as two.
+	if strings.Count(list, `class="md-row"`) != 2 || !strings.Contains(list, "2 QSOs, prints as 2 cards") {
 		t.Fatalf("/work must list one row per card:\n%s", list)
 	}
 

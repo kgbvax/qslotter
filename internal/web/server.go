@@ -178,6 +178,8 @@ func (s *Server) langFuncs(lang string) template.FuncMap {
 // page hands them over translated as window.qslT.
 var jsStrings = []string{
 	"Error",
+	"The card as it will print",
+	"Close",
 	"Network error - is the qslotter server running?",
 	"Skipped %s - your card is still due.",
 }
@@ -255,6 +257,19 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/receive/research", s.htmxReceiveResearch) // key=... of a reply card (live QRZ refresh)
 	r.Get("/settings", s.pageSettings)
 	r.Post("/settings/save", s.saveSettings)
+	// Card layout editor (layout.go): ?name= is a layout in cards/ or :builtin.
+	r.Get("/settings/cards", s.pageCards)
+	r.Post("/settings/cards/preview", s.htmxCardsPreview) // JSON layout -> the card as the printer lays it out
+	r.Post("/settings/cards/save", s.htmxCardsSave)       // JSON layout, ?name= (&create=1&from=)
+	r.Post("/settings/cards/activate", s.postCardsActivate)
+	r.Post("/settings/cards/rename", s.postCardsRename)
+	r.Post("/settings/cards/delete", s.postCardsDelete)
+	r.Get("/settings/cards/image", s.getCardsImage)
+	r.Post("/settings/cards/image", s.postCardsImage) // multipart "image": the card scan shown behind the fields
+	r.Post("/settings/cards/image/delete", s.postCardsImageDelete)
+	r.Post("/settings/cards/offset", s.postCardsOffset) // x=, y=: printer.offset_mm
+	r.Post("/settings/cards/test", s.htmxCardsTest)     // JSON layout: print a test card with the mm ruler
+	r.Post("/settings/cards/pdf", s.htmxCardsPDF)       // JSON layout: the card as a PDF
 	// Card actions take ?key=... (form/query value): keys contain "|" and
 	// portable calls contain "/", which would break {key} path segments.
 	r.Post("/queue/yes", s.htmxQueueYes)
@@ -273,6 +288,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/work/requested", s.htmxWorkRequested)
 	r.Post("/work/none", s.htmxWorkNone)
 	r.Get("/work/manager", s.htmxWorkManager) // ?manager=CALL: who a manager card goes to
+	r.Get("/work/preview", s.htmxWorkPreview) // key=... per QSO, route=, manager=: the card as a PDF
 	r.Get("/nav", s.htmxNav)                  // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
 	r.Post("/api/quit", s.apiQuit)

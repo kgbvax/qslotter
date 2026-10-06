@@ -119,5 +119,9 @@
   "download": "herunterladen",
   "Send the file to your QSL print service. Once it has it, confirm the run as a whole - only then are the cards sent. Tick cards to export them again, or to take them back to the print queue (a mistake to correct at the Desk).": "Schicke die Datei an deinen QSL-Druckservice. Sobald er sie hat, bestätige den Durchgang als Ganzes - erst dann gelten die Karten als gesendet. Kreuze Karten an, um sie noch einmal zu exportieren oder in die Druckliste zurückzulegen (ein Fehler, der am Schreibtisch zu korrigieren ist).",
   "Write the ticked cards into a new ADIF file; they stay in the run": "Die angekreuzten Karten in eine neue ADIF-Datei schreiben; sie bleiben im Durchgang",
-  "Export ticked again": "Angekreuzte nochmal exportieren"
+  "Export ticked again": "Angekreuzte nochmal exportieren",
+  "Show exactly what prints: this card with the ticked QSOs, the layout and the printer offset": "Genau zeigen, was gedruckt wird: diese Karte mit den angekreuzten QSOs, dem Layout und dem Drucker-Versatz",
+  "Preview": "Vorschau",
+  "preview": "Vorschau",
+  "The card as it will print": "Die Karte, wie sie gedruckt wird"
 }

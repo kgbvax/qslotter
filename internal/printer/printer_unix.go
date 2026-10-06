@@ -3,61 +3,98 @@
 package printer
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
+// cups runs a CUPS command. It asks for the C locale, which Linux honours;
+// macOS answers in the system language regardless ("System-Standardzielort:
+// ..." on a German Mac), so nothing below depends on the wording.
+func cups(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
+	return cmd
+}
+
+// errNoPrinter: no printer configured and none set as the system default.
+var errNoPrinter = errors.New("no printer: none chosen (printer.name in the config file) and no system default printer")
+
 // New returns the platform-specific Printer.
-func New() Printer { return &unixPrinter{} }
+func New() Printer { return &unixPrinter{ipp: newIPPClient("http://localhost:631")} }
 
-type unixPrinter struct{}
+// JobStatus asks CUPS how the job is doing.
+func (p *unixPrinter) JobStatus(ctx context.Context, job Job) (JobStatus, error) {
+	return p.ipp.JobStatus(ctx, job.Printer, job.ID)
+}
 
+// CancelJob cancels the job in CUPS.
+func (p *unixPrinter) CancelJob(ctx context.Context, job Job) error {
+	return p.ipp.CancelJob(ctx, job.Printer, job.ID)
+}
+
+type unixPrinter struct {
+	ipp *ippClient // the local CUPS scheduler
+}
+
+// List returns the printer names: lpstat -e prints one bare name per line,
+// in every language.
 func (p *unixPrinter) List() ([]string, error) {
-	out, err := exec.Command("lpstat", "-p").CombinedOutput()
+	out, err := cups("lpstat", "-e").CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("lpstat: %w (%s)", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("lpstat -e: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-	var names []string
-	for _, line := range strings.Split(string(out), "\n") {
-		// Format: "printer <name> is idle. ..."
-		if strings.HasPrefix(line, "printer ") {
-			rest := strings.TrimPrefix(line, "printer ")
-			name := strings.Fields(rest)
-			if len(name) > 0 {
-				names = append(names, name[0])
-			}
-		}
-	}
-	return names, nil
+	return strings.Fields(string(out)), nil
 }
 
+// Default returns the system default printer ("" when there is none).
 func (p *unixPrinter) Default() (string, error) {
-	out, err := exec.Command("lpstat", "-d").CombinedOutput()
+	names, err := p.List()
 	if err != nil {
-		return "", fmt.Errorf("lpstat -d: %w (%s)", err, strings.TrimSpace(string(out)))
+		return "", err
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, "system default destination:") {
-			f := strings.Fields(line)
-			if len(f) > 0 {
-				return f[len(f)-1], nil
+	out, _ := cups("lpstat", "-d").CombinedOutput() // exits 1 without a default on some systems
+	return parseDefault(string(out), names), nil
+}
+
+// parseDefault finds the default printer in lpstat -d output, whatever its
+// language ("system default destination: X", "System-Standardzielort: X"):
+// the known printer name after the colon. "" when there is none.
+func parseDefault(out string, names []string) string {
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.LastIndex(line, ":")
+		if i < 0 {
+			continue
+		}
+		cand := strings.TrimSpace(line[i+1:])
+		for _, n := range names {
+			if n == cand {
+				return n
 			}
 		}
 	}
-	return "", nil
+	return ""
 }
 
-func (p *unixPrinter) PrintPDF(path, printerName string, opts Options) error {
+func (p *unixPrinter) PrintPDF(path, printerName string, opts Options) (Job, error) {
 	if printerName == "" {
 		d, err := p.Default()
 		if err != nil {
-			return err
+			return Job{}, err
+		}
+		if d == "" {
+			return Job{}, errNoPrinter
 		}
 		printerName = d
 	}
-	_, err := run(exec.Command("lp", lpArgs(path, printerName, opts)...))
-	return err
+	out, err := run(cups("lp", lpArgs(path, printerName, opts)...))
+	if err != nil {
+		return Job{}, err
+	}
+	return Job{Printer: printerName, ID: jobIDFrom(string(out), printerName)}, nil
 }
 
 // lpArgs returns the lp arguments that print the PDF at path on printerName.

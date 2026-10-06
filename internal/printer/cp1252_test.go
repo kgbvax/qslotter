@@ -66,7 +66,7 @@ func TestRenderCardCP1252(t *testing.T) {
 		{"Jiří Novák", "(Jir\xed Nov\xe1k)"},
 		{"Müller", "(M\xfcller)"},
 	} {
-		pdf, err := buildPDF(tmpl, []CardFields{{Name: c.name, Rows: testRows(1)}})
+		pdf, err := buildPDF(tmpl, []CardFields{{Name: c.name, Rows: testRows(1)}}, RenderOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

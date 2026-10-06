@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -21,8 +22,10 @@ import (
 // pageSettings renders the service-configuration form (QRZ/Clublog
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt(), "Build": buildinfo.Get()})
+		"ClublogPaused": s.clublogPausedAt(), "Build": buildinfo.Get(), "LastPull": lastPull, "LastPush": lastPush})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -69,14 +72,11 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
 		return
 	}
-	newCfg, err := config.Load(s.cfgPath)
+	newCfg, err := s.reloadConfig()
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, "config saved, but reloading it failed: %s", err.Error())
 		return
 	}
-	s.cfgMu.Lock()
-	s.cfg = newCfg
-	s.cfgMu.Unlock()
 
 	// The digital-mode filter applies at once (UDP feed, sync and Recompute
 	// share these rules). Switched on, a scan queues the digital QSOs since
@@ -106,6 +106,8 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	qrzStatus, clublogStatus := s.validateFn(newCfg)
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{
 		"Cfg":           newCfg,
 		"CanQuit":       s.Quit != nil,
@@ -114,6 +116,8 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"QrzStatus":     qrzStatus,
 		"ClublogStatus": clublogStatus,
 		"ClublogPaused": s.clublogPausedAt(),
+		"LastPull":      lastPull,
+		"LastPush":      lastPush,
 	})
 }
 
@@ -164,6 +168,41 @@ func (s *Server) validateCredentials(cfg *config.Config) (qrzStatus, clublogStat
 	return qrzStatus, clublogStatus
 }
 
+// reloadConfig loads the config file again and makes it the live config.
+func (s *Server) reloadConfig() (*config.Config, error) {
+	newCfg, err := config.Load(s.cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	s.cfgMu.Lock()
+	s.cfg = newCfg
+	s.cfgMu.Unlock()
+	return newCfg, nil
+}
+
+// floatPair is a YAML flow sequence of two numbers ("[1.5, -0.5]"), for
+// settings such as printer.offset_mm.
+func floatPair(a, b float64) *yaml.Node {
+	num := func(v float64) *yaml.Node {
+		tag := "!!float" // a whole number reads as !!int: tagged as float, it would print the tag
+		if v == math.Trunc(v) {
+			tag = "!!int"
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: strconv.FormatFloat(v, 'f', -1, 64)}
+	}
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle, Content: []*yaml.Node{num(a), num(b)}}
+}
+
+// updateConfigNodes is updateConfigFile for values given as YAML nodes
+// (e.g. floatPair).
+func updateConfigNodes(path string, vals map[string]*yaml.Node) error {
+	m := map[string]any{}
+	for k, v := range vals {
+		m[k] = v
+	}
+	return updateConfigFile(path, m)
+}
+
 // updateConfigFile edits section.key = value pairs in a YAML config file
 // in place. It re-marshals the parsed node tree, so comments and unknown
 // keys survive; string values are double-quoted so passwords that look
@@ -204,7 +243,29 @@ func updateConfigFile(path string, vals map[string]any) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
+// configNode is the YAML node for a settings value: strings double-quoted
+// (a password that looks like a number stays a string), bools as true/false,
+// a *yaml.Node (floatPair) as given.
+func configNode(section, key string, val any) (*yaml.Node, error) {
+	switch v := val.(type) {
+	case string:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v, Style: yaml.DoubleQuotedStyle}, nil
+	case bool:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(v)}, nil
+	case *yaml.Node:
+		return v, nil
+	}
+	return nil, fmt.Errorf("config value %s.%s: unsupported type %T", section, key, val)
+}
+
+// setConfigValue sets section.key to val, creating the section and the key
+// when missing. The existing value node is replaced in place, so a comment on
+// its line survives.
 func setConfigValue(root *yaml.Node, section, key string, val any) error {
+	node, err := configNode(section, key, val)
+	if err != nil {
+		return err
+	}
 	sec := mappingValue(root, section)
 	if sec == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: section}
@@ -217,19 +278,11 @@ func setConfigValue(root *yaml.Node, section, key string, val any) error {
 	valueNode := mappingValue(sec, key)
 	if valueNode == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-		valueNode = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str"}
-		sec.Content = append(sec.Content, keyNode, valueNode)
+		sec.Content = append(sec.Content, keyNode, node)
+		return nil
 	}
-	switch v := val.(type) {
-	case string:
-		valueNode.SetString(v)
-		valueNode.Style = yaml.DoubleQuotedStyle
-	case bool:
-		*valueNode = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(v),
-			LineComment: valueNode.LineComment, HeadComment: valueNode.HeadComment, FootComment: valueNode.FootComment}
-	default:
-		return fmt.Errorf("config value %s.%s: unsupported type %T", section, key, val)
-	}
+	node.LineComment, node.HeadComment, node.FootComment = valueNode.LineComment, valueNode.HeadComment, valueNode.FootComment
+	*valueNode = *node
 	return nil
 }
 

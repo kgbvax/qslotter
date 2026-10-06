@@ -1,0 +1,134 @@
+{{define "cards.html"}}<!DOCTYPE html>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Card layout"}}</title>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
+<script src="/static/app.js"></script>
+</head><body data-area="settings">
+<header class="site">
+  <h1>qslotter</h1>
+  {{template "nav" .}}
+</header>
+<div class="band"><div class="band-in"><div class="band-title"><h2>{{t "Card layout"}}</h2>
+  <p>{{t "Place what qslotter prints onto your card."}}</p></div></div></div>
+<main class="lay">
+  <p class="lay-back"><a href="/settings">&larr; {{t "Settings"}}</a></p>
+  {{if .NoConfig}}<p class="err">{{t "Layouts cannot be saved: qslotter was started without a config file. You can still try layouts and print test cards."}}</p>{{end}}
+  {{with .Note}}<p class="err">{{.}}</p>{{end}}
+  {{if .Created}}<p class="ok">{{if .Entry.Active}}{{t "Saved as your layout %s. It prints the cards." .Data.ID}}{{else}}{{t "Saved as the layout %s." .Data.ID}}{{end}}</p>{{end}}
+
+  <div class="lay-bar">
+    <label>{{t "Layout"}} <select id="lay-pick">
+      {{range .Layouts}}<option value="{{.ID}}"{{if eq .ID $.Data.ID}} selected{{end}}>{{.Label}}{{if .Active}} - {{t "prints the cards"}}{{end}}</option>{{end}}
+    </select></label>
+    {{if .Entry.Active}}<span class="lay-active">{{t "This layout prints the cards."}}</span>
+    {{else if not .NoConfig}}<form method="post" action="/settings/cards/activate" class="lay-form">
+      <input type="hidden" name="name" value="{{.Data.ID}}">
+      <button type="submit">{{t "Print cards with this layout"}}</button>
+    </form>{{end}}
+    {{if not .NoConfig}}<details class="lay-manage"{{if or (not .Data.Editable) .LoadErr}} open{{end}}><summary>{{t "Copy, rename, delete"}}</summary>
+      <div class="lay-manage-in">
+        {{if not .LoadErr}}<span class="lay-row"><input type="text" id="lay-copy-name" placeholder="{{t "name of the new layout"}}" maxlength="40">
+          <button type="button" id="lay-copy">{{t "Save as new layout"}}</button></span>{{end}}
+        {{if .Data.Editable}}
+        <form method="post" action="/settings/cards/rename" class="lay-form lay-row">
+          <input type="hidden" name="name" value="{{.Data.ID}}">
+          <input type="text" name="to" value="{{.Data.ID}}" maxlength="40" aria-label="{{t "New name"}}">
+          <button type="submit">{{t "Rename"}}</button>
+        </form>
+        {{if not .Entry.Active}}<form method="post" action="/settings/cards/delete" class="lay-form lay-row" data-confirm="{{t "Delete the layout %s and its card picture?" .Data.ID}}">
+          <input type="hidden" name="name" value="{{.Data.ID}}">
+          <button type="submit" class="danger">{{t "Delete layout"}}</button>
+        </form>{{end}}
+        {{end}}
+      </div>
+    </details>{{end}}
+  </div>
+  {{if and (not .Data.Editable) (not .NoConfig)}}{{if not .LoadErr}}<p class="lay-ro">{{if eq .Data.ID ":builtin"}}{{t "Change it as you like: when you save or add a card picture, the built-in layout stays as it is and your version is kept as a layout of its own."}}{{else}}{{t "This layout file lies outside the editor's folder and is not changed here: when you save or add a card picture, your version is kept as a layout of its own."}}{{end}}</p>{{end}}{{end}}
+
+  {{if .LoadErr}}<p class="err">{{.LoadErr}}</p>{{else}}
+  <div class="lay-tools">
+    <select id="lay-add" aria-label="{{t "Add an element"}}">
+      <option value="">+ {{t "Add..."}}</option>
+      <optgroup label="{{t "Once per card"}}">{{range .Data.Card}}<option value="field:{{.Name}}">{{.Label}}</option>{{end}}</optgroup>
+      <optgroup label="{{t "Once per QSO (one row each)"}}">{{range .Data.Row}}<option value="field:{{.Name}}">{{.Label}}</option>{{end}}</optgroup>
+      <optgroup label="{{t "Fixed elements"}}"><option value="text">{{t "Fixed text"}}</option><option value="line">{{t "Line"}}</option><option value="rect">{{t "Box"}}</option></optgroup>
+    </select>
+    <button type="button" class="mini" id="lay-undo" title="{{t "Undo"}} (Cmd/Ctrl+Z)" disabled>{{t "Undo"}}</button>
+    <button type="button" class="mini" id="lay-redo" title="{{t "Redo"}} (Shift+Cmd/Ctrl+Z)" disabled>{{t "Redo"}}</button>
+    <span class="lay-sep"></span>
+    <button type="button" class="mini" id="lay-cut" title="{{t "Cut"}} (Cmd/Ctrl+X)" disabled>{{t "Cut"}}</button>
+    <button type="button" class="mini" id="lay-copyel" title="{{t "Copy"}} (Cmd/Ctrl+C)" disabled>{{t "Copy"}}</button>
+    <button type="button" class="mini" id="lay-paste" title="{{t "Paste"}} (Cmd/Ctrl+V)" disabled>{{t "Paste"}}</button>
+    <span class="lay-sep"></span>
+    {{if not .NoConfig}}<button type="button" id="lay-save" class="lay-primary" title="Cmd/Ctrl+S">{{t "Save"}}</button>{{end}}
+    <span id="lay-dirty" class="lay-dirty" hidden>{{t "Unsaved changes"}}</span>
+    <span class="lay-sep"></span>
+    <button type="button" id="lay-pdf">{{t "Show as PDF"}}</button>
+    <button type="button" id="lay-test" title="{{t "Prints this layout with the sample and a millimetre ruler on the printer %s" (or .Printer (t "(system default)"))}}">{{t "Print test card"}}</button>
+  </div>
+
+  <div class="lay-main">
+    <div class="lay-stage">
+      <svg id="lay-svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{{t "The card"}}"></svg>
+      <div class="lay-view">
+        <label>{{t "Sample"}} <select id="lay-sample">{{range .Samples}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select></label>
+        <label><input type="checkbox" id="lay-grid" checked> {{t "Grid (5 mm)"}}</label>
+        <label title="{{t "Texts that would come closer to the edge are set smaller or cut."}}"><input type="checkbox" id="lay-margin" checked> {{t "4 mm margin"}}</label>
+        <span id="lay-imgctl"{{if not .HasImage}} hidden{{end}}><label><input type="checkbox" id="lay-img" checked> {{t "Card picture"}}</label>
+          <input type="range" id="lay-opacity" min="10" max="100" value="60" aria-label="{{t "Card picture strength"}}"></span>
+      </div>
+      <p id="lay-error" class="err" hidden></p>
+      <ul id="lay-warn" class="lay-warn"></ul>
+      <p class="muted lay-help">{{t "Drag an element to move it (Shift: straight). Arrow keys move the selected one by 0.5 mm (Shift: 5 mm, Alt: 0.1 mm), Delete removes it, Cmd/Ctrl+D duplicates, Cmd/Ctrl+Z undoes. The card shows exactly what prints: a text too long for its place is set smaller or cut, rows after the first are drawn lighter."}}</p>
+    </div>
+    <aside class="lay-side">
+      <div id="lay-props" class="lay-props"></div>
+      <h4>{{t "Elements"}}</h4>
+      <ol id="lay-list" class="lay-list"></ol>
+    </aside>
+  </div>
+
+  <section class="lay-card">
+    <div>
+      <h3>{{t "Card"}}</h3>
+      <div class="lay-grid2">
+        <label>{{t "Width (mm)"}} <input type="number" id="lay-w" step="0.5" min="10" max="1000"></label>
+        <label>{{t "Height (mm)"}} <input type="number" id="lay-h" step="0.5" min="10" max="1000"></label>
+        <label>{{t "QSO rows per card"}} <input type="number" id="lay-rows" step="1" min="1" max="50"></label>
+        <label>{{t "Row spacing (mm)"}} <input type="number" id="lay-pitch" step="0.1" min="0" max="100"></label>
+      </div>
+      <p class="muted">{{t "A row field (date, band, ...) prints once per QSO: the first row where you place it, every further row one row spacing lower. More QSOs than rows continue on a second card."}}</p>
+      <p id="lay-paper" class="err" hidden></p>
+    </div>
+    <div>
+      <h3>{{t "Card picture"}}</h3>
+      <p class="muted">{{t "A scan or photo of your pre-printed card, cropped to the card's edges: it is stretched to the card size and shown behind the fields - never printed."}}</p>
+      {{if not .NoConfig}}<p><input type="file" id="lay-file" accept="image/png,image/jpeg">
+        <button type="button" class="mini" id="lay-img-del"{{if not .HasImage}} hidden{{end}}>{{t "Remove picture"}}</button></p>{{end}}
+    </div>
+    <div>
+      <h3>{{t "Printer offset"}}</h3>
+      <p class="muted">{{t "Shifts everything printed, for every layout, when the printer feeds the card a little off. Print a test card and measure from the card's left edge to the tick marked 10: at 11.5 mm set X to -1.5, at 9 mm to +1. Likewise from the top edge for Y."}}</p>
+      <div class="lay-grid2">
+        <label>X (mm) <input type="number" id="lay-ox" step="0.1" min="-20" max="20" value="{{.OffsetX}}"></label>
+        <label>Y (mm) <input type="number" id="lay-oy" step="0.1" min="-20" max="20" value="{{.OffsetY}}"></label>
+      </div>
+      {{if not .NoConfig}}<p><button type="button" id="lay-offset-save">{{t "Save offset"}}</button></p>{{end}}
+    </div>
+  </section>
+
+  <div id="lay-pdfview" class="lay-pdfview" hidden>
+    <div class="lay-pdfbar"><span>{{t "The card as it prints (sample, printer offset)"}}</span> <button type="button" class="mini" id="lay-pdf-close">{{t "Close"}}</button></div>
+    <iframe title="PDF"></iframe>
+  </div>
+  {{end}}
+  <script>window.qslLayout = {{.Data}};</script>
+  <script src="/static/layout.js"></script>
+</main>
+</body></html>{{end}}

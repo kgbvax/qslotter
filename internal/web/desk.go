@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/qsldetermine"
@@ -483,4 +484,69 @@ func (s *Server) htmxWorkRequested(w http.ResponseWriter, r *http.Request) {
 // htmxWorkNone: no card after all (B6).
 func (s *Server) htmxWorkNone(w http.ResponseWriter, r *http.Request) {
 	s.deskAction(w, r, "skipped", func(keys []string) error { return s.store.QueueDeskDecline(keys...) })
+}
+
+// htmxWorkPreview answers the card for the QSOs key=... (as ticked on the
+// Desk card) with the chosen route=/manager= as the PDF that would print:
+// the active layout, the printer offset.
+func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
+	keys := deskKeys(r)
+	if len(keys) == 0 {
+		s.fail(w, r, http.StatusBadRequest, errNoKeys.Error())
+		return
+	}
+	var qsos []*store.QSO
+	for _, k := range keys {
+		q, err := s.store.GetQSO(k)
+		if err != nil || q == nil {
+			s.fail(w, r, http.StatusNotFound, "QSO %s not found", k)
+			return
+		}
+		qsos = append(qsos, q)
+	}
+	via := ""
+	if rt, err := routeFrom(r, keys[0]); err == nil && rt.Method == "M" {
+		via = rt.Manager
+	}
+	tmpl, err := s.cardTemplate()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := s.config()
+	raw, err := printer.RenderBytes(tmpl, cardFieldsFor(cfg, qsos, via), printer.RenderOptions{
+		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="card.pdf"`)
+	_, _ = w.Write(raw)
+}
+
+// cardFieldsFor is what a card for these QSOs with one station prints: one
+// row per QSO, oldest first, the newest non-empty name and QTH (as on the
+// Desk), via = the manager of a manager card ("" otherwise). The layout
+// editor's sample from a Desk card is built the same way.
+func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.CardFields {
+	qsos = slices.Clone(qsos)
+	sort.SliceStable(qsos, func(i, j int) bool {
+		if qsos[i].QSODate != qsos[j].QSODate {
+			return qsos[i].QSODate < qsos[j].QSODate
+		}
+		return qsos[i].TimeOn < qsos[j].TimeOn
+	})
+	card := printer.CardFields{MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, MyQTH: cfg.Station.QTH, Via: via}
+	if len(qsos) > 0 {
+		card.Call = qsos[0].Call
+	}
+	for _, q := range qsos {
+		card.Name = cmpOr(q.Name, card.Name) // newest non-empty wins, as on the Desk
+		card.QTH = cmpOr(q.QTH, card.QTH)
+		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
+			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq, SatName: q.SatName, FreqRX: q.FreqRX})
+	}
+	return card
 }

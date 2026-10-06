@@ -111,15 +111,17 @@ func (p *windowsPrinter) Default() (string, error) {
 	return "", nil
 }
 
-func (p *windowsPrinter) PrintPDF(path, printerName string, opts Options) error {
+// PrintPDF prints through SumatraPDF, which returns once the job is
+// spooled: Windows jobs cannot be followed (Job.ID 0).
+func (p *windowsPrinter) PrintPDF(path, printerName string, opts Options) (Job, error) {
 	bin, err := p.findSumatra()
 	if err != nil {
-		return err
+		return Job{}, err
 	}
 	if printerName == "" {
 		d, err := defaultPrinterName()
 		if err != nil {
-			return fmt.Errorf("no printer configured (set printer.name in config) and no system default: %w", err)
+			return Job{}, fmt.Errorf("no printer configured (set printer.name in config) and no system default: %w", err)
 		}
 		printerName = d
 	}
@@ -131,11 +133,11 @@ func (p *windowsPrinter) PrintPDF(path, printerName string, opts Options) error 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("sumatra print: timed out after 2m (printer busy or offline?)")
+			return Job{}, fmt.Errorf("sumatra print: timed out after 2m (printer busy or offline?)")
 		}
-		return fmt.Errorf("sumatra print: %w (%s)", err, strings.TrimSpace(string(out)))
+		return Job{}, fmt.Errorf("sumatra print: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	return Job{Printer: printerName}, nil
 }
 
 // sumatraSettings returns the SumatraPDF -print-settings value for opts.

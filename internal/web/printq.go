@@ -133,15 +133,20 @@ func (s *Server) printJob(cards []*PrintCard) error {
 			log.Printf("print: removing %s: %v", pdfPath, err)
 		}
 	}()
-	if err := printer.RenderCards(pdfPath, tmpl, fields); err != nil {
+	cfg := s.config()
+	if err := printer.RenderCards(pdfPath, tmpl, fields, printer.RenderOptions{
+		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
+	}); err != nil {
 		return err
 	}
-	cfg := s.config()
-	return s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
+	// The job is not followed (printer.Watcher): the run is checked by the
+	// operator and confirmed as a whole.
+	_, err = s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
 		PaperWMM: cfg.Printer.PaperSizeMM[0],
 		PaperHMM: cfg.Printer.PaperSizeMM[1],
 		Copies:   1,
 	})
+	return err
 }
 
 // templateHasNote reports whether the card template prints the card note.
