@@ -114,6 +114,11 @@ type ReceiveCfg struct {
 
 type QualifyCfg struct {
 	ExcludeModes []string `yaml:"exclude_modes"`
+	// IncludeDigital lets the digital modes (FT8, FT4, FT2, FST4, JS8, WSPR,
+	// MSK144 - any mode starting with FT, JS8, WSPR, MSK or FST) into the
+	// decision queue. Off by default: they are skipped. Exact modes in
+	// ExcludeModes stay excluded either way.
+	IncludeDigital bool `yaml:"include_digital"`
 	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
 	// default: repeat contacts are shown with their history instead, and the
 	// operator decides.
@@ -241,7 +246,8 @@ printer:
     name: ""                  # empty = system default
     paper_size_mm: [100, 74]
 qualify:
-    exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
+    include_digital: false    # true = FT8/FT4/FT2, FST4, JS8 & co. enter the queue too
+    exclude_modes: []         # further modes to skip, exact names
     first_contact_only: false
     override_marker: "QSL!"
     since: ""                 # "" = from the first start on, "all" = whole log

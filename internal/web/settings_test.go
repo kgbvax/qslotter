@@ -90,3 +90,69 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 		t.Fatalf("/settings = %d", r.Code)
 	}
 }
+
+// TestSettingsIncludeDigital: the digital-mode checkbox is written as a YAML
+// bool, drops digital entries from exclude_modes (they would keep FT8 out),
+// switches the shared rules at once and queues the skipped FT8 QSO.
+func TestSettingsIncludeDigital(t *testing.T) {
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	src := "qualify:\n  exclude_modes: [\"FT4\", \"FT8\", \"SSTV\"]\n  since: all\n"
+	if err := os.WriteFile(cfgFile, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ft8 := &store.QSO{QSLKey: "DL1AB|20260101|120000|20M", Call: "DL1AB", QSODate: "20260101", TimeOn: "120000", Band: "20M", Mode: "FT8", Hash: "h1"}
+	if _, _, err := st.UpsertQSO(ft8); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(cfg, st, events.New(), cfgFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.validateFn = func(*config.Config) (i18n.Msg, i18n.Msg) { return i18n.M("OK - stub"), i18n.M("OK - stub") }
+	h := srv.Routes()
+	if srv.Rules().IncludeDigital() {
+		t.Fatal("include_digital on by default")
+	}
+
+	if r := postForm(t, h, "/settings/save", url.Values{"qualify_include_digital": {"1"}}); r.Code != 200 {
+		t.Fatalf("save = %d: %s", r.Code, r.Body)
+	}
+	onDisk, _ := os.ReadFile(cfgFile)
+	if !strings.Contains(string(onDisk), "include_digital: true") {
+		t.Fatalf("include_digital not written as a bool:\n%s", onDisk)
+	}
+	reloaded, err := config.Load(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.Qualify.IncludeDigital || strings.Join(reloaded.Qualify.ExcludeModes, ",") != "SSTV" {
+		t.Fatalf("after save: include_digital=%v exclude_modes=%v", reloaded.Qualify.IncludeDigital, reloaded.Qualify.ExcludeModes)
+	}
+	if !srv.Rules().IncludeDigital() {
+		t.Fatal("rules not switched live")
+	}
+	if it, err := st.QueueGet(ft8.QSLKey); err != nil || it == nil || it.Status != "queued" {
+		t.Fatalf("FT8 QSO not queued after switching on: %+v %v", it, err)
+	}
+	r := get(t, h, "/settings")
+	if !strings.Contains(r.Body.String(), `name="qualify_include_digital" value="1" checked`) {
+		t.Fatal("checkbox not shown as checked")
+	}
+
+	// Unticked: off again, on disk and live.
+	if r := postForm(t, h, "/settings/save", url.Values{}); r.Code != 200 {
+		t.Fatalf("save = %d", r.Code)
+	}
+	if srv.Rules().IncludeDigital() {
+		t.Fatal("rules still include digital after unticking")
+	}
+}

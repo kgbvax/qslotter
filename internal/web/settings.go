@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/sync"
 	"gopkg.in/yaml.v3"
 )
@@ -35,7 +37,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur := s.config()
-	vals := map[string]string{
+	vals := map[string]any{
 		"qrz.username":         strings.TrimSpace(r.FormValue("qrz_username")),
 		"qrz.password":         r.FormValue("qrz_password"),
 		"clublog.email":        strings.TrimSpace(r.FormValue("clublog_email")),
@@ -45,6 +47,20 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"station.name":         strings.TrimSpace(r.FormValue("station_name")),
 		"station.qth":          strings.TrimSpace(r.FormValue("station_qth")),
 		"ui.language":          "",
+		"qualify.include_digital": r.FormValue("qualify_include_digital") == "1",
+	}
+	// With digital modes let in, digital entries in exclude_modes (the old
+	// default config listed FT4/FT8/...) would keep them out: drop those.
+	if vals["qualify.include_digital"] == true {
+		var keep []string
+		for _, m := range cur.Qualify.ExcludeModes {
+			if !qualify.IsDigital(m) {
+				keep = append(keep, m)
+			}
+		}
+		if len(keep) != len(cur.Qualify.ExcludeModes) {
+			vals["qualify.exclude_modes"] = keep
+		}
 	}
 	// The UI language: one with a catalog, or empty = the browser's.
 	for _, l := range s.i18n.Languages() {
@@ -75,6 +91,23 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	s.cfgMu.Lock()
 	s.cfg = newCfg
 	s.cfgMu.Unlock()
+
+	// The digital-mode filter applies at once (UDP feed, sync and Recompute
+	// share these rules). Switched on, a scan queues the digital QSOs since
+	// the cutoff that were skipped so far.
+	if s.rules != nil && s.rules.IncludeDigital() != newCfg.Qualify.IncludeDigital {
+		s.rules.SetIncludeDigital(newCfg.Qualify.IncludeDigital)
+		log.Printf("settings: qualify.include_digital = %t", newCfg.Qualify.IncludeDigital)
+		if newCfg.Qualify.IncludeDigital {
+			keys, err := s.rules.EnqueueAllKeys(s.store)
+			for _, k := range keys {
+				s.publishQueueChanged(k, "queued")
+			}
+			if err != nil {
+				log.Printf("settings: queue scan after enabling digital modes: %v", err)
+			}
+		}
+	}
 
 	// Live-swap the QRZ client: the shared refresher serves both the web UI
 	// and the UDP listener's lookups.
@@ -147,9 +180,10 @@ func (s *Server) validateCredentials(cfg *config.Config) (qrzStatus, clublogStat
 
 // updateConfigFile edits section.key = value pairs in a YAML config file
 // in place. It re-marshals the parsed node tree, so comments and unknown
-// keys survive; written values are double-quoted so passwords that look
-// like numbers or booleans stay strings on reload.
-func updateConfigFile(path string, vals map[string]string) error {
+// keys survive; string values are double-quoted so passwords that look
+// like numbers or booleans stay strings on reload, bools are written as
+// true/false and []string as a flow list.
+func updateConfigFile(path string, vals map[string]any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read: %w", err)
@@ -184,7 +218,7 @@ func updateConfigFile(path string, vals map[string]string) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
-func setConfigValue(root *yaml.Node, section, key, val string) error {
+func setConfigValue(root *yaml.Node, section, key string, val any) error {
 	sec := mappingValue(root, section)
 	if sec == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: section}
@@ -200,8 +234,23 @@ func setConfigValue(root *yaml.Node, section, key, val string) error {
 		valueNode = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str"}
 		sec.Content = append(sec.Content, keyNode, valueNode)
 	}
-	valueNode.SetString(val)
-	valueNode.Style = yaml.DoubleQuotedStyle
+	switch v := val.(type) {
+	case string:
+		valueNode.SetString(v)
+		valueNode.Style = yaml.DoubleQuotedStyle
+	case bool:
+		*valueNode = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(v),
+			LineComment: valueNode.LineComment, HeadComment: valueNode.HeadComment, FootComment: valueNode.FootComment}
+	case []string:
+		seq := yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle,
+			LineComment: valueNode.LineComment, HeadComment: valueNode.HeadComment, FootComment: valueNode.FootComment}
+		for _, s := range v {
+			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s, Style: yaml.DoubleQuotedStyle})
+		}
+		*valueNode = seq
+	default:
+		return fmt.Errorf("config value %s.%s: unsupported type %T", section, key, val)
+	}
 	return nil
 }
 

@@ -273,6 +273,8 @@ kbd {
 .settings-form h3 { margin-top: 20px; }
 .settings-form label { display: block; margin: 10px 0 2px; font-size: 13.5px; color: var(--ink-soft); }
 .settings-form input { width: 100%; }
+.settings-form label.check { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
+.settings-form label.check input { width: auto; }
 
 .empty {
   border: 1.5px dashed var(--ink-soft); border-radius: 4px;

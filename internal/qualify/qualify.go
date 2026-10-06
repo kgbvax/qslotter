@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	gosync "sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dl9et/qslotter/internal/config"
@@ -16,9 +17,19 @@ type Rules struct {
 	FirstContactOnly bool
 	OverrideMarker   string // e.g. "QSL!" - if present in notes, the QSO is force-included
 	Since            string // YYYYMMDD: QSOs before this date are not queued ("" = no cutoff)
+
+	// includeDigital lets the digital modes in (qualify.include_digital).
+	// Atomic: Settings switches it while the UDP feed and the sync loop read.
+	includeDigital atomic.Bool
 }
 
 func New(rules *Rules) *Rules { return rules }
+
+// IncludeDigital reports whether digital modes (IsDigital) may be queued.
+func (r *Rules) IncludeDigital() bool { return r.includeDigital.Load() }
+
+// SetIncludeDigital switches the digital-mode filter, effective at once.
+func (r *Rules) SetIncludeDigital(on bool) { r.includeDigital.Store(on) }
 
 // NewRules builds the rules from the configuration. The default cutoff is the
 // day qslotter first ran (remembered in the store), so only QSOs from then on
@@ -29,6 +40,7 @@ func NewRules(c config.QualifyCfg, st store.Store) *Rules {
 		FirstContactOnly: c.FirstContactOnly,
 		OverrideMarker:   c.OverrideMarker,
 	}
+	r.SetIncludeDigital(c.IncludeDigital)
 	switch v := strings.ToLower(strings.TrimSpace(c.Since)); v {
 	case "all", "none":
 	case "":
@@ -65,8 +77,9 @@ func (r *Rules) hasOverride(q *store.QSO) bool {
 		strings.Contains(strings.ToUpper(q.Notes), strings.ToUpper(r.OverrideMarker))
 }
 
-// isDigital reports the digital families that never get a paper card.
-func isDigital(mode string) bool {
+// IsDigital reports the digital families (FT8/FT4/FT2, FST4, JS8, WSPR,
+// MSK144) that are skipped unless qualify.include_digital is on.
+func IsDigital(mode string) bool {
 	mode = strings.ToUpper(mode)
 	for _, p := range []string{"FT", "JS8", "WSPR", "MSK", "FST"} {
 		if strings.HasPrefix(mode, p) {
@@ -102,7 +115,7 @@ func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool,
 			return false, "mode " + q.Mode + " excluded"
 		}
 	}
-	if isDigital(mode) {
+	if !r.IncludeDigital() && IsDigital(mode) {
 		return false, "mode " + q.Mode + " excluded (digital prefix)"
 	}
 	// First-contact-only: only the first-ever QSO with a station is eligible;

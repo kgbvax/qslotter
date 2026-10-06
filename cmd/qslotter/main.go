@@ -32,7 +32,6 @@ import (
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
-	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/station"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
@@ -105,19 +104,6 @@ func main() {
 
 	broker := events.New()
 
-	// Qualifier rules shared by the UDP listener (fast path) and the sync
-	// orchestrator (full scan after Clublog pull).
-	rules := qualify.NewRules(cfg.Qualify, st)
-	if rules.Since != "" {
-		log.Printf("qualify: queueing QSOs from %s on (qualify.since: all lifts the cutoff)", rules.Since)
-	}
-	// One-time backlog discard (VISION A1): only QSOs from the cutoff on count.
-	if n, err := rules.DiscardBacklog(st); err != nil {
-		log.Printf("qualify: backlog discard: %v", err)
-	} else if n > 0 {
-		log.Printf("qualify: %d QSO(s) before %s were still waiting for a decision - filed as \"no card\" (backlog, reopenable under Done)", n, rules.Since)
-	}
-
 	// Station-info refresher (QRZ lookup + cache), shared by the web UI and
 	// the UDP listener so credential changes in the settings UI apply to both.
 	// Always constructed: without QRZ credentials it has a nil client (lookups
@@ -138,6 +124,23 @@ func main() {
 	}
 	if mode == desktop.ModeWindow {
 		srv.OpenExternal = desktop.OpenExternal // only the app window needs it
+	}
+
+	// Qualifier rules shared by the web UI, the UDP listener (fast path) and
+	// the sync orchestrator (full scan after Clublog pull) - one instance, so
+	// the digital-mode switch under Settings reaches all of them.
+	rules := srv.Rules()
+	if rules.Since != "" {
+		log.Printf("qualify: queueing QSOs from %s on (qualify.since: all lifts the cutoff)", rules.Since)
+	}
+	if rules.IncludeDigital() {
+		log.Printf("qualify: digital modes (FT8/FT4/FT2, JS8, ...) enter the queue (qualify.include_digital)")
+	}
+	// One-time backlog discard (VISION A1): only QSOs from the cutoff on count.
+	if n, err := rules.DiscardBacklog(st); err != nil {
+		log.Printf("qualify: backlog discard: %v", err)
+	} else if n > 0 {
+		log.Printf("qualify: %d QSO(s) before %s were still waiting for a decision - filed as \"no card\" (backlog, reopenable under Done)", n, rules.Since)
 	}
 
 	// The QSO in progress (logger's current-contact broadcast) and cards

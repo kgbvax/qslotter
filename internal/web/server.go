@@ -83,6 +83,11 @@ func (s *Server) config() *config.Config {
 	return s.cfg
 }
 
+// Rules are the qualifier rules of the server. main hands the same instance to
+// the UDP listener and the sync loop, so a filter switched under Settings
+// applies to every path at once.
+func (s *Server) Rules() *qualify.Rules { return s.rules }
+
 // New wires the web server. refresher is shared with main (the UDP listener
 // uses the same instance, so credential changes apply to both paths); pass
 // nil when QRZ is not configured. cfgPath is the config file the settings
