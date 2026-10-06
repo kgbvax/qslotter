@@ -7,6 +7,16 @@
 {{/* The research panel in parts: the Inbox and the QSO in progress show all of
      them (research_panel); the Desk card leaves out the suggestion line and
      the address, which it shows under the route (research_panel_desk). */}}
+{{/* The head of a card: big callsign left; name and country above the pills
+     (history with the station, the card's own line) on its right. */}}
+{{define "callhead"}}<div class="callhead">
+      <p class="call">{{.Call}}</p>
+      <div class="callside">
+        {{if or .Name .Country}}<span class="name">{{.Name}}{{if and .Name .Country}}, {{end}}{{.Country}}</span>{{end}}
+        <span class="pills">{{range .Pills}}<span class="chip {{.Kind}}">{{tm .Text}}</span>{{end}}{{if not .Extra.IsZero}}<span class="chip oncard" title="{{t "The ticked QSOs share the card"}}">{{tm .Extra}}</span>{{end}}</span>
+      </div>
+    </div>{{end}}
+
 {{define "research_badges"}}{{with .Research}}
   {{if .WhyQueued}}<p class="why-queued">{{t "Queued because: %s" (t .WhyQueued)}}</p>{{end}}
   <p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>

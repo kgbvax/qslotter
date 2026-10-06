@@ -23,13 +23,7 @@
   <div id="cardform">
   <article class="qslcard">
     <div class="airmail"></div>
-    <div class="callhead">
-      <p class="call">{{$c.Call}}</p>
-      <div class="callside">
-        {{if or $c.ShownName $c.Country}}<span class="name">{{$c.ShownName}}{{if and $c.ShownName $c.Country}}, {{end}}{{$c.Country}}</span>{{end}}
-        <span class="pills">{{with $c.Lead.Research}}{{range .Badges}}{{if or (eq .Kind "first") (eq .Kind "earlier")}}<span class="chip {{.Kind}}">{{tm .Text}}</span>{{end}}{{end}}{{end}}{{if $c.Extra}}<span class="chip oncard" title="{{t "The ticked QSOs share the card"}}">{{if gt $c.Prints 1}}{{t "%d QSOs on this card, prints as %d cards" (len $c.Rows) $c.Prints}}{{else}}{{t "%d QSOs on this card" (len $c.Rows)}}{{end}}</span>{{end}}</span>
-      </div>
-    </div>
+    {{template "callhead" $c.Head}}
     <table class="cardqsos">
       <thead><tr>{{if $c.Extra}}<th title="{{t "On this card"}}">{{t "on card"}}</th>{{end}}<th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST sent"}}</th><th>{{t "RST rcvd"}}</th><th>{{t "Freq"}}</th><th>{{t "Notes"}}</th></tr></thead>
       <tbody>{{range $c.Rows}}<tr>

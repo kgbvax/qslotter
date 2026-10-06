@@ -40,9 +40,6 @@ type DeskCard struct {
 	QTH    string // likewise for QTH
 	Prints int    // physical cards a print produces (QSO rows per card from the template)
 
-	ShownName string // the header's name: the log's, else QRZ's
-	Country   string // the header's country (QRZ)
-
 	Route      string // route offered first: B, D, MD (manager direct), MB (manager bureau), "" = none
 	RouteFrom  string // where it comes from: "chosen earlier", "by QRZ"
 	MgrPrefill string // manager callsign for the manager routes
@@ -104,15 +101,23 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 			c.QTH = cmpOr(r.QSO.QTH, c.QTH)
 		}
 		c.Prints = (len(c.Rows) + perCard - 1) / perCard
-		c.ShownName = c.Name
-		if info := c.Lead.Info; info != nil && !info.NotFound {
-			c.ShownName = cmpOr(c.Name, info.Name)
-			c.Country = info.Country
-		}
 		c.Route, c.RouteFrom, c.MgrPrefill = preselectRoute(c)
 		c.OQRS = mentionsOQRS(c.Lead.Info)
 	}
 	return cards, nil
+}
+
+// Head is the card's head: callsign, name, history, and how many QSOs the
+// card covers when more than one.
+func (c *DeskCard) Head() CallHead {
+	var extra i18n.Msg
+	switch {
+	case c.Prints > 1:
+		extra = i18n.M("%d QSOs on this card, prints as %d cards", len(c.Rows), c.Prints)
+	case c.Extra > 0:
+		extra = i18n.M("%d QSOs on this card", len(c.Rows))
+	}
+	return headFor(c.Call, c.Name, c.Lead.Info, c.Lead.Research, extra)
 }
 
 // cmpOr returns a unless it is empty, else b.
