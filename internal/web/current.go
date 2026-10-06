@@ -29,8 +29,9 @@ type CurrentView struct {
 	Cur         *contact.Current
 	Info        *store.StationInfo
 	Row         *QueueRow // research for the call
-	Worked      i18n.Msg  // "first QSO" / "2 QSOs B4, last 2025-01-01": the chip under the callsign
+	Worked      i18n.Msg  // "first QSO" / "2 earlier QSOs, last 3 days ago": the chip under the callsign
 	WorkedKind  string    // chip kind: first, earlier
+	Head        CallHead  // the strip's head: callsign, name, country, the Worked pill
 	Mine        *PendingView
 	Others      []PendingView
 	Applied     i18n.Msg // the last card booked from the box (recent only)
@@ -80,15 +81,8 @@ func (s *Server) currentView(compact bool) CurrentView {
 			for _, b := range res.Badges {
 				switch b.Kind {
 				case "warn":
-				case "first":
+				case "first", "earlier":
 					v.Worked, v.WorkedKind = b.Text, b.Kind
-				case "earlier":
-					v.WorkedKind = b.Kind
-					if res.Prior == 1 {
-						v.Worked = i18n.M("1 QSO B4, last %s", res.LastDate)
-					} else {
-						v.Worked = i18n.M("%d QSOs B4, last %s", res.Prior, res.LastDate)
-					}
 				default:
 					kept = append(kept, b)
 				}
@@ -99,6 +93,10 @@ func (s *Server) currentView(compact bool) CurrentView {
 			res.Badges = kept
 		}
 		v.Row = row
+		v.Head = headFor(v.Cur.Call, "", v.Info, nil, i18n.Msg{})
+		if !v.Worked.IsZero() {
+			v.Head.Pills = []Badge{{Kind: v.WorkedKind, Text: v.Worked}}
+		}
 	}
 	return v
 }

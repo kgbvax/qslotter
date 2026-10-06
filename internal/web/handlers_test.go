@@ -994,9 +994,9 @@ func TestDecideCardShowsResearch(t *testing.T) {
 
 	body := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String()
 	for _, want := range []string{
-		"earlier QSO(s) with this station", // history
-		"card already sent 2023-05-02",     // effective sent
-		"their card received 2023-06-10",   // received: reply is due
+		"2 earlier QSOs, last 2024-01-02", // history
+		"card already sent 2023-05-02",    // effective sent
+		"their card received 2023-06-10",  // received: reply is due
 		"LoTW confirmed",
 		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table

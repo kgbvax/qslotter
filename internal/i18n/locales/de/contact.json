@@ -18,7 +18,5 @@
   "The decision made during the QSO with %s could not be recorded: %s": "Die im QSO mit %s getroffene Entscheidung konnte nicht eingetragen werden: %s",
   "The decision is yes (card) or no (no card).": "Die Entscheidung ist ja (Karte) oder nein (keine Karte).",
   "%d open QSO(s) with this station in New QSOs or at the Desk - a decision made during the QSO is recorded only on the QSO being logged": "%d offene(s) QSO(s) mit dieser Station bei den neuen QSOs oder auf dem Schreibtisch - eine im QSO getroffene Entscheidung wird nur am QSO eingetragen, das jetzt geloggt wird",
-  "decided during the QSO": "im QSO entschieden",
-  "1 QSO B4, last %s": "1 QSO B4, zuletzt %s",
-  "%d QSOs B4, last %s": "%d QSOs B4, zuletzt %s"
+  "decided during the QSO": "im QSO entschieden"
 }

@@ -88,8 +88,7 @@ type HistoryLine struct {
 // QSL statements, the history with the station and what happened to its cards.
 type Research struct {
 	Badges     []Badge
-	Prior      int    // earlier QSOs with the station (the history query's newest 12)
-	LastDate   string // date of the newest of them
+	Prior      int // earlier QSOs with the station (the history query's newest 12)
 	History    []HistoryLine
 	Others     int      // other cards of this station awaiting a decision or production
 	BioExcerpt string   // the QSL-relevant lines of the QRZ bio
@@ -301,6 +300,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	}
 	var (
 		prior                            int
+		lastDate                         string // QSO date (YYYYMMDD) of the newest earlier QSO
 		sentBadge, rcvdBad               *Badge
 		lotw                             bool
 		sameDesk, sameInbox, otherCallOp int
@@ -313,7 +313,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		}
 		prior++
 		if prior == 1 {
-			res.LastDate = fmtDate(q.QSODate)
+			lastDate = q.QSODate
 		}
 		line := HistoryLine{Date: fmtDate(q.QSODate), Time: fmtTime(q.TimeOn), Call: q.Call, Band: q.Band, Mode: q.Mode,
 			LoTW: q.LoTWQSLRcvd == "Y", Queue: queueStateText(h.QueueStatus, h.DesiredMethod, h.Manager)}
@@ -352,7 +352,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	if prior == 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "first", Text: i18n.M("first QSO")})
 	} else {
-		res.Badges = append(res.Badges, Badge{Kind: "earlier", Text: i18n.M("%d earlier QSO(s) with this station", prior)})
+		res.Badges = append(res.Badges, Badge{Kind: "earlier", Text: earlierMsg(prior, lastDate, s.now())})
 	}
 	if sentBadge != nil {
 		res.Badges = append(res.Badges, *sentBadge)
@@ -374,6 +374,32 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	if otherCallOp > 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
 	}
+}
+
+// earlierMsg is the history badge: how many QSOs came before and how long ago
+// the last one was - in days up to a week, in weeks up to 30 days, then its date.
+func earlierMsg(n int, lastDate string, now time.Time) i18n.Msg {
+	var last any = fmtDate(lastDate)
+	if d, err := time.Parse("20060102", lastDate); err == nil {
+		now = now.UTC()
+		days := int(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Sub(d).Hours() / 24)
+		switch {
+		case days < 1:
+			last = i18n.M("today")
+		case days == 1:
+			last = i18n.M("1 day ago")
+		case days < 7:
+			last = i18n.M("%d days ago", days)
+		case days < 14:
+			last = i18n.M("1 week ago")
+		case days < 30:
+			last = i18n.M("%d weeks ago", days/7)
+		}
+	}
+	if n == 1 {
+		return i18n.M("1 earlier QSO, last %s", last)
+	}
+	return i18n.M("%d earlier QSOs, last %s", n, last)
 }
 
 // --- (a) decision queue: list ---

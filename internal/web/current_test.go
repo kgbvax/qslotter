@@ -20,28 +20,28 @@ func TestCurrentContactBox(t *testing.T) {
 	h := srv.Routes()
 	tr := contact.NewTracker(st, srv.broker, nil)
 	srv.Contacts = tr
-	if b := get(t, h, "/queue").Body.String(); !strings.Contains(b, `class="current idle"`) {
+	if b := get(t, h, "/queue").Body.String(); !strings.Contains(b, `class="current strip idle"`) {
 		t.Fatalf("no QSO in progress: the box is idle:\n%s", b)
 	}
 	addQSO(t, st, "VU2ATN", "20250101", "20m") // worked before
 	tr.Set(contact.Contact{Call: "VU2ATN", Band: "20m", Mode: "SSB", Source: "lookupinfo"})
 	page := get(t, h, "/queue").Body.String()
-	for _, want := range []string{"QSO in progress", `data-call="VU2ATN"`, "1 QSO B4, last 2025-01-01", "/current/decide?decision=no&amp;call=VU2ATN"} {
+	for _, want := range []string{"QSO in progress", `data-call="VU2ATN"`, "1 earlier QSO, last 2025-01-01", "/current/decide?decision=no&amp;call=VU2ATN"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/queue misses %q:\n%s", want, page)
 		}
 	}
 	// The chip sits right under the callsign line, above the decision row, and is not repeated in the research panel.
-	head, chip, decide := strings.Index(page, `class="current-head"`), strings.Index(page, "1 QSO B4, last 2025-01-01"), strings.Index(page, "/current/decide?decision=yes")
-	if !(head >= 0 && head < chip && chip < decide) || strings.Count(page, "QSO B4") != 1 || strings.Contains(page, "earlier QSO(s)") {
+	head, chip, decide := strings.Index(page, `class="current-head"`), strings.Index(page, "1 earlier QSO, last 2025-01-01"), strings.Index(page, "/current/decide?decision=yes")
+	if !(head >= 0 && head < chip && chip < decide) || strings.Count(page, "earlier QSO") != 1 || strings.Contains(page, "earlier QSO(s)") {
 		t.Fatalf("history chip under the callsign line (head %d, chip %d, decide %d):\n%s", head, chip, decide, page)
 	}
 	addQSO(t, st, "VU2ATN", "20250315", "40m") // newest earlier QSO
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "2 QSOs B4, last 2025-03-15") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "2 earlier QSOs, last 2025-03-15") {
 		t.Fatalf("several earlier QSOs:\n%s", b)
 	}
 	tr.Set(contact.Contact{Call: "N0NEW"})
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "first QSO") || strings.Contains(b, "B4") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "first QSO") || strings.Contains(b, "earlier") {
 		t.Fatalf("a new station:\n%s", b)
 	}
 	tr.Set(contact.Contact{Call: "VU2ATN", Band: "20m", Mode: "SSB", Source: "lookupinfo"})
@@ -139,5 +139,33 @@ func TestCurrentContactGerman(t *testing.T) {
 		}
 		sort.Strings(l)
 		t.Fatalf("missing German:\n%s", strings.Join(l, "\n"))
+	}
+}
+
+// TestEarlierMsg: the history badge counts the earlier QSOs and says how long
+// ago the last one was - days up to a week, weeks up to 30 days, then the date.
+func TestEarlierMsg(t *testing.T) {
+	now := time.Date(2026, 10, 6, 15, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		n    int
+		date string
+		want string
+	}{
+		{1, "20261006", "1 earlier QSO, last today"},
+		{3, "20261005", "3 earlier QSOs, last 1 day ago"},
+		{3, "20261001", "3 earlier QSOs, last 5 days ago"},
+		{2, "20260930", "2 earlier QSOs, last 6 days ago"},
+		{2, "20260929", "2 earlier QSOs, last 1 week ago"},
+		{2, "20260922", "2 earlier QSOs, last 2 weeks ago"},
+		{2, "20260908", "2 earlier QSOs, last 4 weeks ago"},
+		{2, "20260907", "2 earlier QSOs, last 4 weeks ago"},
+		{2, "20260906", "2 earlier QSOs, last 2026-09-06"},
+		{5, "20250101", "5 earlier QSOs, last 2025-01-01"},
+		{1, "20261007", "1 earlier QSO, last today"}, // a clock a day behind: never negative
+		{1, "garbage", "1 earlier QSO, last garbage"},
+	} {
+		if got := earlierMsg(c.n, c.date, now).String(); got != c.want {
+			t.Errorf("earlierMsg(%d, %q) = %q, want %q", c.n, c.date, got, c.want)
+		}
 	}
 }

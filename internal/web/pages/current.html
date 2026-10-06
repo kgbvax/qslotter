@@ -1,6 +1,7 @@
-{{define "current_contact"}}{{if .Enabled}}<div id="current" class="current{{if .Compact}} compact{{end}}{{if not .Cur}} idle{{end}}" data-call="{{with .Cur}}{{.Call}}{{end}}" data-compact="{{if .Compact}}1{{end}}">
+{{define "current_contact"}}{{if .Enabled}}<div id="current" class="current{{if .Compact}} compact{{else}} strip{{end}}{{if not .Cur}} idle{{end}}" data-call="{{with .Cur}}{{.Call}}{{end}}" data-compact="{{if .Compact}}1{{end}}">
 {{$c := ""}}{{if .Compact}}{{$c = "&compact=1"}}{{end}}
 {{with .Cur}}
+{{if $.Compact}}
   <div class="current-head"><span class="lbl">{{t "QSO in progress"}}</span> <span class="call">{{.Call}}</span>{{if .Band}} <span class="c-bm">{{.Band}}</span>{{end}}{{if .Mode}} <span class="c-bm">{{.Mode}}</span>{{end}}{{if .Stale}} <span class="muted" title="{{t "the logger has not sent this call for a few minutes"}}">({{t "not seen for a while"}})</span>{{end}}{{with $.Info}}{{if or .Name .Country}} <span class="muted">{{.Name}}{{if and .Name .Country}}, {{end}}{{.Country}}</span>{{end}}{{end}}</div>
   {{if not $.Worked.IsZero}}<p class="current-worked"><span class="chip {{$.WorkedKind}}">{{tm $.Worked}}</span></p>{{end}}
   {{if $.Mine}}
@@ -11,7 +12,27 @@
       <button type="button" class="mini yes" title="{{t "Yes, card - recorded when the QSO is logged; it then goes to the Desk, where you choose how to send it"}}" hx-post="/current/decide?decision=yes&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Yes, card"}}</button>
       <button type="button" class="mini none" title="{{t "No card - recorded when the QSO is logged"}}" hx-post="/current/decide?decision=no&amp;call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "No card"}}</button></p>
   {{end}}
-  {{if $.Compact}}{{with $.Row.Research}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{template "sigstrip" $.Row.Sig}}{{else}}<div class="current-research">{{template "research_panel" $.Row}}</div>{{end}}
+  {{with $.Row.Research}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{template "sigstrip" $.Row.Sig}}
+{{else}}
+  {{/* The live strip across the Inbox: who is on the air, what QRZ says about
+       their cards, and the decision - the same head as the cards. */}}
+  <div class="current-head">
+    <p class="lbl">{{t "QSO in progress"}}{{if or .Band .Mode}} <span class="c-bm">{{.Band}} {{.Mode}}</span>{{end}}{{if .Stale}} <span class="muted" title="{{t "the logger has not sent this call for a few minutes"}}">({{t "not seen for a while"}})</span>{{end}}</p>
+    <div class="current-grid">
+      {{template "callhead" $.Head}}
+      <div class="pref current-sig">{{template "qrz_head" $.Row}}{{with $.Row.Sig}}{{template "sugline" .}}{{end}}</div>
+      <div class="current-act">
+        {{if $.Mine}}<p class="current-written">{{if eq $.Mine.Decision "yes"}}{{t "Card wanted - the QSO goes to the Desk as soon as it is logged."}}{{else}}{{t "No card - recorded on the QSO as soon as it is logged."}}{{end}}
+          <button type="button" class="mini" hx-post="/current/cancel?call={{q .Call}}" hx-target="#current" hx-swap="outerHTML">{{t "Undo"}}</button></p>
+        {{else}}<span class="stamps" role="group" aria-label="{{t "Card?"}}">
+          <button type="button" class="stamp yes" title="{{t "Yes, card - recorded when the QSO is logged; it then goes to the Desk, where you choose how to send it"}}" hx-post="/current/decide?decision=yes&amp;call={{q .Call}}" hx-target="#current" hx-swap="outerHTML">{{t "Yes, card"}}</button>
+          <button type="button" class="stamp none" title="{{t "No card - recorded when the QSO is logged"}}" hx-post="/current/decide?decision=no&amp;call={{q .Call}}" hx-target="#current" hx-swap="outerHTML">{{t "No card"}}</button>
+        </span>{{end}}
+      </div>
+    </div>
+    {{with $.Row.Research}}{{if .Badges}}<p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>{{end}}{{end}}
+  </div>
+{{end}}
 {{end}}
 {{range .Others}}<p class="muted current-other">{{if eq .Decision "yes"}}{{t "%s: card wanted, waiting for the QSO to be logged (forgotten after %d h if it never is)." .Call $.WaitHours}}{{else}}{{t "%s: no card, waiting for the QSO to be logged (forgotten after %d h if it never is)." .Call $.WaitHours}}{{end}}
   <button type="button" class="mini" hx-post="/current/cancel?call={{q .Call}}{{$c}}" hx-target="#current" hx-swap="outerHTML">{{t "Undo"}}</button></p>{{end}}
