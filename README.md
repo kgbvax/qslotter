@@ -22,8 +22,7 @@ logbook's job.
 3. **Decide** (New QSOs) — each new QSO is presented with what helps you
    decide: what QRZ says about the station's QSL habits, earlier QSOs with
    the station, whether a card was already sent or received. You answer
-   **yes, card**, **no card**, or **already written** (card filled in during
-   the QSO, bureau or direct: done).
+   **yes, card** or **no card**.
 4. **Produce** (the Desk) — "yes" cards wait here, one card per station. The
    route (bureau, direct, via manager direct/bureau) is chosen when the card
    is written by hand (done = sent) or sent **to print**, with an optional
@@ -42,11 +41,11 @@ logbook's job.
 
 - **New QSOs** — the decision queue as a list with the card next to it (also
   the compact window from the tray), and card by card. Keyboard: `y` yes,
-  `n` no card, `w` then `b`/`d` already written, arrows to browse.
+  `n` no card, arrows to browse.
 - **Desk** — the print queue on top, the cards as a list grouped by route,
   and card by card, with the address to write to. Keyboard: `b` `d` `m` `v`
   route, `p` to print, `w` written by hand, `r` request their card, `n` no
-  card, `u` back to New QSOs.
+  card.
 - **Incoming QSLs** — mark a received card, answer it (written, to print,
   later at the Desk), see the cards you requested.
 - **Done** — finished cards, with Reopen for a misclick.

@@ -21,11 +21,9 @@
     {{if and .Prev (not .MD)}}<button type="button" class="mini" data-key="arrowleft" title="{{t "Previous card"}}  (&larr;)" hx-get="/work/card?key={{q .Prev}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">&lsaquo; {{t "prev"}}</button>
     <button type="button" class="mini" data-key="arrowright" title="{{t "Next card"}}  (&rarr;)" hx-get="/work/card?key={{q .Next}}&amp;filter={{.Filter}}" hx-target="#workcard" hx-swap="outerHTML">{{t "next"}} &rsaquo;</button>{{end}}</p>
   <div id="cardform">
-  {{if $c.OQRS}}<p class="oqrs-hint">{{th "QRZ mentions <b>OQRS</b>: their card may be requested instead of sending one (<kbd>r</kbd>)."}}</p>{{end}}
   <article class="qslcard">
     <div class="airmail"></div>
-    <p class="confirm">{{if $c.Extra}}{{t "Confirming %d two-way QSOs with" (len $c.Rows)}}{{else}}{{t "Confirming two-way QSO with"}}{{end}}{{if gt $c.Prints 1}} <span class="muted">{{t "(prints as %d cards: the template holds fewer rows)" $c.Prints}}</span>{{end}}</p>
-    <p class="call">{{$c.Call}}{{if $c.Name}} <span class="muted" style="font: 500 18px 'Schibsted Grotesk', sans-serif">{{$c.Name}}</span>{{end}}</p>
+    {{template "callhead" $c.Head}}
     <table class="cardqsos">
       <thead><tr>{{if $c.Extra}}<th title="{{t "On this card"}}">{{t "on card"}}</th>{{end}}<th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "RST sent"}}</th><th>{{t "RST rcvd"}}</th><th>{{t "Freq"}}</th><th>{{t "Notes"}}</th></tr></thead>
       <tbody>{{range $c.Rows}}<tr>
@@ -34,15 +32,17 @@
       </tr>{{end}}</tbody>
     </table>
     <div class="routes" id="route-pick" role="radiogroup" aria-label="{{t "Send via"}}">
-      <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq $c.Route "B"}} checked{{end}}> {{t "Bureau"}} <kbd>b</kbd></label>
-      <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq $c.Route "D"}} checked{{end}}> {{t "Direct"}} <kbd>d</kbd></label>
-      <label class="stamp m"><input type="radio" name="route" value="MD" data-key="m"{{if eq $c.Route "MD"}} checked{{end}}> {{t "Via manager, direct"}} <kbd>m</kbd></label>
-      <label class="stamp m"><input type="radio" name="route" value="MB" data-key="v"{{if eq $c.Route "MB"}} checked{{end}}> {{t "Via manager, bureau"}} <kbd>v</kbd></label>
+      <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq $c.Route "B"}} checked{{end}}>{{t "Bureau"}} <kbd>b</kbd></label>
+      <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq $c.Route "D"}} checked{{end}}>{{t "Direct"}} <kbd>d</kbd></label>
+      <span class="stamp m mgrstamp">
+        <label title="{{t "Via manager, direct"}}"><input type="radio" name="route" value="MD" data-key="m"{{if eq $c.Route "MD"}} checked{{end}}>{{t "Via manager"}} <small>{{t "direct"}} <kbd>m</kbd></small></label>
+        <label title="{{t "Via manager, bureau"}}"><input type="radio" name="route" value="MB" data-key="v"{{if eq $c.Route "MB"}} checked{{end}}><small>{{t "bureau"}} <kbd>v</kbd></small></label>
+      </span>
       <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="{{t "manager"}}" value="{{$c.MgrPrefill}}" aria-label="{{t "Manager callsign"}}"
              hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr" hx-swap="innerHTML"
              oninput="this.closest('#workcard').dataset.mgr = this.value.trim().toUpperCase()" onkeydown="if(event.key==='Escape'){this.blur()}">
-      <span class="muted">{{if $c.RouteFrom}}{{t "suggested: %s" (t $c.RouteFrom)}}{{else}}<span class="route-hint">{{t "choose how to send"}}</span>{{end}}</span>
     </div>
+    <p class="route-why">{{if eq $c.RouteFrom "your earlier choice"}}{{t "Your earlier choice."}}{{else if $c.RouteFrom}}{{t "Preselected by QRZ:"}}{{with $c.Lead.Sig}} {{tm .Why}}{{end}}{{else}}<span class="route-hint">{{t "Choose how to send."}}</span>{{if not $c.OQRS}}{{with $c.Lead.Sig}} {{tm .Note}}{{end}}{{end}}{{end}}{{if $c.OQRS}} <span class="oqrs">{{th "QRZ mentions <b>OQRS</b> - request their card instead (<kbd>r</kbd>)."}}</span>{{end}}</p>
     <p class="cardnote"><label>{{t "Note on the card"}} <input type="text" name="cardnote" size="40" maxlength="120" value="{{$c.Note}}" placeholder="{{t "printed on the card, e.g. tnx for the QSO"}}"
            onkeydown="if(event.key==='Enter'){event.preventDefault();document.querySelector('#workcard button[data-key=p]').click()}else if(event.key==='Escape'){this.blur()}"></label>
       {{if not .NoteField}}<span class="muted">{{th "The card template has no <code>qslmsg</code> field: the note is not printed."}}</span>{{end}}</p>
@@ -61,11 +61,10 @@
         <div id="mgr-addr">{{template "mgr_block" .Mgr}}</div>
       </div>
       <div class="for-B">
-        <h4>{{t "Into the bureau parcel"}}</h4>
-        <p class="why">{{t "No address needed."}}</p>
+        <p class="why">{{t "Bureau: no address needed."}}</p>
       </div>
     </div>
-    {{template "research_panel" $c.Lead}}
+    <div class="at-call">{{template "research_panel_desk" $c.Lead}}</div>
   </article>
   <div class="request" id="req" hidden>
     <label>{{t "Requested via"}} <select name="channel">{{range .Channels}}<option value="{{.}}">{{t .}}</option>{{end}}</select></label>
@@ -81,9 +80,8 @@
       <button type="button" class="stamp" data-key="w" title="{{t "Written by hand, mark it sent, next card"}}  (w)" hx-post="/work/written?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Written by hand - sent"}}</button>
       <button type="button" class="mini{{if $c.OQRS}} suggested{{end}}" data-key="r" title="{{t "Request their card instead (OQRS, PayPal, e-mail ...) - no own card"}}  (r)" onclick="var q=document.getElementById('req');q.hidden=!q.hidden;if(!q.hidden)q.querySelector('input[name=note]').focus()">{{t "Request their card"}}&hellip;</button>
       <button type="button" class="mini" data-key="n" title="{{t "No card after all - goes to Done, reopenable"}}  (n)" hx-post="/work/none?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "No card"}}</button>
-      <button type="button" class="mini" data-key="u" title="{{t "Take it back to New QSOs"}}  (u)" hx-post="/work/back?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "Back to New QSOs"}}</button>
     </span>
   </div>
-  <p class="muted legend">{{t "Keys:"}} {{t "send via"}} <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>p</kbd> {{t "to print"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; <kbd>u</kbd> {{t "back to New QSOs"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Written by hand marks the card as sent; To print puts it into the print queue at the top of the Desk."}}</p>
+  <p class="muted legend">{{t "Keys:"}} <kbd>p</kbd> {{t "to print"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Written by hand marks the card as sent; To print puts it into the print queue at the top of the Desk."}}</p>
 {{end}}
 </div>{{end}}

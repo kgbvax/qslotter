@@ -42,7 +42,7 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {"DL1ABC/P|20240103|140000|40m"}})
 
 	page := get(t, h, "/work/card?key="+url.QueryEscape(key)).Body.String()
-	for _, want := range []string{"card 2 of 2", "Confirming 2 two-way QSOs with", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
+	for _, want := range []string{"card 2 of 2", "2 QSOs on this card", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -154,20 +154,19 @@ func TestDeskRequested(t *testing.T) {
 	}
 }
 
-// TestDeskNoCardAndBack: change of mind at the Desk (B6), and back to the
-// Inbox, both for the whole card.
-func TestDeskNoCardAndBack(t *testing.T) {
+// TestDeskNoCard: change of mind at the Desk (B6), for the whole card; there
+// is no way back to the Inbox.
+func TestDeskNoCard(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := twoQSOCard(t, srv, st, key)
-	if r := postForm(t, h, "/work/back", url.Values{"key": {key, k2}}); r.Code != 200 {
-		t.Fatalf("back = %d", r.Code)
-	}
-	for _, k := range []string{key, k2} {
-		if it := status(t, st, k); it.Status != "queued" {
-			t.Fatalf("%s after back: %+v", k, it)
+	for _, p := range []string{"/work/back", "/queue/back"} {
+		if r := postForm(t, h, p, url.Values{"key": {key}}); r.Code != http.StatusNotFound {
+			t.Fatalf("%s = %d, want 404 (no way back to the Inbox)", p, r.Code)
 		}
-		postForm(t, h, "/queue/yes", url.Values{"key": {k}})
+	}
+	if b := get(t, h, "/work").Body.String(); strings.Contains(b, "Back to New QSOs") || strings.Contains(b, `data-key="u"`) {
+		t.Fatalf("the Desk still offers back to New QSOs:\n%s", b)
 	}
 	if r := postForm(t, h, "/work/none?view=work", url.Values{"key": {key, k2}}); r.Code != 200 {
 		t.Fatalf("no card = %d", r.Code)
@@ -193,7 +192,7 @@ func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "oqrs-hint", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
+	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "QRZ mentions <b>OQRS</b>", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -241,7 +240,9 @@ func TestDeskStaleAfterBack(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := twoQSOCard(t, srv, st, key)
-	postForm(t, h, "/work/back", url.Values{"key": {key, k2}})
+	if err := st.QueueBack(key, k2); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []string{"/work/written", "/work/none", "/work/print", "/work/requested"} {
 		if r := postForm(t, h, p, url.Values{"key": {key, k2}, "route": {"B"}, "channel": {"OQRS"}}); r.Code != http.StatusConflict {
 			t.Fatalf("%s on cards back in the Inbox = %d, want 409", p, r.Code)
@@ -270,7 +271,7 @@ func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 		t.Fatalf("choices for a card that left were applied to another card:\n%s", b)
 	}
 	b = getHX(t, h, "/work/card?key="+url.QueryEscape(key)+"&route=&manager=").Body.String()
-	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "suggested: by QRZ") {
+	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "Preselected by QRZ:") {
 		t.Fatalf("an empty carried route wiped the preselection:\n%s", b)
 	}
 }

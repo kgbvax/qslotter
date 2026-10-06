@@ -146,3 +146,39 @@ func routeFromAssessment(row *QueueRow) (code, manager string) {
 	}
 	return "", manager
 }
+
+// CallHead is the head of a card (Inbox, Desk): the callsign, the name with
+// the country, and the pills - the history with the station, plus one line of
+// the card's own (how many QSOs it covers).
+type CallHead struct {
+	Call    string
+	Name    string // the log's name, else QRZ's
+	Country string // QRZ
+	Pills   []Badge
+	Extra   i18n.Msg // the card's own pill, zero for none
+}
+
+// headFor builds the head of a card for one station: name from the log,
+// else from QRZ; the history badges (first / earlier QSOs) as pills.
+func headFor(call, name string, info *store.StationInfo, res *Research, extra i18n.Msg) CallHead {
+	h := CallHead{Call: call, Name: name, Extra: extra}
+	if info != nil && !info.NotFound {
+		if h.Name == "" {
+			h.Name = info.Name
+		}
+		h.Country = info.Country
+	}
+	if res != nil {
+		for _, b := range res.Badges {
+			if b.Kind == "first" || b.Kind == "earlier" {
+				h.Pills = append(h.Pills, b)
+			}
+		}
+	}
+	return h
+}
+
+// Head is the Inbox card's head.
+func (r *QueueRow) Head() CallHead {
+	return headFor(r.QSO.Call, r.QSO.Name, r.Info, r.Research, i18n.Msg{})
+}

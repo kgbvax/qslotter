@@ -19,14 +19,14 @@ stateDiagram-v2
     queued --> decided: yes, card
     queued --> skipped: no card
     queued --> skipped: backlog (before the cutoff, at startup)
-    queued --> sent: written now (B/D)
+    queued --> sent: written now (B/D; store only, no UI since 2026-10-06)
     queued --> sent: Clublog reports it sent
 
     decided --> toprint: to print (route + note)
     decided --> sent: written by hand (route)
     decided --> requested: request their card (channel + note)
     decided --> skipped: no card after all
-    decided --> queued: back to New QSOs
+    decided --> queued: back (store only, no UI since 2026-10-06)
     decided --> sent: Clublog reports it sent
 
     toprint --> printing: print run (all queued cards, one job) / ADIF export for a print service
@@ -59,7 +59,9 @@ Where the states live in the UI:
 
 The contact tracker (QSO in progress, `internal/contact`) makes the same
 Inbox moves when the QSO is logged: it enqueues the QSO and then applies yes
-(`decided`), no (`skipped`) or written now (`sent`).
+(`decided`) or no (`skipped`). "Written now" (Inbox, QSO in progress) and
+the Desk's "back to New QSOs" were dropped from the UI on 2026-10-06; their
+store transitions remain.
 
 ### Transitions
 
@@ -69,7 +71,7 @@ Inbox moves when the QSO is logged: it enqueues the QSO and then applies yes
 | `QueueAccept` | `queued` -> `decided` | Inbox yes, tracker | route cleared |
 | `QueueDecline` | `queued` -> `skipped` | Inbox no, tracker | `desired_method=N` |
 | `QueueDiscardBacklog` | `queued` -> `skipped` | startup, once per cutoff | `desired_method=N`, `note=backlog`; override-marker QSOs stay |
-| `QueueWrittenNow` | `queued` -> `sent` | Inbox / QSO in progress, written now | route B/D, `note=written now`; QSO: `qsl_sent_local=Y`, method, date |
+| `QueueWrittenNow` | `queued` -> `sent` | none since 2026-10-06 (was: Inbox / QSO in progress, written now) | route B/D, `note=written now`; QSO: `qsl_sent_local=Y`, method, date |
 | `QueueCloseSentElsewhere` | `queued`/`decided`/`toprint` -> `sent` | pull: the QSO is new or changed and Clublog has it sent | `note=sent elsewhere`; QSO untouched |
 | `QueueToPrint` | `decided` -> `toprint` | Desk `p` / batch "To print" | route, `card_note` |
 | `QueueUnprint` | `toprint` -> `decided` | print queue: back to the Desk | route and note kept as preselection |
@@ -81,7 +83,7 @@ Inbox moves when the QSO is logged: it enqueues the QSO and then applies yes
 | `QueueWritten` | `decided` -> `sent` | Desk `w` / batch | route; QSO sent state |
 | `QueueRequested` | `decided` -> `requested` | Desk `r` | `desired_method=R`, channel, note, `sent_at`; QSO: `qsl_rcvd_local=R` unless R/Y already |
 | `QueueDeskDecline` | `decided` -> `skipped` | Desk `n` / batch | `desired_method=N` |
-| `QueueBack` | `decided` -> `queued` | Desk `u` / batch | route cleared |
+| `QueueBack` | `decided` -> `queued` | none since 2026-10-06 (was: Desk `u` / batch) | route cleared |
 | `QueueReply` | none/`queued`/`skipped`/`requested`(card arrived) -> `decided`; `decided` stays | Incoming QSLs: later at the Desk | new row: `override_reason=reply to their card` |
 | `QueueReplyFinish` | as `QueueReply`, then -> `sent` (written) or `toprint` | Incoming QSLs: written / to print | one transaction |
 | `QueueReopen` | `sent`/`skipped`/`requested` -> `queued` | Done: Reopen | clears route, note, dates; local sent/requested state cleared |

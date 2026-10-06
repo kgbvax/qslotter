@@ -212,6 +212,15 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
   font: 700 44px/1.1 'IBM Plex Mono', monospace; letter-spacing: 0.02em;
   margin: 2px 0 10px;
 }
+/* Inbox and Desk card: big callsign left, name above the history pills on its right */
+.callhead { display: flex; align-items: center; gap: 18px; margin: 2px 0 10px; }
+.callhead .call { margin: 0; }
+.callside { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.callside .name { font: 500 18px 'Schibsted Grotesk', sans-serif; color: var(--ink-soft); }
+.callside .chip { font-size: 13px; }
+.callside .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.callside .pills:empty { display: none; }
+.chip.oncard { color: var(--ink-soft); }
 
 .loggrid {
   display: grid; grid-template-columns: repeat(5, 1fr);
@@ -322,25 +331,33 @@ header.site nav .pending.err { color: var(--red); }
 .filters a { margin-right: 10px; }
 .filters a.on { color: var(--ink); font-weight: 700; text-decoration: none; border-bottom: 2px solid var(--ink); }
 
-/* Inbox: yes / no, written now (armed by the w key) */
-.written-now .lbl { font-size: 12px; color: var(--ink-soft); align-self: center; }
-.written-now.armed { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
-
-/* Desk: the route is chosen when the card is finished */
-.routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 6px; }
-.routes label.stamp {
+/* Desk: the route is chosen when the card is finished. The stamp is the
+   control (the radio inside is kept for the form and the keyboard, not drawn):
+   Bureau, Direct, Via manager - the manager stamp carries its direct/bureau
+   choice. */
+.routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 4px; }
+.routes .stamp {
   font: 700 12px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.05em;
   padding: 4px 10px; border: 2px solid currentColor; border-radius: 3px; cursor: pointer;
+  position: relative; display: inline-flex; align-items: baseline; gap: 5px;
 }
-.routes label.stamp input { margin: 0 4px 0 0; vertical-align: -1px; }
-.routes label.stamp kbd { font-size: 10px; opacity: 0.7; }
-.routes label.stamp.b { color: var(--blue); }
-.routes label.stamp.d { color: var(--red); }
-.routes label.stamp.m { color: var(--ink); }
-.routes label.stamp.b:has(input:checked) { background: var(--blue); border-color: var(--blue); color: var(--card); }
-.routes label.stamp.d:has(input:checked) { background: var(--red); border-color: var(--red); color: var(--card); }
-.routes label.stamp.m:has(input:checked) { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.routes input[type=radio] { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; pointer-events: none; }
+.routes .stamp kbd { font-size: 10px; opacity: 0.7; }
+.routes .stamp.b { color: var(--blue); }
+.routes .stamp.d { color: var(--red); }
+.routes .stamp.m { color: var(--ink); }
+.routes .stamp.b:has(input:checked) { background: var(--blue); border-color: var(--blue); color: var(--card); }
+.routes .stamp.d:has(input:checked) { background: var(--red); border-color: var(--red); color: var(--card); }
+.routes .stamp.m:has(input:checked) { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.routes .stamp:has(input:focus-visible) { outline: 2px solid var(--blue); outline-offset: 2px; }
+.routes .stamp:has(input:checked) kbd { border-color: currentColor; background: transparent; color: inherit; }
+.mgrstamp { gap: 9px; }
+.mgrstamp label { cursor: pointer; display: inline-flex; align-items: baseline; gap: 5px; }
+.mgrstamp small { font: 600 11px 'Schibsted Grotesk', sans-serif; text-transform: none; letter-spacing: 0; opacity: 0.7; }
+.mgrstamp label:has(input:checked) small { opacity: 1; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
 .routes .mgr-in { width: 13ch; padding: 5px 8px; font: 500 13px 'IBM Plex Mono', monospace; text-transform: uppercase; }
+.route-why { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
+.route-why b { color: var(--ink); }
 #workcard .pref > div { display: none; }
 #workcard[data-route="B"] .pref .for-B, #workcard[data-route="D"] .pref .for-D,
 #workcard[data-route="M"] .pref .for-M, #workcard[data-route=""] .pref .for-none { display: block; }
@@ -363,6 +380,7 @@ header.site nav .pending.err { color: var(--red); }
 .chip.first { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 700; }
 .entry .call .chip.first, .qslcard .call .chip.first, .entry .call .chip.earlier, .qslcard .call .chip.earlier { font-size: 13px; vertical-align: middle; margin-left: 6px; }
 .at-call .chip.first, .at-call .chip.earlier { display: none; } /* shown beside the callsign instead */
+.at-call .badges:not(:has(.chip:not(.first):not(.earlier))) { display: none; } /* nothing left in the row */
 .why-queued { font-size: 12.5px; color: var(--red); margin: 4px 0; }
 .qrzstate { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .pref h4 .sigs { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 8px; vertical-align: middle; }
@@ -382,11 +400,10 @@ table.hist { font-size: 12.5px; margin-top: 2px; }
 table.hist td, table.hist th { padding: 2px 10px 2px 0; }
 table.hist td { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
 
-/* Desk card: the QSOs on the card, request panel, OQRS hint */
+/* Desk card: the QSOs on the card, request panel */
 table.cardqsos { margin: 10px 0 4px; font: 400 13px 'IBM Plex Mono', monospace; }
 table.cardqsos th { font-size: 11px; }
 table.cardqsos td { padding: 3px 12px 3px 0; }
-.oqrs-hint { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
 .request { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; padding: 8px 10px;
            border: 1.5px dashed var(--ink-soft); border-radius: 3px; }
 .request[hidden] { display: none; }

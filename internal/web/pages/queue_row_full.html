@@ -7,11 +7,6 @@
 
 {{define "row_actions"}}<td class="actions">
   {{template "row_yesno" .}}
-  <span class="fulfil written-now" role="group" aria-label="{{t "Already written"}}">
-    <span class="lbl" title="{{t "Card already filled in during the QSO - marked sent via bureau/direct, goes to Done"}}">{{t "Already written - sent via:"}}</span>
-    <button type="button" class="mini" title="{{t "Already written, sent via the bureau - goes to Done"}}" hx-post="/queue/written?route=B&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Bureau"}}</button>
-    <button type="button" class="mini" title="{{t "Already written, sent direct - goes to Done"}}" hx-post="/queue/written?route=D&amp;key={{q .Item.QSLKey}}" hx-target="closest tr" hx-swap="outerHTML">{{t "Direct"}}</button>
-  </span>
 </td>{{end}}
 
 {{define "row_suggestion"}}{{if .Suggested}}<span class="sug">{{if eq .Suggested "N"}}{{t "no card"}}{{else}}{{.Suggested}}{{end}}</span> <span class="badge">QRZ</span>{{else}}<span class="muted">?</span>{{end}}{{end}}

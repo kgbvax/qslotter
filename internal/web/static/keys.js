@@ -9,31 +9,13 @@ window.qslKeys = (function () {
   }
   function plain(ev) { return !(ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) && !editing(ev.target); }
 
-  // Inbox: y (or j) yes, card; n no card; w arms "written now", then b or d
-  // picks the route (two keys, so a slip cannot mark a card sent); left/right
-  // browse on the card-by-card page. A decision shows the next card down.
+  // Inbox: y (or j) yes, card; n no card; left/right browse on the
+  // card-by-card page. A decision shows the next card down.
   function inbox() {
-    var armed = false;
-    function arm(on) {
-      armed = on;
-      document.querySelectorAll('#decide .written-now').forEach(function (el) { el.classList.toggle('armed', on); });
-    }
-    document.addEventListener('htmx:afterSwap', function (ev) {
-      // only a new decide card ends the "w" prefix (the QSO-in-progress box
-      // and other panes reload on their own)
-      var t = ev.detail && ev.detail.target;
-      if (t && t.id === 'decide') arm(false);
-    });
     document.addEventListener('keydown', function (ev) {
       if (!plain(ev)) return;
       var k = ev.key.toLowerCase();
       if (k === 'j') k = 'y';
-      if (k === 'w') { ev.preventDefault(); arm(!armed); return; }
-      if (armed) {
-        arm(false);
-        if (k !== 'b' && k !== 'd') return;
-        k = 'w' + k;
-      }
       var btn = document.querySelector('#decide button[data-key="' + k + '"]');
       if (!btn) return;
       ev.preventDefault();
@@ -43,7 +25,7 @@ window.qslKeys = (function () {
 
   // Desk: b/d/m/v pick the route (bureau, direct, via manager direct or
   // bureau), p prints, w records a hand-written card, r opens "requested"
-  // (Enter in its note records it), n no card, u back to the Inbox; left/right
+  // (Enter in its note records it), n no card; left/right
   // browse on the card-by-card page. Each finishing action shows the next card.
   function desk() {
     function pick(r) {

@@ -70,17 +70,16 @@ func logQSO(t *testing.T, st store.Store, call, band string, queued bool) *store
 	return q
 }
 
-// TestWrittenDuringTheQSO: "written now" for the QSO in progress is booked
-// on the QSO when it is logged - queued or not - and ends the QSO in
-// progress.
-func TestWrittenDuringTheQSO(t *testing.T) {
+// TestCardDuringTheQSO: a card decided for the QSO in progress is booked on
+// the QSO when it is logged - queued or not - and ends the QSO in progress.
+func TestCardDuringTheQSO(t *testing.T) {
 	st := openStore(t)
 	tr := NewTracker(st, nil, nil)
 	tr.Set(Contact{Call: "vu2atn", Source: "callsign"})
 	if cur := tr.Current(); cur == nil || cur.Call != "VU2ATN" {
 		t.Fatalf("current = %+v", cur)
 	}
-	tr.MarkWritten("VU2ATN", store.Route{Method: "B"})
+	tr.MarkDecision("VU2ATN", Yes)
 	if p := tr.Pending(); len(p) != 1 || p[0].Call != "VU2ATN" {
 		t.Fatalf("pending = %+v", p)
 	}
@@ -92,7 +91,7 @@ func TestWrittenDuringTheQSO(t *testing.T) {
 	q := logQSO(t, st, "VU2ATN", "15m", false) // not queued (e.g. digital mode)
 	tr.QSOLogged(q)
 	it, _ := st.QueueGet(q.QSLKey)
-	if it == nil || it.Status != "sent" || it.DesiredMethod != "B" || it.Note != "written now" || it.OverrideReason != "written during the QSO" {
+	if it == nil || it.Status != "decided" || it.OverrideReason != ReasonDecided {
 		t.Fatalf("booked card: %+v", it)
 	}
 	if len(tr.Pending()) != 0 || tr.Current() != nil {
@@ -108,13 +107,13 @@ func TestPendingPortableAndExpiry(t *testing.T) {
 	now := time.Now().UTC()
 	tr := NewTracker(st, nil, nil)
 	tr.now = func() time.Time { return now }
-	tr.MarkWritten("DL1ABC", store.Route{Method: "D"})
+	tr.MarkDecision("DL1ABC", No)
 	q := logQSO(t, st, "DL1ABC/P", "40m", true) // logged under the portable call
 	tr.QSOLogged(q)
-	if it, _ := st.QueueGet(q.QSLKey); it.Status != "sent" || it.DesiredMethod != "D" {
+	if it, _ := st.QueueGet(q.QSLKey); it.Status != "skipped" {
 		t.Fatalf("portable form must match: %+v", it)
 	}
-	tr.MarkWritten("K1ABC", store.Route{Method: "B"})
+	tr.MarkDecision("K1ABC", Yes)
 	now = now.Add(PendingTTL + time.Minute)
 	if len(tr.Pending()) != 0 {
 		t.Fatal("an old pending card expires")
@@ -152,7 +151,7 @@ func TestOlderQSODoesNotTakeTheCard(t *testing.T) {
 	st := openStore(t)
 	tr := NewTracker(st, nil, nil)
 	tr.Set(Contact{Call: "VP6A"})
-	tr.MarkWritten("VP6A", store.Route{Method: "D"})
+	tr.MarkDecision("VP6A", Yes)
 	old := &store.QSO{QSLKey: "VP6A|20150101|100000|20M", Call: "VP6A", QSODate: "20150101", TimeOn: "100000", Band: "20M", Mode: "SSB", Hash: "old"}
 	if _, _, err := st.UpsertQSO(old); err != nil {
 		t.Fatal(err)
@@ -166,7 +165,7 @@ func TestOlderQSODoesNotTakeTheCard(t *testing.T) {
 	}
 	q := logQSO(t, st, "VP6A", "40M", true)
 	tr.QSOLogged(q)
-	if it, _ := st.QueueGet(q.QSLKey); it == nil || it.Status != "sent" {
+	if it, _ := st.QueueGet(q.QSLKey); it == nil || it.Status != "decided" {
 		t.Fatalf("the QSO in progress takes it: %+v", it)
 	}
 }

@@ -4,28 +4,60 @@
 {{define "sigstrip"}}{{with .}}<p class="sigs">{{template "sigchips" .}}</p>
 {{if .Suggest}}<p class="sugline">{{th `Suggests <b class="tentative">%s</b>` (html (t (methodName .Suggest)))}}{{if .Manager}} {{.Manager}}{{end}} <span class="muted">- {{tm .Why}}</span></p>{{else}}<p class="why">{{tm .Note}} <span class="muted">- {{tm .Why}}</span></p>{{end}}{{end}}{{end}}
 
-{{define "research_panel"}}{{$row := .}}
-{{with .Research}}
+{{/* The research panel in parts: the Inbox and the QSO in progress show all of
+     them (research_panel); the Desk card leaves out the suggestion line and
+     the address, which it shows under the route (research_panel_desk). */}}
+{{/* The head of a card: big callsign left; name and country above the pills
+     (history with the station, the card's own line) on its right. */}}
+{{define "callhead"}}<div class="callhead">
+      <p class="call">{{.Call}}</p>
+      <div class="callside">
+        {{if or .Name .Country}}<span class="name">{{.Name}}{{if and .Name .Country}}, {{end}}{{.Country}}</span>{{end}}
+        <span class="pills">{{range .Pills}}<span class="chip {{.Kind}}">{{tm .Text}}</span>{{end}}{{if not .Extra.IsZero}}<span class="chip oncard" title="{{t "The ticked QSOs share the card"}}">{{tm .Extra}}</span>{{end}}</span>
+      </div>
+    </div>{{end}}
+
+{{define "research_badges"}}{{with .Research}}
   {{if .WhyQueued}}<p class="why-queued">{{t "Queued because: %s" (t .WhyQueued)}}</p>{{end}}
   <p class="badges">{{range .Badges}}<span class="chip {{.Kind}}">{{tm .Text}}</span> {{end}}</p>
-{{end}}
-<div class="pref">
-  <h4><a class="qrzlink" href="https://www.qrz.com/db/{{.QSO.Call}}" target="_qrz" rel="noopener" title="{{t "Open on QRZ.com"}}">{{t "QRZ:"}}</a>{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "%s ago" .QRZAge}}{{end}}</span>{{end}}{{if and .Info (not .Info.NotFound)}}{{with $row.Sig}} <span class="sigs">{{template "sigchips" .}}</span>{{end}}{{end}}{{with .Research}}{{if .CanRefresh}} <button type="button" class="mini qrz-refresh" title="{{t "Look the station up on QRZ again now"}}" hx-post="/station/refresh?call={{q $row.QSO.Call}}" hx-swap="none" hx-disabled-elt="this">{{t "Refresh"}}</button>{{end}}{{end}}</h4>
-  {{if and .Info (not .Info.NotFound)}}
-    {{with $row.Sig}}{{template "sugline" .}}{{end}}
+{{end}}{{end}}
+
+{{define "qrz_head"}}{{$row := .}}<h4><a class="qrzlink" href="https://www.qrz.com/db/{{.QSO.Call}}" target="_qrz" rel="noopener" title="{{t "Open on QRZ.com"}}">{{t "QRZ:"}}</a>{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "%s ago" .QRZAge}}{{end}}</span>{{end}}{{if and .Info (not .Info.NotFound)}}{{with $row.Sig}} <span class="sigs">{{template "sigchips" .}}</span>{{end}}{{end}}{{with .Research}}{{if .CanRefresh}} <button type="button" class="mini qrz-refresh" title="{{t "Look the station up on QRZ again now"}}" hx-post="/station/refresh?call={{q $row.QSO.Call}}" hx-swap="none" hx-disabled-elt="this">{{t "Refresh"}}</button>{{end}}{{end}}</h4>{{end}}
+
+{{define "qrz_evidence"}}{{$row := .}}{{if and .Info (not .Info.NotFound)}}
     {{if .Info.QSLMgr}}<p class="why">{{t "QSL manager field:"}} <code>{{.Info.QSLMgr}}</code></p>{{end}}
     {{with $row.Research}}{{if .BioExcerpt}}<pre class="bio">{{.BioExcerpt}}</pre>{{end}}{{end}}
     {{if .Info.BioText}}<details class="fullbio"><summary>{{t "full bio"}}</summary><pre class="bio">{{.Info.BioText}}</pre></details>{{end}}
-    {{if or .Info.Addr1 .Info.Addr2 .Info.Country}}
+{{end}}{{end}}
+
+{{define "qrz_address"}}{{if and .Info (not .Info.NotFound)}}{{if or .Info.Addr1 .Info.Addr2 .Info.Country}}
     <address>{{if or .Info.Name .QSO.Name}}{{if .Info.Name}}{{.Info.Name}}{{else}}{{.QSO.Name}}{{end}}<br>{{end}}{{if .Info.Attn}}{{.Info.Attn}}<br>{{end}}{{if .Info.Addr1}}{{.Info.Addr1}}<br>{{end}}{{if .Info.Addr2}}{{.Info.Addr2}}<br>{{end}}{{if or .Info.State .Info.Zip}}{{.Info.State}} {{.Info.Zip}}<br>{{end}}{{.Info.Country}}</address>
-    {{end}}
-  {{end}}
-</div>
-{{with .Research}}{{if .History}}
+{{end}}{{end}}{{end}}
+
+{{define "research_history"}}{{with .Research}}{{if .History}}
 <h4 class="histhead">{{t "Earlier QSOs with this station"}}</h4>
 <table class="hist">
   <thead><tr><th>{{t "Date"}}</th><th>{{t "UTC"}}</th><th>{{t "Call"}}</th><th>{{t "Band"}}</th><th>{{t "Mode"}}</th><th>{{t "Your card"}}</th><th>{{t "Their card"}}</th><th>{{t "Now"}}</th></tr></thead>
   <tbody>{{range .History}}<tr><td>{{.Date}}</td><td>{{.Time}}</td><td>{{.Call}}</td><td>{{.Band}}</td><td>{{.Mode}}</td><td>{{tm .Sent}}</td><td>{{tm .Rcvd}}{{if .LoTW}} LoTW{{end}}</td><td>{{tm .Queue}}</td></tr>{{end}}</tbody>
 </table>
-{{end}}{{end}}
+{{end}}{{end}}{{end}}
+
+{{define "research_panel"}}{{$row := .}}
+{{template "research_badges" .}}
+<div class="pref">
+  {{template "qrz_head" .}}
+  {{if and .Info (not .Info.NotFound)}}{{with $row.Sig}}{{template "sugline" .}}{{end}}{{end}}
+  {{template "qrz_evidence" .}}
+  {{template "qrz_address" .}}
+</div>
+{{template "research_history" .}}
+{{end}}
+
+{{define "research_panel_desk"}}
+{{template "research_badges" .}}
+<div class="pref">
+  {{template "qrz_head" .}}
+  {{template "qrz_evidence" .}}
+</div>
+{{template "research_history" .}}
 {{end}}

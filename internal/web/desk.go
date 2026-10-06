@@ -36,7 +36,7 @@ type DeskCard struct {
 	Keys  []string    // the QSOs' keys, oldest first
 	Extra int         // QSOs beyond the lead (list display)
 
-	Name   string // the newest non-empty NAME among the card's QSOs (shown and printed)
+	Name   string // the newest non-empty NAME among the card's QSOs (printed)
 	QTH    string // likewise for QTH
 	Prints int    // physical cards a print produces (QSO rows per card from the template)
 
@@ -123,6 +123,19 @@ func cardNote(rows []*QueueRow) string {
 		note = cmpOr(r.QSO.QSLMsg, note)
 	}
 	return note
+}
+
+// Head is the card's head: callsign, name, history, and how many QSOs the
+// card covers when more than one.
+func (c *DeskCard) Head() CallHead {
+	var extra i18n.Msg
+	switch {
+	case c.Prints > 1:
+		extra = i18n.M("%d QSOs on this card, prints as %d cards", len(c.Rows), c.Prints)
+	case c.Extra > 0:
+		extra = i18n.M("%d QSOs on this card", len(c.Rows))
+	}
+	return headFor(c.Call, c.Name, c.Lead.Info, c.Lead.Research, extra)
 }
 
 // cmpOr returns a unless it is empty, else b.
@@ -477,11 +490,6 @@ func (s *Server) htmxWorkNone(w http.ResponseWriter, r *http.Request) {
 	s.deskAction(w, r, "skipped", func(keys []string) error { return s.store.QueueDeskDecline(keys...) })
 }
 
-// htmxWorkBack takes the card back to the Inbox.
-func (s *Server) htmxWorkBack(w http.ResponseWriter, r *http.Request) {
-	s.deskAction(w, r, "queued", func(keys []string) error { return s.store.QueueBack(keys...) })
-}
-
 // batchDesk applies one action to every ticked card of the Desk list. Each
 // checkbox carries the card's lead key; the QSOs the row showed come as
 // card:<lead> fields (a QSO that joined the card after the page was drawn is
@@ -503,8 +511,6 @@ func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string
 		}
 	case "none":
 		apply = func(keys []string, _ string) (string, error) { return "skipped", s.store.QueueDeskDecline(keys...) }
-	case "back":
-		apply = func(keys []string, _ string) (string, error) { return "queued", s.store.QueueBack(keys...) }
 	default:
 		s.fail(w, r, http.StatusBadRequest, "unknown batch action for the Desk")
 		return
