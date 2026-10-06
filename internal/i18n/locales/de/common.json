@@ -88,7 +88,6 @@
   "Recent QSOs": "Letzte QSOs",
   "via %s": "über %s",
   "Email:": "E-Mail:",
-  "Print - sent": "Drucken - gesendet",
   "Written by hand - sent": "Handgeschrieben - gesendet",
   "Request their card": "Ihre Karte anfordern",
   "Save": "Speichern",
@@ -99,5 +98,11 @@
   "Not now": "Jetzt nicht",
   "not now": "jetzt nicht",
   "QRZ suggestion": "QRZ-Vorschlag",
-  "Open on QRZ.com": "Auf QRZ.com öffnen"
+  "Open on QRZ.com": "Auf QRZ.com öffnen",
+  "To print": "Zum Drucken",
+  "to print": "zum Drucken",
+  "Note on the card": "Notiz auf der Karte",
+  "printed on the card, e.g. tnx for the QSO": "wird auf die Karte gedruckt, z. B. tnx für das QSO",
+  "Version %s": "Version %s",
+  "built %s": "erstellt %s"
 }

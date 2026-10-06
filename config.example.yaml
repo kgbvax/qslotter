@@ -30,11 +30,11 @@ qrz:
 
 printer:
   name: ""              # empty = system default
-  command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
   paper_size_mm: [100, 74]
 
 card:
   template: default.yaml
+  # export_dir: exports   # ADIF files for a QSL print service; default: "exports" next to the database
 
 qualify:
   exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]

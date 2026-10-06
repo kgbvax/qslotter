@@ -9,7 +9,8 @@
 //   workcard  work card view: like decide, for decided cards
 //   (Inbox pages also keep the "QSO in progress" box current: current_contact)
 //   md-inbox, md-desk  master-detail pages: the list reloads, the detail pane
-//             follows the selection (and moves on when its card left)
+//             follows the selection (and moves on when its card left); the
+//             Desk's print queue section reloads too
 (function () {
   var mode = document.body.dataset.live;
   if (!mode || !window.EventSource) return;
@@ -281,4 +282,29 @@
   }
   es.addEventListener('queue_changed', function () { settled(reloadList); });
   es.addEventListener('station_updated', function () { settled(reloadList); });
+
+  // The print queue at the top of the Desk follows every move (keeping the
+  // ticks of the open run).
+  var pqTimer = null;
+  function reloadPrintQueue() {
+    clearTimeout(pqTimer);
+    pqTimer = setTimeout(function () {
+      var pq = byId('printq');
+      if (!pq || !desk) return;
+      var ticks = {};
+      pq.querySelectorAll('input[name="lead"]:checked').forEach(function (c) { ticks[c.value] = true; });
+      fetch('/work/printq').then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+        var cur = byId('printq');
+        if (html === null || !cur) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html.trim();
+        var fresh = tmp.firstElementChild;
+        if (!fresh) return;
+        fresh.querySelectorAll('input[name="lead"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
+        cur.replaceWith(fresh);
+        if (window.htmx) htmx.process(fresh);
+      });
+    }, 150);
+  }
+  es.addEventListener('queue_changed', function () { settled(reloadPrintQueue); });
 })();

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/buildinfo"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
@@ -20,7 +21,7 @@ import (
 // credentials, station identity).
 func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt()})
+		"ClublogPaused": s.clublogPausedAt(), "Build": buildinfo.Get()})
 }
 
 // saveSettings writes the form values into the config file on disk (a

@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/buildinfo"
 	"github.com/dl9et/qslotter/internal/clublog"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/contact"
@@ -78,6 +79,10 @@ func main() {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		fatal("Configuration", err)
+	}
+	{
+		b := buildinfo.Get()
+		log.Printf("qslotter %s, built %s", b.Version, b.Built.UTC().Format("2006-01-02 15:04 UTC"))
 	}
 	log.Printf("config %s, database %s, log %s", cfgPath, cfg.Store.Path, logPath)
 	uiValue := cfg.UI.Mode

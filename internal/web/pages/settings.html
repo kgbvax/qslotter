@@ -42,8 +42,9 @@
 
     <p><button type="submit">{{t "Save & validate"}}</button></p>
   </form>
-  {{if .CanQuit}}
   <h3>{{t "Program"}}</h3>
+  <p class="muted" id="build">{{t "Version %s" .Build.Version}}{{if not .Build.Built.IsZero}} &middot; {{t "built %s" (.Build.Built.UTC.Format "2006-01-02 15:04 UTC")}}{{end}}</p>
+  {{if .CanQuit}}
   <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
   <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
   {{end}}

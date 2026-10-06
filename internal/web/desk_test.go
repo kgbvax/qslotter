@@ -54,8 +54,15 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 
 	fp := srv.printer.(*fakePrinter)
 	r := postForm(t, h, "/work/print?view=work", url.Values{"key": {key, k2}, "route": {"B"}})
-	if r.Code != 200 || len(fp.printed) != 1 {
-		t.Fatalf("print card = %d, printed %d: %s", r.Code, len(fp.printed), r.Body)
+	if r.Code != 200 || len(fp.printed) != 0 {
+		t.Fatalf("to print = %d, printed %d: %s", r.Code, len(fp.printed), r.Body)
+	}
+	if pq := get(t, h, "/work/printq").Body.String(); strings.Count(pq, "/work/unprint") != 1 {
+		t.Fatalf("one card for both QSOs in the print queue:\n%s", pq)
+	}
+	printAll(t, h)
+	if len(fp.printed) != 1 {
+		t.Fatalf("printed %d jobs, want 1", len(fp.printed))
 	}
 	for _, k := range []string{key, k2} {
 		if it := status(t, st, k); it.Status != "sent" || it.DesiredMethod != "B" || !it.PrintedAt.Valid {
@@ -277,8 +284,8 @@ func TestDeskManagerBlockWithoutQRZ(t *testing.T) {
 }
 
 // TestDeskBrokenTemplateStopsPrint: a card template that exists but does not
-// load fails the print (the card stays on the Desk); a missing one falls
-// back to the built-in template.
+// load fails the print run (the cards go back to the print queue); a missing
+// one falls back to the built-in template.
 func TestDeskBrokenTemplateStopsPrint(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
@@ -288,15 +295,18 @@ func TestDeskBrokenTemplateStopsPrint(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv.cfg.Card.Template = bad
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != http.StatusInternalServerError || !strings.Contains(r.Body.String(), "card template") {
-		t.Fatalf("print with a broken template = %d: %s", r.Code, r.Body)
+	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
+		t.Fatalf("to print = %d: %s", r.Code, r.Body)
 	}
-	if it := status(t, st, key); it.Status != "decided" || len(srv.printer.(*fakePrinter).printed) != 0 {
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != http.StatusBadGateway || !strings.Contains(r.Body.String(), "card template") {
+		t.Fatalf("print run with a broken template = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, key); it.Status != "toprint" || len(srv.printer.(*fakePrinter).printed) != 0 {
 		t.Fatalf("a failed template must not print or finish the card: %+v", it)
 	}
 	srv.cfg.Card.Template = filepath.Join(t.TempDir(), "missing.yaml")
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
-		t.Fatalf("print with a missing template file = %d: %s", r.Code, r.Body)
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != 200 {
+		t.Fatalf("print run with a missing template file = %d: %s", r.Code, r.Body)
 	}
 }
 

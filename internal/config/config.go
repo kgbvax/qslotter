@@ -95,12 +95,14 @@ type QRZCfg struct {
 
 type PrinterCfg struct {
 	Name        string     `yaml:"name"`
-	Command     string     `yaml:"command"`
 	PaperSizeMM [2]float64 `yaml:"paper_size_mm"`
 }
 
 type CardCfg struct {
 	Template string `yaml:"template"`
+	// ExportDir is where the ADIF files for a QSL print service are written
+	// (empty = "exports" next to the database).
+	ExportDir string `yaml:"export_dir"`
 }
 
 // ReceiveCfg configures Incoming QSLs.
@@ -181,6 +183,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Card.Template != "" && !filepath.IsAbs(cfg.Card.Template) {
 		cfg.Card.Template = filepath.Join(dir, cfg.Card.Template)
+	}
+	if cfg.Card.ExportDir != "" && !filepath.IsAbs(cfg.Card.ExportDir) {
+		cfg.Card.ExportDir = filepath.Join(dir, cfg.Card.ExportDir)
 	}
 	// Clublog.PullInterval / PushInterval: 0 (or omitted) disables the
 	// respective background loop; the log-page buttons always work.

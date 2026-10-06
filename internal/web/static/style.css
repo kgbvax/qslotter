@@ -393,6 +393,20 @@ table.cardqsos td { padding: 3px 12px 3px 0; }
 .request input[name=note] { padding: 4px 8px; }
 button.mini.suggested { outline: 1.5px dashed var(--ink-soft); outline-offset: 2px; }
 .pref.sendto { margin-bottom: 10px; }
+.cardnote { margin: 6px 0 10px; font-size: 13px; }
+.cardnote input[name=cardnote] { padding: 4px 8px; margin-left: 6px; }
+
+/* Print queue (top of the Desk): cards sent to printing, the open print run */
+.printq { border: 1.5px solid var(--ink); border-left: 6px solid var(--area, var(--ink)); border-radius: 3px; background: var(--card); padding: 4px 14px 8px; margin-bottom: 14px; }
+.printq[hidden] { display: none; }
+.printq .grouphead { margin-top: 8px; }
+.printq .pq-run + .pq-queue { border-top: 1px dashed var(--ink-soft); margin-top: 8px; }
+table.pq-table { margin: 4px 0; }
+table.pq-table td { padding: 4px 14px 4px 0; vertical-align: top; }
+table.pq-table .call { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
+table.pq-table .routetag { font: 600 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+table.pq-table .pq-note { font-size: 13px; }
+.printq .pq-file { margin: 2px 0 4px; font-size: 13px; overflow-wrap: anywhere; }
 
 /* Master-detail (Inbox, Desk): the list selects, the detail pane decides */
 .md { display: grid; grid-template-columns: minmax(300px, 36%) 1fr; gap: 18px; align-items: start; }
@@ -494,7 +508,7 @@ main { padding-top: 22px; }
 .current .current-research { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--rule); margin-top: 4px; padding-top: 4px; }
 
 /* reply panel (Incoming) is short: its action row needs no sticky bar */
-.reply .decide-actions { position: static; border-top: 0; background: transparent; padding: 0; margin: 10px 0 6px; }
+.reply .decide-actions, .printq .decide-actions { position: static; border-top: 0; background: transparent; padding: 0; margin: 10px 0 6px; }
 
 /* The QRZ heading links to the station's QRZ.com page (always the same window: target="_qrz"). */
 .pref h4 a.qrzlink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }

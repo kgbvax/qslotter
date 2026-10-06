@@ -258,7 +258,15 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/back", s.htmxQueueBack)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
 	r.Post("/queue/batch", s.batchQueue)
-	r.Post("/work/print", s.htmxWorkPrint) // Desk card actions take key=... once per QSO on the card
+	r.Post("/work/print", s.htmxWorkPrint)           // Desk card actions take key=... once per QSO on the card; print = to the print queue
+	r.Get("/work/printq", s.htmxPrintQueue)          // the print queue section (live refresh)
+	r.Post("/work/printrun", s.htmxPrintRun)         // print every queued card as one job, open the run
+	r.Post("/work/exportrun", s.htmxExportRun)       // instead: every queued card into one ADIF file for a print service
+	r.Get("/work/export", s.htmxExportFile)          // ?name=qsl-....adi: download an exported file
+	r.Post("/work/printconfirm", s.htmxPrintConfirm) // the run came out right: its cards are sent
+	r.Post("/work/reprint", s.htmxReprint)           // lead=... (+ card:<lead>=key ...): print these again (how=export: export again)
+	r.Post("/work/printback", s.htmxPrintBack)       // lead=...: from the run back to the print queue
+	r.Post("/work/unprint", s.htmxUnprint)           // key=...: from the print queue back to the Desk
 	r.Post("/work/written", s.htmxWorkWritten)
 	r.Post("/work/requested", s.htmxWorkRequested)
 	r.Post("/work/none", s.htmxWorkNone)

@@ -87,7 +87,13 @@ func RenderPDF(path string, tmpl *template.Template, fields QSOFields) error {
 // continue on further pages (one page = one physical card; the shared fields
 // repeat on every page). Zero rows is an error.
 func RenderCard(path string, tmpl *template.Template, card CardFields) error {
-	pdf, err := buildPDF(tmpl, card)
+	return RenderCards(path, tmpl, []CardFields{card})
+}
+
+// RenderCards renders several cards into one PDF at path, in order (one print
+// job for a whole print run). Each card is laid out as RenderCard does.
+func RenderCards(path string, tmpl *template.Template, cards []CardFields) error {
+	pdf, err := buildPDF(tmpl, cards)
 	if err != nil {
 		return err
 	}
@@ -102,14 +108,19 @@ func MaxRows(tmpl *template.Template) int {
 	return tmpl.MaxRows()
 }
 
-// buildPDF lays out the whole card document, one page per MaxRows(tmpl)
-// rows, without writing it.
-func buildPDF(tmpl *template.Template, card CardFields) (*fpdf.Fpdf, error) {
+// buildPDF lays out the whole document, one page per MaxRows(tmpl) rows of
+// each card, without writing it.
+func buildPDF(tmpl *template.Template, cards []CardFields) (*fpdf.Fpdf, error) {
 	if tmpl == nil {
 		return nil, errors.New("printer: no card template")
 	}
-	if len(card.Rows) == 0 {
-		return nil, errors.New("printer: card has no QSO rows")
+	if len(cards) == 0 {
+		return nil, errors.New("printer: no cards")
+	}
+	for _, card := range cards {
+		if len(card.Rows) == 0 {
+			return nil, fmt.Errorf("printer: card for %s has no QSO rows", card.Call)
+		}
 	}
 	pdf := fpdf.NewCustom(&fpdf.InitType{
 		OrientationStr: "P",
@@ -127,12 +138,14 @@ func buildPDF(tmpl *template.Template, card CardFields) (*fpdf.Fpdf, error) {
 		pdf.SetFont(font, "", size)
 		return pdf.GetStringWidth(tr(s))
 	}
-	for _, rows := range chunkRows(card.Rows, MaxRows(tmpl)) {
-		pdf.AddPage()
-		for _, op := range layout(tmpl, card, rows, measure) {
-			pdf.SetFont(op.Font, "", op.FontSize)
-			pdf.SetXY(op.X, op.Y)
-			pdf.CellFormat(op.W, 0, tr(op.Text), "", 0, "L", false, 0, "")
+	for _, card := range cards {
+		for _, rows := range chunkRows(card.Rows, MaxRows(tmpl)) {
+			pdf.AddPage()
+			for _, op := range layout(tmpl, card, rows, measure) {
+				pdf.SetFont(op.Font, "", op.FontSize)
+				pdf.SetXY(op.X, op.Y)
+				pdf.CellFormat(op.W, 0, tr(op.Text), "", 0, "L", false, 0, "")
+			}
 		}
 	}
 	if err := pdf.Error(); err != nil {

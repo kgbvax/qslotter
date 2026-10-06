@@ -535,7 +535,14 @@ type DoneRow struct {
 	When    string
 }
 
-func outcomeOf(it *store.QueueItem) i18n.Msg {
+// outcomeOf spells out how a card ended; q (may be nil) tells whether a
+// requested card has arrived.
+func outcomeOf(it *store.QueueItem, q *store.QSO) i18n.Msg {
+	if it.Status == "requested" && q != nil {
+		if rcvd, date := q.EffectiveRcvd(); rcvd {
+			return i18n.M("their card requested via %s, received %s", i18n.M(it.Channel), fmtDate(date))
+		}
+	}
 	switch {
 	case it.Status == "skipped" && it.Note == "backlog":
 		return i18n.M("no card (backlog)")
@@ -548,8 +555,6 @@ func outcomeOf(it *store.QueueItem) i18n.Msg {
 		return i18n.M("their card requested via %s", i18n.M(it.Channel))
 	case it.Note == "sent elsewhere":
 		return i18n.M("sent elsewhere (per Clublog)")
-	case it.DesiredMethod == "W":
-		return i18n.M("written during the QSO")
 	}
 	how := i18n.M("written")
 	if it.PrintedAt.Valid {
@@ -595,7 +600,7 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 		if row.Item.SentAt.Valid {
 			when = row.Item.SentAt.String
 		}
-		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item), When: when})
+		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item, row.QSO), When: when})
 	}
 	s.render(w, r, "done.html", map[string]any{"Rows": done, "Total": len(items)})
 }

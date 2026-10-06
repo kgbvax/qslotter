@@ -127,8 +127,8 @@ func (o *Orchestrator) PullAndUpsert() (inserted, updated int, err error) {
 	}
 	_ = o.Store.MetaSet("clublog_last_pull_at", time.Now().UTC().Format(time.RFC3339))
 	// If rules are configured, run the qualifier to enqueue any newly-eligible
-	// QSOs. This catches UDP-missed QSOs and QSL-state edits that flip a QSO
-	// from "sent" back to "not sent" (rare but possible).
+	// QSOs. This catches UDP-missed QSOs; a QSO that already has a queue item
+	// (any status) is never queued again.
 	if o.Rules != nil {
 		keys, err := o.Rules.EnqueueAllKeys(o.Store)
 		for _, k := range keys {
@@ -242,6 +242,7 @@ func toQSO(rec adif.Record) (*store.QSO, error) {
 		QTH:         rec.Get("QTH"),
 		SatName:     rec.Get("SAT_NAME"),
 		FreqRX:      rec.Get("FREQ_RX"),
+		QSLMsg:      rec.Get("QSLMSG"),
 		Hash:        hashRecord(rec),
 	}
 	return q, nil

@@ -83,6 +83,17 @@ func (t *Template) MaxRows() int {
 	return t.Rows.Max
 }
 
+// HasField reports whether the template draws a field with this name (e.g.
+// "qslmsg": without it a card note is not printed).
+func (t *Template) HasField(name string) bool {
+	for _, f := range t.Fields {
+		if strings.EqualFold(f.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // Load reads a YAML template file.
 func Load(path string) (*Template, error) {
 	raw, err := os.ReadFile(path)
@@ -120,7 +131,7 @@ func Load(path string) (*Template, error) {
 // Vertical budget (Y is the middle of a line; Helvetica caps reach about
 // 0.42*size above it, descenders 0.51*size below, size in mm = pt*0.353):
 // title 3.6-8.9, my_call 13.3-19.2, my_name 21.0-24.3, "Confirming" 26.5-29.8,
-// call/name 32.6-37.9, via 40.0-43.3, labels 46.0-48.3, rows 49.9-64.5,
+// call/name 32.6-37.9, via and the card note 40.0-43.3, labels 46.0-48.3, rows 49.9-64.5,
 // 73 line 67.5-70.8.
 func Default() *Template {
 	t := &Template{
@@ -134,6 +145,8 @@ func Default() *Template {
 			{Name: "call", X: 4, Y: 35, FontSize: 16, Align: "L", Font: "Helvetica"},
 			{Name: "name", X: 60, Y: 35, FontSize: 12, Align: "L", Font: "Helvetica"},
 			{Name: "via", X: 4, Y: 41.5, FontSize: 10, Align: "L", Font: "Helvetica"},
+			// The card note (set when the card is sent to printing), right of "via".
+			{Name: "qslmsg", X: 30, Y: 41.5, FontSize: 9, Align: "L", Font: "Helvetica"},
 			// Column labels over the QSO rows.
 			{Name: "text", Text: "Date", X: 4, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},
 			{Name: "text", Text: "UTC", X: 30, Y: 47, FontSize: 7, Align: "L", Font: "Helvetica"},

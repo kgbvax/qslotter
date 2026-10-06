@@ -55,8 +55,6 @@
   "unknown reply": "unbekannte Antwort",
   "Your card to %s is at the Desk (%d QSO(s)).": "Deine Karte an %s liegt auf dem Schreibtisch (%d QSO(s)).",
   "Your card to %s written (%s) - done.": "Deine Karte an %s geschrieben (%s) - erledigt.",
-  "Your card to %s printed (%s) - done.": "Deine Karte an %s gedruckt (%s) - erledigt.",
-  "Printing failed (%s) - your card to %s waits at the Desk.": "Drucken fehlgeschlagen (%s) - deine Karte an %s wartet auf dem Schreibtisch.",
   "missing key": "QSO-Schlüssel fehlt",
   "missing call": "Rufzeichen fehlt",
   "QSO not found": "QSO nicht gefunden",
@@ -91,5 +89,14 @@
   "not configured (station info disabled)": "nicht eingerichtet (Stationsdaten abgeschaltet)",
   "OK (%s)": "OK (%s)",
   "not configured (pull/push disabled)": "nicht eingerichtet (Abrufen/Übertragen abgeschaltet)",
-  "The QRZ lookup for %s failed - the cached data stays. Try again in a moment.": "Die QRZ-Abfrage für %s ist fehlgeschlagen - die gespeicherten Daten bleiben. Versuch es gleich noch einmal."
+  "The QRZ lookup for %s failed - the cached data stays. Try again in a moment.": "Die QRZ-Abfrage für %s ist fehlgeschlagen - die gespeicherten Daten bleiben. Versuch es gleich noch einmal.",
+  "Nothing waits to be printed.": "Nichts wartet auf den Druck.",
+  "Printing failed (%s) - the cards wait in the print queue.": "Drucken fehlgeschlagen (%s) - die Karten warten in der Druckliste.",
+  "Printing failed (%s).": "Drucken fehlgeschlagen (%s).",
+  "The last print run is not confirmed yet - check the printed cards first.": "Der letzte Druckdurchgang ist noch nicht bestätigt - prüfe zuerst die gedruckten Karten.",
+  "Tick the cards to print again.": "Kreuze die Karten an, die noch einmal gedruckt werden sollen.",
+  "Tick the cards to take back.": "Kreuze die Karten an, die zurückgelegt werden sollen.",
+  "Your card to %s is in the print queue (%s) - print it from the Desk.": "Deine Karte an %s liegt in der Druckliste (%s) - drucke sie vom Schreibtisch aus.",
+  "their card requested via %s, received %s": "ihre Karte angefordert über %s, erhalten am %s",
+  "ADIF file for the print service written: %s": "ADIF-Datei für den Druckservice geschrieben: %s"
 }

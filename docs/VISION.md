@@ -112,11 +112,11 @@ radio. Here the route is chosen.
 | B1 | Work through card by card; when one is done the next appears without paging. | done (`/work/card`) |
 | B2 | Master-detail like the Inbox: the list on one side (proposal: grouped by the QRZ-suggested route), the card on the other; finishing a card moves to the next. The card-by-card view stays. | done (2026-10-01): `/work` is the master-detail view - cards grouped by the route offered first (route open, direct, via manager, bureau), the selected card in the detail pane, finishing moves to the card below; batch actions on ticked cards use the route shown; the card-by-card view `/work/card` stays |
 | B3 | The detail holds *everything needed to write the card*: QSO data, QRZ data and indicators (wants paper?), history (worked before, cards exchanged before), the address for the chosen route (station, or manager). | done (2026-10-01): the work card shows every QSO on the card (freq, RST sent/rcvd, notes), the research panel (QRZ, indicators, history without the card's own QSOs), the station address for direct and the manager's QRZ address for the manager routes (refreshed as the call is typed; live update when the lookup lands) |
-| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | done (2026-10-01): bureau / direct / via manager direct / via manager bureau, preselected from a route recorded earlier, else the QRZ suggestion; Print and Written record it; manager cards print "via <manager>" |
+| B4 | The route is chosen **when finishing the card**: **bureau**, **direct**, **via manager (direct)**, **via manager (bureau)** - the QRZ suggestion preselected. Finish with **written** or **printed**; both record the chosen route. | done (2026-10-01): bureau / direct / via manager direct / via manager bureau, preselected from a route recorded earlier, else the QRZ suggestion; Written and To print record it; manager cards print "via <manager>" |
 | B4b | **Requested (OQRS)** instead of sending: some stations want no card from me, but their card can be ordered - via OQRS or another way (e.g. money via PayPal). No own card goes out; their card is requested. A button next to written / printed / no card, with the **channel** (OQRS, PayPal, e-mail, other) and a free-text **note** (amount, date, reference). QRZ mentioning OQRS (manager field, bio) marks the button as suggestion. | done (2026-10-01): "Requested..." (`r`) with channel OQRS / PayPal / e-mail / other and a note; status `requested`, `QSL_RCVD=R` pushed, `QSL_SENT` untouched; QRZ mentioning OQRS (manager field or bio) marks the button and the list row. Listed as *expected* on Incoming QSLs (C5) |
-| B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. | done: card by card (`p` on `/work/card`) or batch Print of ticked rows on `/work`; one print job per card, no select-all |
+| B5 | **Print** the back of the card from the template for bulk sessions (say 50 cards); hand-writing stays for synchronous or special cards. **Two-step (operator, 2026-10-05):** a card is *sent to printing* (with a note for the card, unless the log has one) into a print queue; printing the queue sends one job; the run is confirmed as a whole, or single cards are reprinted. | done (2026-10-05): `p` / batch "To print" puts the card into the print queue at the top of `/work` (`toprint`) with its route and note (prefilled from ADIF `QSLMSG`, printed in the template field `qslmsg`); **Print N cards** renders all of them into one PDF, one printer job (`printing`); **All fine - sent** confirms the run (only then `sent` and pending push-back), **Print ticked again** reprints single cards, **Ticked back to the print queue** / **back to the Desk** for a correction; one open run at a time; a failed job puts the run back |
 | B6 | Change of mind: **no card** after all - a button next to written / printed (the card goes to Done, reopenable). | done (2026-10-01): "No card" (`n`) on the work card and the list, for the whole card |
-| B7 | A finished card leaves the queue for good. Written or printed means **sent** - no separate "mailed" step (confirms 2026-09-30). | done |
+| B7 | A finished card leaves the queue for good. Written or printed means **sent** - no separate "mailed" step (confirms 2026-09-30). | done; printed = the print run confirmed (2026-10-05) |
 | B9 | **One card for several QSOs** with the same station (e.g. different bands): open QSOs of that call are combined into one card - printed with one row per QSO, up to what the template holds; "written"/"printed" finishes them all. Proposal: "same station" = the same worked callsign (a `/P` operation is a separate card). | done (2026-10-01): a Desk card = all open QSOs with the same worked callsign (/P is a separate card); each QSO can be unticked (stays at the Desk); printed one row per QSO (default template: 3 rows, further cards when more); Print / Written / Requested / No card / Back move all ticked QSOs in one transaction; the Desk badge counts cards |
 
 ### 2.3 Incoming QSLs
@@ -125,9 +125,9 @@ radio. Here the route is chosen.
 |---|---|---|
 | C1 | Enter the DX callsign of a received card, pick the QSO(s) it confirms, book the card received - with as few key presses as possible. | done (2026-10-01): `/receive` - callsign, Enter; the station's QSOs base-call aware (portable calls found both ways), up to 50; tick the QSOs the card confirms (preselected: the requested ones, else the only open one), Enter books them all |
 | C2 | Show whether I already sent a card - i.e. whether this card **needs a reply**. | done (2026-10-01): per QSO "your card": sent (date, route; local state included), at the Desk, in the Inbox, no card decided, requested; after booking a verdict per QSO - reply due, or why not |
-| C3 | **Answer** or **don't answer**. Answering shows the same data as at the Desk (the QSO the card is about, date, time, QRZ data) with three ways: **written now** (route chosen, "Büro-Karte geschrieben, fertig"), **print** right there, or **later** (the reply goes to the Desk as "yes, card"). | done (2026-10-01): reply panel for the QSOs that need one (one card): one panel per worked callsign (a /P call is its own card), taking along that call's QSOs already at the Desk; the QSO data (RST, freq, notes), the research panel (refreshed live when QRZ data lands) and the manager's address; route b/d/m/v (QRZ suggestion preselected); written now (w), print (p), later via the Desk (l, as "yes, card"), no reply (x) - each pressed twice (or key, Enter), so typing the next callsign cannot answer; a reply overrules an earlier "no card" (also the backlog) and creates a queue item for a QSO that was never queued; a booked QSO with an open reply stays answerable from the lookup |
+| C3 | **Answer** or **don't answer**. Answering shows the same data as at the Desk (the QSO the card is about, date, time, QRZ data) with three ways: **written now** (route chosen, "Büro-Karte geschrieben, fertig"), **print** right there, or **later** (the reply goes to the Desk as "yes, card"). | done (2026-10-01): reply panel for the QSOs that need one (one card): one panel per worked callsign (a /P call is its own card), taking along that call's QSOs already at the Desk; the QSO data (RST, freq, notes), the research panel (refreshed live when QRZ data lands) and the manager's address; route b/d/m/v (QRZ suggestion preselected); written now (w), to the print queue (p, with a card note; 2026-10-05), later via the Desk (l, as "yes, card"), no reply (x) - each pressed twice (or key, Enter), so typing the next callsign cannot answer; a reply overrules an earlier "no card" (also the backlog) and creates a queue item for a QSO that was never queued; a booked QSO with an open reply stays answerable from the lookup |
 | C4 | Or just record the card as received, so the status is known. | done |
-| C5 | Cards **requested** via OQRS (B4b) are listed as *expected*. Booking such a card shows "requested on ... via ..., no reply needed" instead of the reply question. Requests still open after **12 weeks** (configurable) are marked overdue there - a marker only, no mail. | done (2026-10-01): "Expected cards" on `/receive`, one row per request (not arrived; oldest first; refreshed with each booking), overdue after `receive.overdue_weeks` (default 12) - a marker only; booking such a card says "requested ... - no reply needed" for every QSO it confirms and pushes `QSL_RCVD=Y` |
+| C5 | Cards **requested** via OQRS (B4b) are listed as *expected*. Booking such a card shows "requested on ... via ..., no reply needed" instead of the reply question. Requests still open after **12 weeks** (configurable) are marked overdue there - a marker only, no mail. | done (2026-10-01): "Expected cards" on `/receive`, one row per request (not arrived; oldest first; refreshed with each booking), overdue after `receive.overdue_weeks` (default 12) - a marker only; booking such a card says "requested ... - no reply needed" for every QSO it confirms and pushes `QSL_RCVD=Y`; "Your card to the Desk" still sends yours (2026-10-05); Done shows the request as received |
 
 ### 2.4 Navigation
 
@@ -151,9 +151,10 @@ radio. Here the route is chosen.
   pull as backstop); deciding works mid-pileup - one small window, no Go-side
   full-log loads on the hot path. (SQLite still scans `qsos` for the call
   history and the push badge; worth an index when the log grows.)
-- One card lifecycle: Inbox (`queued`) -> Desk (`decided`) -> done
-  (`sent` / `skipped` / requested); every move is one guarded transition;
-  Back and Reopen undo misclicks.
+- One card lifecycle: Inbox (`queued`) -> Desk (`decided`, print queue
+  `toprint` -> `printing`) -> done (`sent` / `skipped` / `requested`); every
+  move is one guarded transition; Back and Reopen undo misclicks. All paths:
+  `docs/STATES.md`.
 - Push to Clublog on the operator's schedule: `QSL_SENT=Y` with
   `QSL_SENT_VIA` = B or D for every sent card, plus `QSL_VIA` = the manager's
   call for the two manager routes (ADIF: `QSL_SENT_VIA=M` is import-only).
@@ -194,7 +195,9 @@ radio. Here the route is chosen.
 
 Two parallel paths, equal citizens:
 
-- **Print:** PDF via the YAML template → printer (existing path).
+- **Print:** the card goes into the print queue (route + note); a print run
+  renders every queued card into one PDF via the YAML template and sends one
+  job; the run is confirmed (or cards reprinted) before the cards are sent.
 - **Handwritten:** the operator writes the card; the UI's job is to put the
   right data in front of them — their name and address, date, call, band,
   mode, RST, my call, manager if via-manager — and record the outcome.
@@ -403,7 +406,8 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   work queue (`decided`) -> done (`sent`/`skipped`). A decision removes the
   card from the decision queue immediately; producing a card (Print/Written)
   happens in the work queue. Replaces "decide and produce on the same row".
-- **2026-09-30 — "Written" is its own outcome.** A card filled in on the spot
+- **2026-09-30 — "Written" is its own outcome.** *(Superseded 2026-10-01:
+  written now carries a route, bureau or direct.)* A card filled in on the spot
   is done: status `sent`, `desired_method=W`, `QSL_SENT=Y` without a route.
 - **2026-09-30 — Sent = card done.** Print success or Written marks the card
   sent (and pending for push-back); no separate "mailed" step.
@@ -496,6 +500,28 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   "sent elsewhere". `qsl_sent_method_local` holds B/D only (pushed as
   `QSL_SENT_VIA`); cards from older builds keep `M`/`W`. Desk keys: `b d m v`
   pick the route, `p`/`w` finish; Inbox "written now" is `w` then `b`/`d`.
+
+- **2026-10-05 — Printing is two-step: print queue, print run, confirm.**
+  "Print" no longer prints and sends at once (it replaces every print-and-send
+  path: Desk card, Desk batch, Incoming reply). A card is sent to printing
+  with its route and a note for the card (prefilled from ADIF `QSLMSG`) and
+  waits in the print queue at the top of the Desk (`toprint`). One print run
+  renders all of them into one PDF and one printer job (`printing`); the run
+  is confirmed as a whole - only then are the cards `sent` and pending
+  push-back - or single cards are printed again or taken back first. One run
+  is open at a time; a job that fails puts the run back. Amends 2026-10-01
+  "Written or printed = sent": printed means the run was confirmed. For
+  stations whose cards a QSL print service (e.g. DARC) produces, the run can
+  be an **ADIF export** instead of a print job: one `.adi` file (QSO fields,
+  `QSLMSG` = the note, `QSL_SENT_VIA`, `QSL_VIA`, `STATION_CALLSIGN`) in
+  `card.export_dir`, confirmed like a printed run.
+- **2026-10-05 — Lifecycle documented in `docs/STATES.md`** (diagrams, every
+  transition, known gaps). Fixed with it: a reply (written / to print) is one
+  transaction with the move to the Desk; marking a card received is one
+  transaction with its event; a request whose card arrived may still get your
+  card (Incoming QSLs) and shows as received on Done. Left as known gaps: a
+  "no card" QSO Clublog later reports as sent stays "no card"; Reopen cannot
+  undo what Clublog holds.
 
 - **2026-10-01 — Desktop app: own window via glaze, one binary per OS.** The
   browser was the fiddly part (start, window size, lost among tabs). A native

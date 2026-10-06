@@ -1,0 +1,34 @@
+{{define "printq_card"}}<td><span class="call">{{.Call}}</span>{{if .Name}} <span class="muted">{{.Name}}</span>{{end}}<br><span class="muted">{{range $i, $q := .QSOs}}{{if $i}}, {{end}}{{fmtDate $q.QSODate}} {{$q.Band}} {{$q.Mode}}{{end}}{{if gt .Prints 1}} &middot; {{t "prints as %d cards" .Prints}}{{end}}</span></td>
+  <td><span class="routetag">{{t (routeName .Route)}}{{if eq (slice1 .Route) "M"}} {{.Manager}}{{end}}</span></td>
+  <td class="pq-note">{{if .Note}}&ldquo;{{.Note}}&rdquo;{{else}}<span class="muted">{{t "no note"}}</span>{{end}}</td>{{end}}
+
+{{define "print_queue"}}<section id="printq" class="printq"{{if not (or .Queue .Run)}} hidden{{end}}>
+{{if .Run}}<div id="printq-run" class="pq-run">
+  {{if .Export}}<h3 class="grouphead">{{t "Exported for the print service - check the file"}} <small>({{len .Run}})</small></h3>
+  <p class="pq-file">{{t "ADIF file:"}} <code>{{.ExportPath}}</code> <a class="mini" href="/work/export?name={{q .Export}}" download>{{t "download"}}</a></p>
+  <p class="muted legend">{{t "Send the file to your QSL print service. Once it has it, confirm the run as a whole - only then are the cards sent. Tick cards to export them again, or to take them back to the print queue (a mistake to correct at the Desk)."}}</p>
+  {{else}}<h3 class="grouphead">{{t "Printed - check the cards"}} <small>({{len .Run}})</small></h3>
+  <p class="muted legend">{{t "Did every card come out right? Confirm the run as a whole - only then are the cards sent. Tick cards to print them again, or to take them back to the print queue (a mistake to correct at the Desk)."}}</p>{{end}}
+  <table class="pq-table"><tbody>{{range .Run}}{{$lead := .Lead}}<tr>
+    <td class="ck"><input type="checkbox" name="lead" value="{{$lead}}" aria-label="{{t "Tick %s" .Call}}">{{range .Keys}}<input type="hidden" name="card:{{$lead}}" value="{{.}}">{{end}}</td>
+    {{template "printq_card" .}}
+  </tr>{{end}}</tbody></table>
+  <p class="decide-actions">
+    <button type="button" class="stamp primary" title="{{t "Every card of the run came out right: they are sent"}}" hx-post="/work/printconfirm" hx-target="#printq" hx-swap="outerHTML" hx-disabled-elt="this">{{t "All fine - sent"}}</button>
+    {{if .Export}}<button type="button" class="stamp" title="{{t "Write the ticked cards into a new ADIF file; they stay in the run"}}" hx-post="/work/reprint?how=export" hx-include="#printq-run" hx-target="#printq" hx-swap="outerHTML" hx-disabled-elt="this">{{t "Export ticked again"}}</button>
+    {{else}}<button type="button" class="stamp" title="{{t "Print the ticked cards again (one job); they stay in the run"}}" hx-post="/work/reprint" hx-include="#printq-run" hx-target="#printq" hx-swap="outerHTML" hx-disabled-elt="this">{{t "Print ticked again"}}</button>{{end}}
+    <button type="button" class="mini" title="{{t "Take the ticked cards out of the run, back to the print queue"}}" hx-post="/work/printback" hx-include="#printq-run" hx-target="#printq" hx-swap="outerHTML">{{t "Ticked back to the print queue"}}</button>
+  </p>
+</div>{{end}}
+{{if .Queue}}<div class="pq-queue">
+  <h3 class="grouphead">{{t "To print"}} <small>({{len .Queue}})</small></h3>
+  <table class="pq-table"><tbody>{{range .Queue}}<tr>
+    {{template "printq_card" .}}
+    <td class="pq-act">{{range .Keys}}<input type="hidden" name="key" value="{{.}}">{{end}}<button type="button" class="mini" title="{{t "Back to the Desk: change the route or the note"}}" hx-post="/work/unprint" hx-include="closest tr" hx-target="#printq" hx-swap="outerHTML">{{t "back to the Desk"}}</button></td>
+  </tr>{{end}}</tbody></table>
+  {{if .Run}}<p class="muted legend">{{t "The next run can start when the printed cards above are confirmed."}}</p>
+  {{else}}<p class="decide-actions"><button type="button" class="stamp primary" title="{{t "Print every card above as one job, then check them"}}" hx-post="/work/printrun" hx-target="#printq" hx-swap="outerHTML" hx-disabled-elt="this">{{t "Print %d card(s)" .QueuePrints}}</button>
+  <button type="button" class="stamp" title="{{t "Instead of printing: write every card above into one ADIF file for a QSL print service (e.g. DARC), then check it"}}" hx-post="/work/exportrun" hx-target="#printq" hx-swap="outerHTML" hx-disabled-elt="this">{{t "Export ADIF for a print service"}}</button>
+  {{if not .NoteField}}<span class="muted">{{th "The card template has no <code>qslmsg</code> field: notes are not printed."}}</span>{{end}}</p>{{end}}
+</div>{{end}}
+</section>{{end}}

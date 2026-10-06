@@ -32,15 +32,17 @@
     <input type="text" class="mgr-in" name="manager" size="9" maxlength="14" placeholder="{{t "manager"}}" value="{{.Manager}}" aria-label="{{t "Manager callsign"}}"
            hx-get="/work/manager" hx-trigger="input changed delay:500ms" hx-target="#mgr-addr-{{$n}}" hx-swap="innerHTML" onkeydown="if(event.key==='Escape'){this.blur()}">
   </div>
+  <p class="cardnote"><label>{{t "Note on the card"}} <input type="text" name="cardnote" size="40" maxlength="120" value="{{.Note}}" placeholder="{{t "printed on the card, e.g. tnx for the QSO"}}" onkeydown="if(event.key==='Escape'||event.key==='Enter'){event.preventDefault();this.blur()}"></label></p>
   <p class="decide-actions">
     <button type="button" class="stamp" data-key="w" title="{{t "Card written by hand, marked sent via the choice above - done  (w twice, or w Enter)"}}" hx-post="/receive/reply?how=written" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Written by hand - sent"}}</button>
-    <button type="button" class="stamp primary" data-key="p" title="{{t "Print the card now, marked sent via the choice above - done  (p twice, or p Enter)"}}" hx-post="/receive/reply?how=print" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Print - sent"}}</button>
+    <button type="button" class="stamp primary" data-key="p" title="{{t "Into the print queue on the Desk with the choice above and the note  (p twice, or p Enter)"}}" hx-post="/receive/reply?how=print" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "To print"}}</button>
     <button type="button" class="mini" data-key="l" title="{{t "Later: your card goes to the Desk as yes, card  (l twice, or l Enter)"}}" hx-post="/receive/reply?how=later" hx-include="#reply-{{$n}}" hx-target="#reply-{{$n}}" hx-swap="outerHTML">{{t "Later at the Desk"}}</button>
     <button type="button" class="mini" data-key="x" title="{{t "Not now - their card stays recorded; the line keeps showing your card due  (x twice, or x Enter)"}}" onclick="var p=this.closest('.reply');var m=document.createElement('p');m.className='banner';m.textContent=qslTr('Skipped %s - your card is still due.',p.dataset.call);p.replaceWith(m);document.dispatchEvent(new CustomEvent('qslReplyClosed'))">{{t "Not now"}}</button>
   </p>
-  <p class="muted legend">{{t "Keys: send via"}} <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>p</kbd> {{t "print"}} &middot; <kbd>l</kbd> {{t "later at the Desk"}} &middot; <kbd>x</kbd> {{t "not now"}} - {{t "press the key twice (or the key, then Enter)"}}</p>
+  <p class="muted legend">{{t "Keys: send via"}} <kbd>b</kbd> <kbd>d</kbd> <kbd>m</kbd> <kbd>v</kbd> &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>p</kbd> {{t "to print"}} &middot; <kbd>l</kbd> {{t "later at the Desk"}} &middot; <kbd>x</kbd> {{t "not now"}} - {{t "press the key twice (or the key, then Enter)"}}</p>
   <div class="pref"><h4>{{t "Manager"}}</h4><div id="mgr-addr-{{$n}}">{{template "mgr_block" .Mgr}}</div></div>
   <div class="reply-research" data-call="{{.Call}}" data-url="/receive/research?{{range $i, $k := .Keys}}{{if $i}}&amp;{{end}}key={{q $k}}{{end}}">{{template "research_panel" .Row}}</div>
 </div>{{end}}
+{{if .Anyway}}<p id="reply-anyway" class="muted">{{range .Anyway}}<input type="hidden" name="key" value="{{.}}">{{end}}{{t "Want to send your card all the same?"}} <button type="button" class="mini" title="{{t "Your card goes to the Desk as yes, card"}}" hx-post="/receive/reply?how=later" hx-include="#reply-anyway" hx-target="#reply-anyway" hx-swap="outerHTML">{{t "Your card to the Desk"}}</button></p>{{end}}
 {{if not .Cards}}<p class="muted">{{t "Nothing to send back. Next card: type its callsign."}}</p>{{end}}
 {{template "receive_expected" .}}{{end}}
