@@ -212,6 +212,12 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
   font: 700 44px/1.1 'IBM Plex Mono', monospace; letter-spacing: 0.02em;
   margin: 2px 0 10px;
 }
+/* Inbox card: big callsign left, name above the history pill on its right */
+.callhead { display: flex; align-items: center; gap: 18px; margin: 2px 0 10px; }
+.entry .callhead .call { margin: 0; }
+.callside { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.callside .name { font: 500 18px 'Schibsted Grotesk', sans-serif; color: var(--ink-soft); }
+.callside .chip { font-size: 13px; }
 
 .loggrid {
   display: grid; grid-template-columns: repeat(5, 1fr);
@@ -321,10 +327,6 @@ header.site nav .pending.err { color: var(--red); }
 .filters { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
 .filters a { margin-right: 10px; }
 .filters a.on { color: var(--ink); font-weight: 700; text-decoration: none; border-bottom: 2px solid var(--ink); }
-
-/* Inbox: yes / no, written now (armed by the w key) */
-.written-now .lbl { font-size: 12px; color: var(--ink-soft); align-self: center; }
-.written-now.armed { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
 
 /* Desk: the route is chosen when the card is finished */
 .routes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 6px; }

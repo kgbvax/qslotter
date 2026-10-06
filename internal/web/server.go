@@ -254,15 +254,12 @@ func (s *Server) Routes() http.Handler {
 	// portable calls contain "/", which would break {key} path segments.
 	r.Post("/queue/yes", s.htmxQueueYes)
 	r.Post("/queue/none", s.htmxQueueNone)
-	r.Post("/queue/written", s.htmxQueueWritten)
-	r.Post("/queue/back", s.htmxQueueBack)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
 	r.Post("/queue/batch", s.batchQueue)
 	r.Post("/work/print", s.htmxWorkPrint) // Desk card actions take key=... once per QSO on the card
 	r.Post("/work/written", s.htmxWorkWritten)
 	r.Post("/work/requested", s.htmxWorkRequested)
 	r.Post("/work/none", s.htmxWorkNone)
-	r.Post("/work/back", s.htmxWorkBack)
 	r.Get("/work/manager", s.htmxWorkManager) // ?manager=CALL: who a manager card goes to
 	r.Get("/nav", s.htmxNav)                  // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
@@ -270,13 +267,12 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
-	r.Get("/queue/row", s.htmxQueueRow)              // ?key=... for SSE-driven fetch
-	r.Get("/queue/list", s.htmxQueueList)            // Inbox master list (live refresh)
-	r.Get("/queue/current", s.htmxCurrent)           // the QSO in progress (live refresh; ?compact=1)
-	r.Post("/current/written", s.htmxCurrentWritten) // call=, route=B|D: card written during the QSO
-	r.Post("/current/decide", s.htmxCurrentDecide)   // call=, decision=yes|no: card / no card during the QSO
-	r.Post("/current/cancel", s.htmxCurrentCancel)   // call=: drop a decision (the QSO may never be logged)
-	r.Get("/work/list", s.htmxWorkList)              // Desk master list (live refresh)
+	r.Get("/queue/row", s.htmxQueueRow)            // ?key=... for SSE-driven fetch
+	r.Get("/queue/list", s.htmxQueueList)          // Inbox master list (live refresh)
+	r.Get("/queue/current", s.htmxCurrent)         // the QSO in progress (live refresh; ?compact=1)
+	r.Post("/current/decide", s.htmxCurrentDecide) // call=, decision=yes|no: card / no card during the QSO
+	r.Post("/current/cancel", s.htmxCurrentCancel) // call=: drop a decision (the QSO may never be logged)
+	r.Get("/work/list", s.htmxWorkList)            // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
 	r.Handle("/static/*", staticHandler())

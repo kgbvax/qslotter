@@ -796,32 +796,6 @@ func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "skipped")
 }
 
-// htmxQueueWritten: the card was filled in by hand, with its route - written
-// now in the Inbox (bureau or direct) or written at the Desk.
-func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	rt, err := routeFrom(r, key)
-	if err != nil {
-		s.fail(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.store.QueueWrittenNow([]string{key}, rt); err != nil {
-		s.queueErr(w, r, err)
-		return
-	}
-	s.afterTransition(w, r, key, "sent")
-}
-
-// htmxQueueBack takes a decided card back to the decision queue.
-func (s *Server) htmxQueueBack(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	if err := s.store.QueueBack(key); err != nil {
-		s.queueErr(w, r, err)
-		return
-	}
-	s.afterTransition(w, r, key, "queued")
-}
-
 // htmxQueueReopen puts a finished card back into the decision queue.
 func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")

@@ -454,11 +454,6 @@ func (s *Server) htmxWorkNone(w http.ResponseWriter, r *http.Request) {
 	s.deskAction(w, r, "skipped", func(keys []string) error { return s.store.QueueDeskDecline(keys...) })
 }
 
-// htmxWorkBack takes the card back to the Inbox.
-func (s *Server) htmxWorkBack(w http.ResponseWriter, r *http.Request) {
-	s.deskAction(w, r, "queued", func(keys []string) error { return s.store.QueueBack(keys...) })
-}
-
 // printMu serialises printing: the status check, render, print and the
 // transition of one card must not interleave with another request for the
 // same card (two windows) - it would be printed twice.
@@ -550,8 +545,6 @@ func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string
 		}
 	case "none":
 		apply = func(keys []string, _ string) (string, error) { return "skipped", s.store.QueueDeskDecline(keys...) }
-	case "back":
-		apply = func(keys []string, _ string) (string, error) { return "queued", s.store.QueueBack(keys...) }
 	default:
 		s.fail(w, r, http.StatusBadRequest, "unknown batch action for the Desk")
 		return

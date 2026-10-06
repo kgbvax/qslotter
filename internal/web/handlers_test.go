@@ -120,13 +120,13 @@ func TestQueuePagesRender(t *testing.T) {
 	if full.Code != 200 {
 		t.Fatalf("/queue = %d: %s", full.Code, full.Body)
 	}
-	for _, want := range []string{"DL1ABC", "Alice", "/queue/yes?key=", "/queue/none", "/queue/written?route=B&amp;key=", "/queue/written?route=D&amp;key=", key, `class="cnt"`} {
+	for _, want := range []string{"DL1ABC", "Alice", "/queue/yes?key=", "/queue/none", key, `class="cnt"`} {
 		if !strings.Contains(full.Body.String(), want) {
 			t.Fatalf("/queue missing %q; body:\n%s", want, full.Body)
 		}
 	}
 	// The Inbox decides whether; routes for the other cards are the Desk's job.
-	for _, gone := range []string{"/queue/decide", "/work/print", "route=MD", "route=MB"} {
+	for _, gone := range []string{"/queue/decide", "/queue/written", "Already written", "/work/print", "route=MD", "route=MB"} {
 		if strings.Contains(full.Body.String(), gone) {
 			t.Fatalf("/queue still offers %q", gone)
 		}
@@ -219,38 +219,6 @@ func TestDeskManagerRoute(t *testing.T) {
 	}
 }
 
-// TestWrittenNow: written now in the Inbox records bureau or direct - never a
-// manager, never no route.
-func TestWrittenNow(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	for _, f := range []url.Values{
-		{"key": {key}},
-		{"key": {key}, "route": {"MD"}, "manager": {"K2ABC"}},
-	} {
-		if r := postForm(t, h, "/queue/written", f); r.Code != http.StatusBadRequest {
-			t.Fatalf("written now %v = %d, want 400", f, r.Code)
-		}
-	}
-	if it := status(t, st, key); it.Status != "queued" {
-		t.Fatalf("refused written-now changed the card: %+v", it)
-	}
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"D"}}); r.Code != 200 {
-		t.Fatalf("written now = %d: %s", r.Code, r.Body)
-	}
-	it := status(t, st, key)
-	if it.Status != "sent" || it.DesiredMethod != "D" || it.Note != "written now" {
-		t.Fatalf("after written now: %+v", it)
-	}
-	q, _ := st.GetQSO(key)
-	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
-		t.Fatalf("local sent state = %v / method %v, want Y / D", q.QSLSentLocal, q.QSLSentMethodLocal)
-	}
-	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
-		t.Fatalf("written card not pending push-back: %d", len(pend))
-	}
-}
-
 func TestNoneDeclinesAndSurvivesRecompute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
@@ -273,10 +241,10 @@ func TestNoneDeclinesAndSurvivesRecompute(t *testing.T) {
 func TestStaleActionsConflict(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
-		t.Fatalf("written = %d", r.Code)
+	if err := st.QueueWrittenNow([]string{key}, store.Route{Method: "B"}); err != nil {
+		t.Fatal(err)
 	}
-	for _, p := range []string{"/queue/yes", "/queue/none", "/queue/written", "/queue/back", "/work/print"} {
+	for _, p := range []string{"/queue/yes", "/queue/none", "/work/print"} {
 		if r := postForm(t, h, p, url.Values{"key": {key}, "route": {"D"}}); r.Code != http.StatusConflict {
 			t.Fatalf("%s on a sent card = %d, want 409", p, r.Code)
 		}
@@ -300,7 +268,7 @@ func TestDecideFlow(t *testing.T) {
 	newer := addQueued(t, st, "DL2ZZZ", "20240103")
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="n"`, "/queue/yes?key=", "work=1"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q; body:\n%s", want, body)
 		}
@@ -342,21 +310,6 @@ func TestDecideBrowse(t *testing.T) {
 	if r.Code != 200 || strings.Contains(r.Body.String(), "<!DOCTYPE") ||
 		!strings.Contains(r.Body.String(), "card 2 of 2") || !strings.Contains(r.Body.String(), "data-key=\"arrowleft\"") {
 		t.Fatalf("browse to second card = %d:\n%s", r.Code, r.Body)
-	}
-}
-
-func TestBackReturnsToQueue(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
-	if r := postForm(t, h, "/queue/back", url.Values{"key": {key}}); r.Code != 200 {
-		t.Fatalf("back = %d: %s", r.Code, r.Body)
-	}
-	if it := status(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
-		t.Fatalf("after back: %+v", it)
-	}
-	if !strings.Contains(get(t, h, "/queue").Body.String(), "row-"+key) {
-		t.Fatal("card missing from the Inbox after back")
 	}
 }
 
@@ -524,7 +477,7 @@ func TestPrintFindsOldQSO(t *testing.T) {
 	}
 }
 
-func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
+func TestWorkWrittenRecordsRoute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
@@ -539,19 +492,15 @@ func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
 	if it.Status != "sent" || it.DesiredMethod != "D" || q.QSLSentMethodLocal.String != "D" || it.PrintedAt.Valid || it.Note != "" {
 		t.Fatalf("written records the chosen route: %+v / %v", it, q.QSLSentMethodLocal)
 	}
-	if r := postForm(t, h, "/queue/back", url.Values{"key": {k2}, "view": {"work"}}); r.Code != 200 {
-		t.Fatalf("back in work view = %d", r.Code)
-	}
-	if it := status(t, st, k2); it.Status != "queued" || it.DesiredMethod != "" {
-		t.Fatalf("after back: %+v", it)
-	}
 }
 
 func TestDoneAndReopen(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	kn := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}})
+	if err := st.QueueWrittenNow([]string{key}, store.Route{Method: "B"}); err != nil { // written during the QSO (older builds)
+		t.Fatal(err)
+	}
 	postForm(t, h, "/queue/none", url.Values{"key": {kn}})
 
 	body := get(t, h, "/done").Body.String()
@@ -775,9 +724,8 @@ func TestBatchActions(t *testing.T) {
 	if it := status(t, st, q2); it.Status != "decided" {
 		t.Fatalf("a card without a route must stay on the Desk: %+v", it)
 	}
-	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"back"}, "keys": {q2}})
-	if it := status(t, st, q2); it.Status != "queued" {
-		t.Fatalf("batch back = %q: %+v", r.Header().Get("Location"), it)
+	if r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"back"}, "keys": {q2}}); r.Code != http.StatusBadRequest {
+		t.Fatalf("batch back = %d, want 400 (no way back to the Inbox)", r.Code)
 	}
 }
 

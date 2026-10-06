@@ -12,15 +12,14 @@ import (
 
 // The QSO in progress (VISION A1b): the logger's current-contact broadcast
 // shows the station on top of the Inbox with its research, and a decision
-// made during the QSO (card / no card / written now) is remembered and booked
+// made during the QSO (card / no card) is remembered and booked
 // once the QSO is logged. The QSO may never be logged: the decision then
 // stays listed with Undo and is dropped after contact.PendingTTL.
 
 // PendingView is a decision made during a QSO not logged yet.
 type PendingView struct {
-	Call      string
-	Decision  string // contact.Decision: written, yes, no
-	RouteName string // English, translated in the template (written only)
+	Call     string
+	Decision string // contact.Decision: yes, no
 }
 
 // CurrentView is the "QSO in progress" box.
@@ -51,9 +50,6 @@ func (s *Server) currentView(compact bool) CurrentView {
 	v.Cur = s.Contacts.Current()
 	for _, p := range s.Contacts.Pending() {
 		pv := PendingView{Call: p.Call, Decision: string(p.Decision)}
-		if p.Decision == contact.Written {
-			pv.RouteName = routeName(routeCode(p.Route.Method, p.Route.Via))
-		}
 		if v.Cur != nil && p.Call == v.Cur.Call {
 			v.Mine = &pv
 		} else {
@@ -67,10 +63,8 @@ func (s *Server) currentView(compact bool) CurrentView {
 			v.Applied, v.Failed = i18n.M("The decision made during the QSO with %s could not be recorded: %s", a.Call, a.Err), true
 		case a.Decision == contact.Yes:
 			v.Applied = i18n.M("Card wanted, decided during the QSO with %s: the logged QSO is at the Desk.", a.Call)
-		case a.Decision == contact.No:
-			v.Applied = i18n.M("No card, decided during the QSO with %s: recorded on the logged QSO.", a.Call)
 		default:
-			v.Applied = i18n.M("Card written during the QSO with %s recorded on the logged QSO (%s).", a.Call, i18n.M(routeName(routeCode(a.Route.Method, a.Route.Via))))
+			v.Applied = i18n.M("No card, decided during the QSO with %s: recorded on the logged QSO.", a.Call)
 		}
 	}
 	if v.Cur != nil {
@@ -112,31 +106,6 @@ func (s *Server) currentView(compact bool) CurrentView {
 // htmxCurrent renders the box (live refresh).
 func (s *Server) htmxCurrent(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "current_contact", s.currentView(r.FormValue("compact") == "1"))
-}
-
-// htmxCurrentWritten remembers "written now" (bureau or direct) for the QSO
-// in progress; it is booked when the QSO is logged.
-func (s *Server) htmxCurrentWritten(w http.ResponseWriter, r *http.Request) {
-	if s.Contacts == nil {
-		s.fail(w, r, http.StatusNotImplemented, "the QSO in progress is not available")
-		return
-	}
-	call := strings.ToUpper(strings.TrimSpace(r.FormValue("call")))
-	cur := s.Contacts.Current()
-	if call == "" || cur == nil || cur.Call != call {
-		s.fail(w, r, http.StatusConflict, "The QSO in progress has changed - look again.")
-		return
-	}
-	var rt store.Route
-	switch r.FormValue("route") {
-	case "B", "D":
-		rt = store.Route{Method: r.FormValue("route")}
-	default:
-		s.fail(w, r, http.StatusBadRequest, "A card written during the QSO goes bureau or direct.")
-		return
-	}
-	s.Contacts.MarkWritten(call, rt)
-	s.htmxCurrent(w, r)
 }
 
 // htmxCurrentDecide remembers "card" (yes) or "no card" for the QSO in

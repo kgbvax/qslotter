@@ -11,8 +11,8 @@ import (
 	"github.com/dl9et/qslotter/internal/store"
 )
 
-// PendingTTL is how long a "written now" for a QSO in progress waits for the
-// QSO to be logged.
+// PendingTTL is how long a decision made during a QSO waits for the QSO to be
+// logged.
 const PendingTTL = 12 * time.Hour
 
 // loggedSlack: a QSO counts as the one in progress when it started no
@@ -28,31 +28,24 @@ const (
 	currentTTL = 15 * time.Minute
 )
 
-// Queue reasons of a QSO booked from a decision made during it that the
-// qualifier would not have queued.
-const (
-	ReasonWritten = "written during the QSO"
-	ReasonDecided = "decided during the QSO"
-)
+// ReasonDecided is the queue reason of a QSO booked from a decision made
+// during it that the qualifier would not have queued.
+const ReasonDecided = "decided during the QSO"
 
 // Decision is what the operator settled for the QSO in progress.
 type Decision string
 
 const (
-	Written Decision = "written" // card filled in during the QSO, with its route
-	Yes     Decision = "yes"     // card wanted: goes to the Desk, route chosen there
-	No      Decision = "no"      // no card
+	Yes Decision = "yes" // card wanted: goes to the Desk, route chosen there
+	No  Decision = "no"  // no card
 )
 
 // Queue status a booked decision ends in.
 func (d Decision) status() string {
-	switch d {
-	case Yes:
+	if d == Yes {
 		return "decided"
-	case No:
-		return "skipped"
 	}
-	return "sent"
+	return "skipped"
 }
 
 // lookupDelay lets the entry field settle before QRZ is asked (a logger may
@@ -73,9 +66,8 @@ type Current struct {
 type Pending struct {
 	Call     string
 	Decision Decision
-	Route    store.Route // Written only
-	At       time.Time   // marked
-	Since    time.Time   // the QSO in progress started (call entered)
+	At       time.Time // marked
+	Since    time.Time // the QSO in progress started (call entered)
 }
 
 // Applied is a pending decision that was booked when its QSO was logged.
@@ -83,7 +75,6 @@ type Applied struct {
 	Call     string
 	QSLKey   string
 	Decision Decision
-	Route    store.Route
 	At       time.Time
 	Err      string // set when booking failed
 }
@@ -177,22 +168,12 @@ func (t *Tracker) Current() *Current {
 	return &c
 }
 
-// MarkWritten remembers a card written now (bureau or direct) for the QSO in
-// progress with call; it is booked on the QSO as soon as the QSO is logged.
-func (t *Tracker) MarkWritten(call string, rt store.Route) {
-	t.mark(call, Written, rt)
-}
-
 // MarkDecision remembers the card / no card decision (Yes, No) for the QSO in
 // progress with call; it is booked on the QSO as soon as the QSO is logged.
 func (t *Tracker) MarkDecision(call string, d Decision) {
-	t.mark(call, d, store.Route{})
-}
-
-func (t *Tracker) mark(call string, d Decision, rt store.Route) {
 	call = strings.ToUpper(strings.TrimSpace(call))
 	t.mu.Lock()
-	p := Pending{Call: call, Decision: d, Route: rt, At: t.now(), Since: t.now()}
+	p := Pending{Call: call, Decision: d, At: t.now(), Since: t.now()}
 	if t.current != nil && t.current.Call == call {
 		p.Since = t.current.Since
 	}
@@ -261,8 +242,8 @@ func (t *Tracker) LastApplied() *Applied {
 }
 
 // QSOLogged is called for every newly stored QSO (UDP feed, Clublog pull).
-// A decision made during that QSO is booked on it (card: to the Desk, no
-// card, or "written now" with its route); the QSO in progress with that call
+// A decision made during that QSO is booked on it (card: to the Desk, or no
+// card); the QSO in progress with that call
 // is over.
 func (t *Tracker) QSOLogged(q *store.QSO) {
 	call := strings.ToUpper(q.Call)
@@ -298,7 +279,7 @@ func (t *Tracker) QSOLogged(q *store.QSO) {
 	t.mu.Unlock()
 
 	if ok {
-		a := &Applied{Call: q.Call, QSLKey: q.QSLKey, Decision: p.Decision, Route: p.Route, At: t.now()}
+		a := &Applied{Call: q.Call, QSLKey: q.QSLKey, Decision: p.Decision, At: t.now()}
 		if err := t.book(q, p); err != nil {
 			a.Err = err.Error()
 			log.Printf("contact: booking the %s decision made during the QSO with %s: %v", p.Decision, q.Call, err)
@@ -324,19 +305,12 @@ func (t *Tracker) book(q *store.QSO, p Pending) error {
 		return err
 	}
 	if item == nil {
-		reason := ReasonDecided
-		if p.Decision == Written {
-			reason = ReasonWritten
-		}
-		if err := t.store.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued", OverrideReason: reason}); err != nil {
+		if err := t.store.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "queued", OverrideReason: ReasonDecided}); err != nil {
 			return err
 		}
 	}
-	switch p.Decision {
-	case Yes:
+	if p.Decision == Yes {
 		return t.store.QueueAccept(q.QSLKey)
-	case No:
-		return t.store.QueueDecline(q.QSLKey)
 	}
-	return t.store.QueueWrittenNow([]string{q.QSLKey}, p.Route)
+	return t.store.QueueDecline(q.QSLKey)
 }

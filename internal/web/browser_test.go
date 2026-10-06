@@ -331,33 +331,21 @@ func TestKeysInboxDecide(t *testing.T) {
 	e.waitFor("the empty Inbox", decideKey+` === ''`)
 }
 
-// TestKeysInboxWrittenNow: w arms "written now" and b/d picks the route; any
-// other key only disarms (w then n is no "no card"), so a slip decides
-// nothing. Modifier keys are left to the browser.
-func TestKeysInboxWrittenNow(t *testing.T) {
+// TestKeysInboxIgnored: modifier keys are left to the browser, and keys
+// without a button (w, b, d) decide nothing.
+func TestKeysInboxIgnored(t *testing.T) {
 	e := newBrowserEnv(t)
 	k := addQueued(t, e.st, "DL1AAA", "20240101")
 	e.open("/decide?key=" + url.QueryEscape(k))
-	armed := `document.querySelector('#decide .written-now.armed')`
 
 	e.key("n", input.ModifierCtrl)
 	e.key("y", input.ModifierMeta)
 	e.key("w")
-	e.waitFor("w to arm", armed)
-	e.key("n")
-	e.waitFor("n to disarm", `!`+armed)
-	e.key("b") // not armed any more: b alone does nothing on the Inbox card
+	e.key("b")
+	e.key("d")
 	e.still("an untouched card", decideKey+` === `+js(k))
 	if it := status(t, e.st, k); it.Status != "queued" {
-		t.Fatalf("modifiers, a disarmed w or a lone b decided the card: %+v", it)
-	}
-
-	e.key("w")
-	e.waitFor("w to arm", armed)
-	e.key("d")
-	it := e.waitStatus(k, "sent")
-	if it.Note != "written now" || it.DesiredMethod != "D" {
-		t.Errorf("w d = %+v, want written now, direct", it)
+		t.Fatalf("modifiers or w/b/d decided the card: %+v", it)
 	}
 }
 
