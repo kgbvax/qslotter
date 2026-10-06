@@ -26,10 +26,9 @@
 </header>
 <div class="band"><div class="band-in">
     <div class="band-title"><h2>{{t "Desk"}}</h2><p>{{t "Cards to write or print"}}</p></div>
-    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/work" aria-current="page">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/work" aria-current="page">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a>{{template "printq_badge" .PQ}}</div>
   </div></div>
 <main>
-  {{template "print_queue" .PrintQ}}
   <div class="md">
     <div class="md-list" aria-label="{{t "Cards to write or print"}}">
       <table class="md-table"><tbody id="md-list">{{template "work_md_rows" .}}</tbody></table>

@@ -51,8 +51,8 @@ Where the states live in the UI:
 |---|---|---|
 | `queued` | New QSOs (Inbox) | card or not? |
 | `decided` | Desk | yes, card; route open until written or sent to printing |
-| `toprint` | Desk, print queue (top) | route and note fixed, waits for the next print run |
-| `printing` | Desk, print queue: "Printed - check the cards" (or "Exported for the print service") | printed - or written into one ADIF file for a QSL print service (`card.export_dir`, default `exports/` next to the database) - in the open run, not yet confirmed; one run at a time |
+| `toprint` | Desk, Print queue view (`/work/printq`, third view in the band, with a live count) | route and note fixed, waits for the next print run |
+| `printing` | Desk, Print queue view: "Printed - check the cards" (or "Exported for the print service") | printed - or written into one ADIF file for a QSL print service (`card.export_dir`, default `exports/` next to the database) - in the open run, not yet confirmed; one run at a time |
 | `sent` | Done | written or printed (confirmed), or sent per Clublog |
 | `skipped` | Done | no card (a decision, or the backlog) |
 | `requested` | Done; Incoming QSLs lists it as expected until their card arrives | their card requested (OQRS & co.), no own card |

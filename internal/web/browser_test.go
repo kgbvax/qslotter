@@ -377,9 +377,10 @@ func TestKeysDeskRoute(t *testing.T) {
 	}
 }
 
-// TestDeskPrintQueue: p puts the card into the print queue at the top of the
-// Desk (with its note), Print sends the run, the confirmation sends the cards
-// and empties the section; a card sent to print elsewhere shows up live.
+// TestDeskPrintQueue: p puts the card into the print queue (with its note) -
+// the band's button counts it live -, on the Print queue view Print sends the
+// run, the confirmation sends the cards and empties the view; a card sent to
+// print elsewhere shows up live.
 func TestDeskPrintQueue(t *testing.T) {
 	e := newBrowserEnv(t)
 	k := e.decided("DL4DDD", "20240104")
@@ -396,6 +397,9 @@ func TestDeskPrintQueue(t *testing.T) {
 	if it.DesiredMethod != "B" || it.CardNote != "tnx" {
 		t.Errorf("queued card = %+v, want bureau with the note", it)
 	}
+	badge := `((document.getElementById('printq-view') || {textContent: ''}).textContent)`
+	e.waitFor("the band's count", badge+`.indexOf('1') >= 0`)
+	e.open("/work/printq")
 	e.waitFor("the card in the print queue", pq+`.textContent.indexOf('DL4DDD') >= 0 && `+pq+`.textContent.indexOf('tnx') >= 0`)
 
 	e.elsewhere("/work/print", url.Values{"key": {k2}, "route": {"D"}})
@@ -410,7 +414,7 @@ func TestDeskPrintQueue(t *testing.T) {
 	e.click(`#printq button[hx-post="/work/printconfirm"]`)
 	e.waitStatus(k, "sent")
 	e.waitStatus(k2, "sent")
-	e.waitFor("the print queue gone", `document.querySelector('#printq').hidden`)
+	e.waitFor("the print queue gone", `document.querySelector('#printq').hidden && !document.getElementById('printq-empty').hidden`)
 }
 
 // TestKeysDeskRequest: r opens the request with the note focused (typing it
@@ -706,6 +710,7 @@ func TestToastOnError(t *testing.T) {
 
 			e.key("dp")
 			e.waitStatus(k, "toprint")
+			e.open("/work/printq")
 			e.waitFor("the print queue", `!!document.querySelector('#printq:not([hidden]) button[hx-post="/work/printrun"]')`)
 			e.click(`#printq button[hx-post="/work/printrun"]`)
 			e.waitFor("the error toast", toast+` === `+js(c.failed))

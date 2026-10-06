@@ -32,3 +32,36 @@
   {{if not .NoteField}}<span class="muted">{{th "The card template has no <code>qslmsg</code> field: notes are not printed."}}</span>{{end}}</p>{{end}}
 </div>{{end}}
 </section>{{end}}
+
+{{define "printq_badge"}}<a id="printq-view" href="/work/printq"{{if .On}} class="on" aria-current="page"{{end}} title="{{t "cards waiting to be printed"}}">{{t "Print queue"}}{{if .Queued}} <span class="cnt">{{.Queued}}</span>{{end}}{{if .RunOpen}} <span class="cnt exp" title="{{t "a printed run waits for your check"}}">{{t "check"}}</span>{{end}}</a>{{end}}
+
+{{define "printq.html"}}<!DOCTYPE html>
+<html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Desk"}} - {{t "Print queue"}}</title>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/schibstedgrotesk-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script>window.qslT = {{jsT}};</script>
+<script src="/static/app.js"></script>
+<script src="/static/live.js" defer></script>
+</head><body data-area="desk" data-live="printq">
+<header class="site">
+  <h1>qslotter</h1>
+  {{template "nav" .}}
+</header>
+<div class="band"><div class="band-in">
+    <div class="band-title"><h2>{{t "Desk"}}</h2><p>{{t "Cards to write or print"}}</p></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a href="/work">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a>{{template "printq_badge" .PQ}}</div>
+  </div></div>
+<main class="printq-page">
+  {{template "print_queue" .}}
+  <div class="empty" id="printq-empty"{{if or .Queue .Run}} hidden{{end}}>
+    <p class="big">{{t "Nothing to print."}}</p>
+    <p>{{t "\"To print\" on a Desk card, or on a reply under Incoming QSLs, puts the card here; one print run prints every card here as one job."}}</p>
+    <p><a href="/work">{{t "Back to the Desk list"}} &rarr;</a></p>
+  </div>
+</main>
+</body></html>{{end}}

@@ -256,7 +256,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/none", s.htmxQueueNone)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
 	r.Post("/work/print", s.htmxWorkPrint)           // Desk card actions take key=... once per QSO on the card; print = to the print queue
-	r.Get("/work/printq", s.htmxPrintQueue)          // the print queue section (live refresh)
+	r.Get("/work/printq", s.pagePrintQueue)          // the Print queue view; htmx: the section alone; ?badge=1: the band button
 	r.Post("/work/printrun", s.htmxPrintRun)         // print every queued card as one job, open the run
 	r.Post("/work/exportrun", s.htmxExportRun)       // instead: every queued card into one ADIF file for a print service
 	r.Get("/work/export", s.htmxExportFile)          // ?name=qsl-....adi: download an exported file

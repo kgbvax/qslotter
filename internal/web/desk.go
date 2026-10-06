@@ -235,10 +235,7 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	groups := groupCards(cards)
 	data := s.workCardData(r, listOrder(groups), "", true)
 	data["Groups"] = groups
-	if data["PrintQ"], err = s.printQueueData(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	data["PQ"] = s.printBadge()
 	s.render(w, r, "worklist.html", data)
 }
 
@@ -321,6 +318,7 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 	}
 	data := s.workCardData(r, cards, filter, md)
 	if fullPage {
+		data["PQ"] = s.printBadge()
 		s.render(w, r, "workcard.html", data)
 		return
 	}

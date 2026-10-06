@@ -82,6 +82,6 @@
       <button type="button" class="mini" data-key="n" title="{{t "No card after all - goes to Done, reopenable"}}  (n)" hx-post="/work/none?{{$act}}" hx-include="#cardform" hx-target="#workcard" hx-swap="outerHTML">{{t "No card"}}</button>
     </span>
   </div>
-  <p class="muted legend">{{t "Keys:"}} <kbd>p</kbd> {{t "to print"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Written by hand marks the card as sent; To print puts it into the print queue at the top of the Desk."}}</p>
+  <p class="muted legend">{{t "Keys:"}} <kbd>p</kbd> {{t "to print"}} &middot; <kbd>w</kbd> {{t "written by hand"}} &middot; <kbd>r</kbd> {{t "request their card (OQRS ...)"}} &middot; <kbd>n</kbd> {{t "no card"}} &middot; {{if .MD}}<kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "select in the list"}}{{else}}<kbd>&larr;</kbd> <kbd>&rarr;</kbd> {{t "browse"}}{{end}} &mdash; {{t "the ticked QSOs share the card. Written by hand marks the card as sent; To print puts it into the Print queue (see the band)."}}</p>
 {{end}}
 </div>{{end}}

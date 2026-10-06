@@ -17,7 +17,7 @@ import (
 	"github.com/dl9et/qslotter/internal/store"
 )
 
-// The print queue (top of the Desk, docs/STATES.md): cards sent to printing
+// The print queue (the Desk's third view, /work/printq; docs/STATES.md): cards sent to printing
 // wait there (toprint) with their route and note; "Print" sends all of them
 // as one job and opens the print run (printing) - or, for stations whose
 // cards a QSL print service produces (e.g. DARC), "Export ADIF" writes them
@@ -167,7 +167,23 @@ func (s *Server) printQueueData() (map[string]any, error) {
 	}
 	export, _ := s.store.MetaGet(metaRunExport)
 	return map[string]any{"Queue": queue, "Run": run, "QueuePrints": n, "NoteField": s.templateHasNote(),
-		"Export": export, "ExportPath": filepath.Join(s.exportDir(), export)}, nil
+		"Export": export, "ExportPath": filepath.Join(s.exportDir(), export),
+		"PQ": PrintBadge{Queued: len(queue), RunOpen: len(run) > 0, On: true}}, nil
+}
+
+// PrintBadge is the "Print queue" view button in the Desk band: how many
+// cards wait, whether a run waits for its check, and whether it is the page.
+type PrintBadge struct {
+	Queued  int
+	RunOpen bool
+	On      bool
+}
+
+// printBadge counts for the band of the Desk pages (list, card by card).
+func (s *Server) printBadge() PrintBadge {
+	q, _ := s.store.QueueList("toprint")
+	run, _ := s.store.QueueList("printing")
+	return PrintBadge{Queued: len(q), RunOpen: len(run) > 0}
 }
 
 func (s *Server) renderPrintQueue(w http.ResponseWriter, r *http.Request) {
@@ -179,8 +195,25 @@ func (s *Server) renderPrintQueue(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "print_queue", data)
 }
 
-// htmxPrintQueue renders the print queue section alone (live refresh).
-func (s *Server) htmxPrintQueue(w http.ResponseWriter, r *http.Request) { s.renderPrintQueue(w, r) }
+// pagePrintQueue is the Desk's Print queue view: the full page, or - for
+// htmx and live.js - the section alone; ?badge=1 answers the band's button
+// (its count follows every move on the other Desk pages).
+func (s *Server) pagePrintQueue(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("badge") == "1" {
+		s.render(w, r, "printq_badge", s.printBadge())
+		return
+	}
+	if isFragmentRequest(r) {
+		s.renderPrintQueue(w, r)
+		return
+	}
+	data, err := s.printQueueData()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, r, "printq.html", data)
+}
 
 // runKeys returns the QSOs of the ticked cards of the run: each checkbox
 // carries a card's lead key, its QSOs come as card:<lead> fields.

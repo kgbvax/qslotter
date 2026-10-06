@@ -38,6 +38,44 @@
   }
   es.addEventListener('queue_changed', refreshNav);
 
+  // The Print queue view (data-live=printq) follows every move, keeping the
+  // ticks of the open run; its button in the band of every Desk page keeps
+  // its count.
+  var pqTimer = null;
+  function reloadPrintQueue() {
+    clearTimeout(pqTimer);
+    pqTimer = setTimeout(function () {
+      var badge = byId('printq-view');
+      if (badge) {
+        fetch('/work/printq?badge=1').then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+          var cur = byId('printq-view');
+          if (html === null || !cur) return;
+          var tmp = document.createElement('div');
+          tmp.innerHTML = html.trim();
+          if (tmp.firstElementChild) cur.replaceWith(tmp.firstElementChild);
+        });
+      }
+      var pq = byId('printq');
+      if (!pq || mode !== 'printq') return;
+      var ticks = {};
+      pq.querySelectorAll('input[name="lead"]:checked').forEach(function (c) { ticks[c.value] = true; });
+      fetch('/work/printq', { headers: { 'HX-Request': 'true' } }).then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+        var cur = byId('printq');
+        if (html === null || !cur) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html.trim();
+        var fresh = tmp.firstElementChild;
+        if (!fresh) return;
+        fresh.querySelectorAll('input[name="lead"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
+        cur.replaceWith(fresh);
+        if (window.htmx) htmx.process(fresh);
+        var empty = byId('printq-empty');
+        if (empty) empty.hidden = !fresh.hidden;
+      });
+    }, 150);
+  }
+  es.addEventListener('queue_changed', function () { settled(reloadPrintQueue); });
+
   // The QSO in progress (Inbox pages): the box follows the logger's entry
   // field and the station's QRZ data.
   function reloadCurrent() {
@@ -280,28 +318,4 @@
   es.addEventListener('queue_changed', function () { settled(reloadList); });
   es.addEventListener('station_updated', function () { settled(reloadList); });
 
-  // The print queue at the top of the Desk follows every move (keeping the
-  // ticks of the open run).
-  var pqTimer = null;
-  function reloadPrintQueue() {
-    clearTimeout(pqTimer);
-    pqTimer = setTimeout(function () {
-      var pq = byId('printq');
-      if (!pq || !desk) return;
-      var ticks = {};
-      pq.querySelectorAll('input[name="lead"]:checked').forEach(function (c) { ticks[c.value] = true; });
-      fetch('/work/printq').then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
-        var cur = byId('printq');
-        if (html === null || !cur) return;
-        var tmp = document.createElement('div');
-        tmp.innerHTML = html.trim();
-        var fresh = tmp.firstElementChild;
-        if (!fresh) return;
-        fresh.querySelectorAll('input[name="lead"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
-        cur.replaceWith(fresh);
-        if (window.htmx) htmx.process(fresh);
-      });
-    }, 150);
-  }
-  es.addEventListener('queue_changed', function () { settled(reloadPrintQueue); });
 })();

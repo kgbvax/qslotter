@@ -413,11 +413,24 @@ func TestWorkPrintQueueRunConfirm(t *testing.T) {
 	if !strings.Contains(r.Body.String(), "Nothing to write or print") {
 		t.Fatalf("empty Desk:\n%s", r.Body)
 	}
-	body := get(t, h, "/work").Body.String()
-	for _, want := range []string{`id="printq"`, "To print", "Print 2 card(s)", "tnx QSO", "/work/unprint"} {
+	body := get(t, h, "/work/printq").Body.String()
+	for _, want := range []string{"<!DOCTYPE html>", `id="printq"`, "To print", "Print 2 card(s)", "tnx QSO", "/work/unprint", `id="printq-view" href="/work/printq" class="on"`} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("/work missing %q:\n%s", want, body)
+			t.Fatalf("/work/printq missing %q:\n%s", want, body)
 		}
+	}
+	// The Desk pages carry only the band's button with the count (VISION B5, 2026-10-06).
+	for _, p := range []string{"/work", "/work/card"} {
+		b := get(t, h, p).Body.String()
+		if strings.Contains(b, `id="printq"`) || !strings.Contains(b, `href="/work/printq"`) || !strings.Contains(b, `<span class="cnt">2</span>`) {
+			t.Fatalf("%s must show the Print queue button with its count and nothing more of the queue:\n%s", p, b)
+		}
+	}
+	if b := get(t, h, "/work/printq?badge=1").Body.String(); !strings.Contains(b, `<span class="cnt">2</span>`) || strings.Contains(b, "<!DOCTYPE") {
+		t.Fatalf("badge fragment:\n%s", b)
+	}
+	if b := getHX(t, h, "/work/printq").Body.String(); !strings.Contains(b, `id="printq"`) || strings.Contains(b, "<!DOCTYPE") {
+		t.Fatalf("htmx fragment:\n%s", b)
 	}
 
 	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != 200 || !strings.Contains(r.Body.String(), "All fine - sent") {

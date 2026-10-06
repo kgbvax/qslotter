@@ -510,6 +510,12 @@ header.site nav .cnt.exp { background: var(--tab); }
 }
 .band .views a:hover, .band .views button:hover { background: rgba(255, 255, 255, 0.18); text-decoration: none; color: #fff; }
 .band .views a.on { background: #fff; color: var(--area); border-color: #fff; }
+/* the Print queue button carries its count; "check" while a printed run waits */
+.band .views a .cnt { display: inline-block; min-width: 18px; text-align: center; font: 600 11px 'IBM Plex Mono', monospace; border-radius: 9px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; background: #fff; color: var(--area); }
+.band .views a.on .cnt { background: var(--area); color: #fff; }
+.band .views a .cnt.exp { background: var(--red); color: #fff; font-family: 'Schibsted Grotesk', sans-serif; }
+.printq-page .printq { margin-bottom: 0; }
+.printq-page .empty { margin-top: 4px; }
 .band a:focus-visible, .band button:focus-visible { outline-color: #fff; }
 
 main { padding-top: 22px; }
