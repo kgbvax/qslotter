@@ -38,7 +38,7 @@
   "Refresh": "Aktualisieren",
   "Look the station up on QRZ again now": "Station jetzt erneut bei QRZ abfragen",
   "Suggests <b class=\"tentative\">%s</b>": "Vorschlag: <b class=\"tentative\">%s</b>",
-  "QSL manager field:": "QSL-Manager-Feld:",
+  "qslmgr": "qslmgr",
   "paper (mQSL):": "Papier (mQSL):",
   "mail:": "E-Mail:",
   "full bio": "ganze Bio",

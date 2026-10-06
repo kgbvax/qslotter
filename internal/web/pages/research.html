@@ -25,13 +25,14 @@
 {{define "qrz_head"}}{{$row := .}}<h4><a class="qrzlink" href="https://www.qrz.com/db/{{.QSO.Call}}" target="_qrz" rel="noopener" title="{{t "Open on QRZ.com"}}">{{t "QRZ:"}}</a>{{with .Research}} <span class="qrzstate q-{{.QRZState}}">{{if eq .QRZState "off"}}{{t "QRZ lookups are off - add credentials under Settings"}}{{else if eq .QRZState "pending"}}{{t "looking up..."}}{{else if eq .QRZState "notfound"}}{{t "station not on QRZ"}}{{else}}{{t "%s ago" .QRZAge}}{{end}}</span>{{end}}{{if and .Info (not .Info.NotFound)}}{{with $row.Sig}} <span class="sigs">{{template "sigchips" .}}</span>{{end}}{{end}}{{with .Research}}{{if .CanRefresh}} <button type="button" class="mini qrz-refresh" title="{{t "Look the station up on QRZ again now"}}" hx-post="/station/refresh?call={{q $row.QSO.Call}}" hx-swap="none" hx-disabled-elt="this">{{t "Refresh"}}</button>{{end}}{{end}}</h4>{{end}}
 
 {{define "qrz_evidence"}}{{$row := .}}{{if and .Info (not .Info.NotFound)}}
-    {{if .Info.QSLMgr}}<p class="why">{{t "QSL manager field:"}} <code>{{.Info.QSLMgr}}</code></p>{{end}}
-    {{with $row.Research}}{{if .BioExcerpt}}<pre class="bio">{{.BioExcerpt}}</pre>{{end}}{{end}}
+    {{/* what QRZ says, verbatim: the qslmgr field, then the QSL-relevant bio lines */}}
+    {{if or .Info.QSLMgr $row.Research.BioExcerpt}}<pre class="bio">{{if .Info.QSLMgr}}<b>{{t "qslmgr"}}</b>  {{.Info.QSLMgr}}{{if $row.Research.BioExcerpt}}
+{{end}}{{end}}{{with $row.Research}}{{.BioExcerpt}}{{end}}</pre>{{end}}
     {{if .Info.BioText}}<details class="fullbio"><summary>{{t "full bio"}}</summary><pre class="bio">{{.Info.BioText}}</pre></details>{{end}}
 {{end}}{{end}}
 
 {{define "qrz_address"}}{{if and .Info (not .Info.NotFound)}}{{if or .Info.Addr1 .Info.Addr2 .Info.Country}}
-    <address>{{if or .Info.Name .QSO.Name}}{{if .Info.Name}}{{.Info.Name}}{{else}}{{.QSO.Name}}{{end}}<br>{{end}}{{if .Info.Attn}}{{.Info.Attn}}<br>{{end}}{{if .Info.Addr1}}{{.Info.Addr1}}<br>{{end}}{{if .Info.Addr2}}{{.Info.Addr2}}<br>{{end}}{{if or .Info.State .Info.Zip}}{{.Info.State}} {{.Info.Zip}}<br>{{end}}{{.Info.Country}}</address>
+    <address class="oneline">{{if or .Info.Name .QSO.Name}}<span>{{if .Info.Name}}{{.Info.Name}}{{else}}{{.QSO.Name}}{{end}}</span>{{end}}{{if .Info.Attn}}<span>{{.Info.Attn}}</span>{{end}}{{if .Info.Addr1}}<span>{{.Info.Addr1}}</span>{{end}}{{if .Info.Addr2}}<span>{{.Info.Addr2}}</span>{{end}}{{if or .Info.State .Info.Zip}}<span>{{.Info.State}} {{.Info.Zip}}</span>{{end}}<span>{{.Info.Country}}</span></address>
 {{end}}{{end}}{{end}}
 
 {{define "research_history"}}{{with .Research}}{{if .History}}
