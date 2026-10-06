@@ -66,7 +66,13 @@ absolute `store.path`), `third_party\sumatrapdf\SumatraPDF.exe` (must stay on
 **3.5.x** — the 3.6 print engine hangs).
 
 Deploy cycle (the exe is the windowed GUI build with icon; it runs in the
-interactive session via the at-logon scheduled task `qslotter`):
+interactive session via the at-logon scheduled task `qslotter`) - one command
+does all of the below, stopping at the first failing step:
+
+    scripts/deploy-bwpc.sh        # build, quit, back up exe+db, copy (SHA-256 checked), start, wait for 200
+    scripts/deploy-bwpc.sh -n     # same with the exe already in dist/
+
+By hand:
 
     scripts/release.sh                              # dist/qslotter-windows-amd64.exe
     # clean shutdown (closes the DB; taskkill without /f does not reach the session):
