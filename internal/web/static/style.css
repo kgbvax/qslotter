@@ -157,8 +157,11 @@ button.stamp.e:hover,    button.stamp.e.stamped    { background: var(--teal); co
 button.stamp.m:hover,    button.stamp.m.stamped    { background: var(--ink); color: var(--card); }
 button.stamp.none:hover, button.stamp.none.stamped { background: var(--grey); color: var(--card); }
 /* the one action this view exists for: filled with the area's colour. Plain stamps (outlined ink) are the alternatives. */
-button.stamp.primary, button.stamp.yes { background: var(--area); border-color: var(--area); color: #fff; transform: none; }
-button.stamp.primary:hover, button.stamp.yes:hover, button.stamp.yes.stamped { background: var(--ink); border-color: var(--ink); color: #fff; }
+button.stamp.primary { background: var(--area); border-color: var(--area); color: #fff; transform: none; }
+button.stamp.primary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+/* Yes, card: a stamp like No card - outlined, tilted - in the area's ink; pressed = filled */
+button.stamp.yes { color: var(--area); }
+button.stamp.yes:hover, button.stamp.yes.stamped { background: var(--area); border-color: var(--area); color: #fff; }
 button.stamp:not(.b):not(.d):not(.e):not(.m):not(.none):not(.yes):not(.primary):hover { background: var(--ink); color: #fff; }
 
 /* --- log tables: ruled paper, no boxing --- */
