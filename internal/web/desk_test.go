@@ -42,7 +42,7 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {"DL1ABC/P|20240103|140000|40m"}})
 
 	page := get(t, h, "/work/card?key="+url.QueryEscape(key)).Body.String()
-	for _, want := range []string{"card 2 of 2", "Confirming 2 two-way QSOs with", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
+	for _, want := range []string{"card 2 of 2", "2 QSOs on this card", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -185,7 +185,7 @@ func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "oqrs-hint", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
+	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "QRZ mentions <b>OQRS</b>", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -264,7 +264,7 @@ func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 		t.Fatalf("choices for a card that left were applied to another card:\n%s", b)
 	}
 	b = getHX(t, h, "/work/card?key="+url.QueryEscape(key)+"&route=&manager=").Body.String()
-	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "suggested: by QRZ") {
+	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "Preselected by QRZ:") {
 		t.Fatalf("an empty carried route wiped the preselection:\n%s", b)
 	}
 }

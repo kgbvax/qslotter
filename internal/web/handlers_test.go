@@ -346,7 +346,7 @@ func TestWorkQueue(t *testing.T) {
 
 	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "suggested: by QRZ", "/work/print?view=work", `data-key="p"`, "QRZ:"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "Preselected by QRZ:", "/work/print?view=work", `data-key="p"`, "QRZ:"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}

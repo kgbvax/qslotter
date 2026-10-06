@@ -36,9 +36,12 @@ type DeskCard struct {
 	Keys  []string    // the QSOs' keys, oldest first
 	Extra int         // QSOs beyond the lead (list display)
 
-	Name   string // the newest non-empty NAME among the card's QSOs (shown and printed)
+	Name   string // the newest non-empty NAME among the card's QSOs (printed)
 	QTH    string // likewise for QTH
 	Prints int    // physical cards a print produces (QSO rows per card from the template)
+
+	ShownName string // the header's name: the log's, else QRZ's
+	Country   string // the header's country (QRZ)
 
 	Route      string // route offered first: B, D, MD (manager direct), MB (manager bureau), "" = none
 	RouteFrom  string // where it comes from: "chosen earlier", "by QRZ"
@@ -101,6 +104,11 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 			c.QTH = cmpOr(r.QSO.QTH, c.QTH)
 		}
 		c.Prints = (len(c.Rows) + perCard - 1) / perCard
+		c.ShownName = c.Name
+		if info := c.Lead.Info; info != nil && !info.NotFound {
+			c.ShownName = cmpOr(c.Name, info.Name)
+			c.Country = info.Country
+		}
 		c.Route, c.RouteFrom, c.MgrPrefill = preselectRoute(c)
 		c.OQRS = mentionsOQRS(c.Lead.Info)
 	}
