@@ -150,26 +150,6 @@ func (s *Server) templateHasNote() bool {
 	return err != nil || t.HasField("qslmsg") // a broken template says so when printing
 }
 
-// notePrefill is the note for cards sent to printing without the card view
-// (the Desk batch): one set earlier, else the log's QSLMSG.
-func (s *Server) notePrefill(keys []string) string {
-	var rows []*QueueRow
-	for _, k := range keys {
-		it, _ := s.store.QueueGet(k)
-		q, _ := s.store.GetQSO(k)
-		if it != nil && q != nil {
-			rows = append(rows, &QueueRow{Item: it, QSO: q})
-		}
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].QSO.QSODate != rows[j].QSO.QSODate {
-			return rows[i].QSO.QSODate < rows[j].QSO.QSODate
-		}
-		return rows[i].QSO.TimeOn < rows[j].QSO.TimeOn
-	})
-	return cardNote(rows)
-}
-
 // printQueueData is the print queue section: the cards waiting and the open
 // run.
 func (s *Server) printQueueData() (map[string]any, error) {

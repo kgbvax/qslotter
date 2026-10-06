@@ -179,7 +179,7 @@
   // Master-detail: the list (#md-list) only selects; the detail pane decides.
   // After an action the server answers with the card below the handled one;
   // the list follows the detail. Live changes reload the list (keeping the
-  // selection and batch ticks); when the shown card left (handled in another
+  // selection); when the shown card left (handled in another
   // window) the selection moves to the row that took its place.
   var list = byId('md-list'), box = list.closest('.md-list');
   function rows() { return Array.prototype.slice.call(list.querySelectorAll('tr.md-row')); }
@@ -257,14 +257,11 @@
   function reloadList() {
     clearTimeout(listTimer);
     listTimer = setTimeout(function () {
-      var ticks = {};
-      list.querySelectorAll('input[name="keys"]:checked').forEach(function (c) { ticks[c.value] = true; });
       var before = rows(), at = before.indexOf(rowOf(shownKeys()));
       fetch(cfg.list).then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
         if (html === null) return;
         list.innerHTML = html;
         if (window.htmx) htmx.process(list);
-        list.querySelectorAll('input[name="keys"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
         if (countEl) countEl.textContent = rows().length;
         var el = byId(cfg.id), shown = shownKeys(), row = rowOf(shown), rs = rows();
         if (row) { // still listed; a Desk card may have grown or lost QSOs

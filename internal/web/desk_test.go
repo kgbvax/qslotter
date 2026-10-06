@@ -208,32 +208,6 @@ func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	}
 }
 
-// TestDeskBatchCoversWholeCard: a ticked card in the list finishes all of its
-// QSOs with the card's route.
-func TestDeskBatchCoversWholeCard(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	k2 := twoQSOCard(t, srv, st, key)
-	lead := k2 // newest QSO leads the card
-	// The row's QSOs come along as card:<lead>; a QSO with the call that
-	// joined the Desk after the page was drawn is not swept along.
-	late := addQueued(t, st, "DL1ABC", "20240104")
-	postForm(t, h, "/queue/yes", url.Values{"key": {late}})
-	r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"written"}, "keys": {lead},
-		"card:" + lead: {key, k2}, "route:" + lead: {"MB"}, "manager:" + lead: {"K2ABC"}})
-	if r.Header().Get("Location") != "/work?done=1&failed=0" {
-		t.Fatalf("batch = %q", r.Header().Get("Location"))
-	}
-	for _, k := range []string{key, k2} {
-		if it := status(t, st, k); it.Status != "sent" || it.DesiredMethod != "M" || it.SendVia != "B" || it.Manager != "K2ABC" {
-			t.Fatalf("%s after batch: %+v", k, it)
-		}
-	}
-	if it := status(t, st, late); it.Status != "decided" {
-		t.Fatalf("a QSO the operator did not see was finished by the batch: %+v", it)
-	}
-}
-
 // TestDeskStaleAfterBack: a Desk page whose card went back to the Inbox in
 // another window gets 409, it does not record the QSOs as "written now".
 func TestDeskStaleAfterBack(t *testing.T) {

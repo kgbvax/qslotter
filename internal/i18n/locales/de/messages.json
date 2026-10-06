@@ -70,8 +70,6 @@
   "Choose how to send first: bureau, direct, or via manager (direct or bureau).": "Wähle zuerst den Versandweg: Büro, direkt oder über Manager (direkt oder Büro).",
   "route must be B, D, MD or MB": "Weg muss B, D, MD oder MB sein",
   "No QSO selected for this card - tick at least one.": "Kein QSO für diese Karte ausgewählt - kreuze mindestens eines an.",
-  "unknown batch action for this list": "unbekannte Sammelaktion für diese Liste",
-  "unknown batch action for the Desk": "unbekannte Sammelaktion für den Schreibtisch",
   "choose how to send (bureau, direct or via manager)": "Versandweg wählen (Büro, direkt oder über Manager)",
   "via manager needs the manager's callsign": "über Manager braucht das Rufzeichen des Managers",
   "via manager needs bureau or direct": "über Manager braucht Büro oder direkt",

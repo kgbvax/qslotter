@@ -73,16 +73,16 @@ store transitions remain.
 | `QueueDiscardBacklog` | `queued` -> `skipped` | startup, once per cutoff | `desired_method=N`, `note=backlog`; override-marker QSOs stay |
 | `QueueWrittenNow` | `queued` -> `sent` | none since 2026-10-06 (was: Inbox / QSO in progress, written now) | route B/D, `note=written now`; QSO: `qsl_sent_local=Y`, method, date |
 | `QueueCloseSentElsewhere` | `queued`/`decided`/`toprint` -> `sent` | pull: the QSO is new or changed and Clublog has it sent | `note=sent elsewhere`; QSO untouched |
-| `QueueToPrint` | `decided` -> `toprint` | Desk `p` / batch "To print" | route, `card_note` |
+| `QueueToPrint` | `decided` -> `toprint` | Desk `p` | route, `card_note` |
 | `QueueUnprint` | `toprint` -> `decided` | print queue: back to the Desk | route and note kept as preselection |
 | `QueueStartRun` | all `toprint` -> `printing` | print queue: Print, or Export ADIF | `printed_at`; refused while a run is open or nothing is queued; meta `print_run_export` = the run's ADIF file ("" = printed) |
 | `QueueRunFailed` | `printing` -> `toprint` | the run's job failed (render or printer) | - |
 | `QueueReprint` | `printing` -> `printing` | Print / Export ticked again | `printed_at` |
 | `QueueRunBack` | `printing` -> `toprint` | Ticked back to the print queue | - |
 | `QueueConfirmRun` | all `printing` -> `sent` | All fine - sent | QSO: `qsl_sent_local=Y`, `qsl_sent_method_local`=B/D, date |
-| `QueueWritten` | `decided` -> `sent` | Desk `w` / batch | route; QSO sent state |
+| `QueueWritten` | `decided` -> `sent` | Desk `w` | route; QSO sent state |
 | `QueueRequested` | `decided` -> `requested` | Desk `r` | `desired_method=R`, channel, note, `sent_at`; QSO: `qsl_rcvd_local=R` unless R/Y already |
-| `QueueDeskDecline` | `decided` -> `skipped` | Desk `n` / batch | `desired_method=N` |
+| `QueueDeskDecline` | `decided` -> `skipped` | Desk `n` | `desired_method=N` |
 | `QueueBack` | `decided` -> `queued` | none since 2026-10-06 (was: Desk `u` / batch) | route cleared |
 | `QueueReply` | none/`queued`/`skipped`/`requested`(card arrived) -> `decided`; `decided` stays | Incoming QSLs: later at the Desk | new row: `override_reason=reply to their card` |
 | `QueueReplyFinish` | as `QueueReply`, then -> `sent` (written) or `toprint` | Incoming QSLs: written / to print | one transaction |

@@ -183,7 +183,6 @@ td.c-date, .c-bm, td.method { font-family: 'IBM Plex Mono', monospace; font-size
   padding: 0 5px; color: var(--ink-soft); vertical-align: middle;
 }
 
-.batchbar { margin: 8px 0 2px; display: flex; gap: 8px; align-items: center; }
 .legend { font-size: 12px; }
 
 /* --- the decide view: one QSL card at a time --- */
@@ -438,7 +437,6 @@ tr.md-group > th { padding-top: 12px; font-size: 13px; }
 tr.md-group:first-child > th { padding-top: 2px; }
 .md-list .call { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
 .md-list .routetag { font: 600 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
-.md-list .batchbar { margin-top: 0; }
 /* The QSO in progress sits in the list column: when it appears or goes, only the list moves, never the Yes/No buttons of the detail pane. */
 .md-list .current { margin-bottom: 8px; padding: 6px 8px; }
 .md-list .current .current-head .call { font-size: 17px; }

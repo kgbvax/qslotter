@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -226,8 +225,7 @@ func listOrder(groups []WorkGroup) []*DeskCard {
 
 // pageWork is the Desk master-detail view (VISION B2): the cards grouped by
 // the route offered first on one side, the selected card on the other;
-// finishing a card moves to the one below. Batch actions use each card's
-// preselected route.
+// finishing a card moves to the one below.
 func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	cards, err := s.deskCards(true)
 	if err != nil {
@@ -241,7 +239,6 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
 	s.render(w, r, "worklist.html", data)
 }
 
@@ -488,49 +485,4 @@ func (s *Server) htmxWorkRequested(w http.ResponseWriter, r *http.Request) {
 // htmxWorkNone: no card after all (B6).
 func (s *Server) htmxWorkNone(w http.ResponseWriter, r *http.Request) {
 	s.deskAction(w, r, "skipped", func(keys []string) error { return s.store.QueueDeskDecline(keys...) })
-}
-
-// batchDesk applies one action to every ticked card of the Desk list. Each
-// checkbox carries the card's lead key; the QSOs the row showed come as
-// card:<lead> fields (a QSO that joined the card after the page was drawn is
-// not swept along), the route from the row's route:<lead> field. Redirects
-// back with a count of cards.
-func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string, leads []string) {
-	var apply func(keys []string, lead string) (to string, err error)
-	switch action {
-	case "print", "written":
-		apply = func(keys []string, lead string) (string, error) {
-			rt, err := routeFrom(r, lead)
-			if err != nil {
-				return "", err
-			}
-			if action == "print" {
-				return "toprint", s.store.QueueToPrint(keys, rt, s.notePrefill(keys))
-			}
-			return "sent", s.store.QueueWritten(keys, rt)
-		}
-	case "none":
-		apply = func(keys []string, _ string) (string, error) { return "skipped", s.store.QueueDeskDecline(keys...) }
-	default:
-		s.fail(w, r, http.StatusBadRequest, "unknown batch action for the Desk")
-		return
-	}
-	done, failed := 0, 0
-	for _, lead := range leads {
-		keys := r.Form["card:"+lead]
-		if len(keys) == 0 {
-			keys = []string{lead}
-		}
-		to, err := apply(keys, lead)
-		if err != nil {
-			failed++
-			continue
-		}
-		done++
-		for _, k := range keys {
-			s.publishQueueChanged(k, to)
-		}
-	}
-	q := url.Values{"done": {fmt.Sprint(done)}, "failed": {fmt.Sprint(failed)}}
-	http.Redirect(w, r, "/work?"+q.Encode(), http.StatusSeeOther)
 }

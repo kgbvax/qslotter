@@ -354,7 +354,7 @@ func TestWorkQueue(t *testing.T) {
 	if iO < 0 || iD < iO || iM < iD || iB < iM {
 		t.Fatalf("/work groups must read Not chosen yet, Direct, Via manager, Bureau:\n%s", list)
 	}
-	if !strings.Contains(list, `form="batch" value="K2ABC"`) || !strings.Contains(list, `form="batch" value="MD"`) || !strings.Contains(list, "Via manager, direct K2ABC") {
+	if !strings.Contains(list, "Via manager, direct K2ABC") || strings.Contains(list, `name="keys"`) || strings.Contains(list, "/queue/batch") {
 		t.Fatalf("/work must preselect the suggested manager route:\n%s", list)
 	}
 
@@ -877,51 +877,6 @@ func TestQueueRowOnlyForUndecided(t *testing.T) {
 	}
 	if r := get(t, h, "/queue/row?key="+url.QueryEscape("GONE|20240101|000000|20m")); r.Code != http.StatusNotFound {
 		t.Fatalf("/queue/row for unknown QSO = %d, want 404", r.Code)
-	}
-}
-
-// TestBatchActions: the Desk list applies one action to many ticked cards;
-// the Inbox has no batch (a yes/no is as quick as ticking).
-func TestBatchActions(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	q2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	for _, k := range []string{key, q2} {
-		postForm(t, h, "/queue/yes", url.Values{"key": {k}})
-		if it := status(t, st, k); it.Status != "decided" {
-			t.Fatalf("%s after yes: %+v", k, it)
-		}
-	}
-
-	// No batch in the Inbox, whatever the action.
-	for _, a := range []string{"yes", "none", "B", "print"} {
-		if r := postForm(t, h, "/queue/batch", url.Values{"action": {a}, "keys": {key}}); r.Code != http.StatusBadRequest {
-			t.Fatalf("Inbox batch %q = %d, want 400", a, r.Code)
-		}
-	}
-	if it := status(t, st, key); it.Status != "decided" {
-		t.Fatalf("a refused batch touched the card: %+v", it)
-	}
-
-	// Desk batches use each row's route field; a row without a route fails.
-	fp := srv.printer.(*fakePrinter)
-	r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key, q2},
-		"route:" + key: {"MD"}, "manager:" + key: {"K2ABC"}})
-	if r.Header().Get("Location") != "/work?done=1&failed=1" || len(fp.printed) != 0 {
-		t.Fatalf("batch to print = %q, printed %d", r.Header().Get("Location"), len(fp.printed))
-	}
-	if it := status(t, st, key); it.Status != "toprint" || it.DesiredMethod != "M" || it.SendVia != "D" || it.Manager != "K2ABC" {
-		t.Fatalf("batch to print: %+v", it)
-	}
-	printAll(t, h)
-	if it := status(t, st, key); it.Status != "sent" || !it.PrintedAt.Valid || len(fp.printed) != 1 {
-		t.Fatalf("batch card printed: %+v", it)
-	}
-	if it := status(t, st, q2); it.Status != "decided" {
-		t.Fatalf("a card without a route must stay on the Desk: %+v", it)
-	}
-	if r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"back"}, "keys": {q2}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("batch back = %d, want 400 (no way back to the Inbox)", r.Code)
 	}
 }
 

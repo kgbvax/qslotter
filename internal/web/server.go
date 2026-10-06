@@ -255,7 +255,6 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/queue/yes", s.htmxQueueYes)
 	r.Post("/queue/none", s.htmxQueueNone)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
-	r.Post("/queue/batch", s.batchQueue)
 	r.Post("/work/print", s.htmxWorkPrint)           // Desk card actions take key=... once per QSO on the card; print = to the print queue
 	r.Get("/work/printq", s.htmxPrintQueue)          // the print queue section (live refresh)
 	r.Post("/work/printrun", s.htmxPrintRun)         // print every queued card as one job, open the run

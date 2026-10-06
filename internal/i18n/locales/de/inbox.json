@@ -12,7 +12,6 @@
   "One QSO at a time": "Ein QSO nach dem anderen",
   "card by card": "Karte für Karte",
   "Recompute queue": "Eingang neu berechnen",
-  "Batch: %s done": "Sammelaktion: %s erledigt",
   "QSOs waiting for a decision": "QSOs, die auf eine Entscheidung warten",
   "Nothing waiting for a decision.": "Nichts wartet auf eine Entscheidung.",
   "Nothing waiting for a decision. New QSOs from Log4OM appear here the moment they are logged.": "Nichts wartet auf eine Entscheidung. Neue QSOs aus Log4OM erscheinen hier, sobald sie geloggt sind.",

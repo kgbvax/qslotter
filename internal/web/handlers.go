@@ -761,7 +761,7 @@ func parseRoute(code, manager string) (store.Route, error) {
 }
 
 // routeFrom reads one card's route from the form: the per-row fields
-// route:<key> / manager:<key> (Desk list, also posted with its batch form),
+// route:<key> / manager:<key>,
 // else route= / manager=.
 func routeFrom(r *http.Request, key string) (store.Route, error) {
 	code, mgr := r.FormValue("route:"+key), r.FormValue("manager:"+key)
@@ -816,17 +816,6 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 		s.notice(w, r, "Moved back to New QSOs. Clublog already has their card as requested (QSL_RCVD=R); that is not undone there.")
 	}
 	s.afterTransition(w, r, key, "queued")
-}
-
-// batchQueue applies one action to every ticked card of the Desk list and
-// redirects back with a done/failed count. The Inbox has no batch: deciding
-// a QSO is as quick as ticking it.
-func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("list") != "work" {
-		s.fail(w, r, http.StatusBadRequest, "unknown batch action for this list")
-		return
-	}
-	s.batchDesk(w, r, r.FormValue("action"), r.Form["keys"])
 }
 
 // --- sync handlers ---
