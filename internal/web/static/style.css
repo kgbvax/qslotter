@@ -569,11 +569,18 @@ main { padding-top: 22px; }
 .current.strip .current-head > .lbl { display: block; margin: 0 0 4px; font: 700 11px 'Schibsted Grotesk', sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--red); }
 .current.strip .current-head > .lbl .c-bm { margin-left: 8px; letter-spacing: 0; text-transform: none; color: var(--ink-soft); }
 .current.strip .current-head > .lbl .muted { font: 400 12px 'Schibsted Grotesk', sans-serif; text-transform: none; letter-spacing: 0; }
-.current-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 28px; align-items: center; }
+/* The head may take at most 40 % (a long name wraps under the callsign); what
+   QRZ says always keeps room to read, its reason clamped to three lines (the
+   chips' tooltips carry it in full). */
+.current-grid { display: grid; grid-template-columns: fit-content(40%) minmax(280px, 1fr) auto; gap: 6px 28px; align-items: center; }
+.current-grid .callhead { min-width: 0; }
+.current-grid .callside .name { overflow-wrap: anywhere; }
 .current-grid .callhead { margin: 0; }
 .current-grid .pref.current-sig { margin: 0; max-width: none; padding: 0 0 0 14px; }
 .current-grid .current-sig h4 { margin: 0 0 3px; }
-.current-grid .current-sig .sugline, .current-grid .current-sig .why { margin: 0; font-size: 13.5px; }
+.current-grid .current-sig .sugline, .current-grid .current-sig .why { margin: 0; font-size: 13.5px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.current-grid .current-sig h4 .sigs { flex-wrap: wrap; }
 .current-act .stamps button.stamp { font-size: 14px; padding: 6px 16px; }
 .current-act .current-written { margin: 0; font-size: 13.5px; max-width: 220px; }
 .current.strip .badges { margin: 8px 0 0; }
