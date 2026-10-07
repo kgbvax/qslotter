@@ -32,6 +32,11 @@ printer:
   name: ""              # empty = system default
   command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
   paper_size_mm: [140, 90]
+  paper: ""             # the printer's paper (form) by name, e.g. "QSL 140x90"; "" = the one of paper_size_mm
+                        # (Windows: add a form of the card's size under Print server properties > Forms)
+  rotate: 0             # 90 or 270 turns the card on its way to the printer (Windows), if it prints across the card
+  tray: ""              # paper source, e.g. "Manual Feed"; "" = the printer's default
+                        # (both chosen under Settings > Card layout on Windows)
   offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
                         # (measure a test card under Settings > Card layout)
 

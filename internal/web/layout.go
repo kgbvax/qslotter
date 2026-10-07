@@ -23,7 +23,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/template"
@@ -290,6 +292,7 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		"OffsetX":  cfg.Printer.OffsetMM[0],
 		"OffsetY":  cfg.Printer.OffsetMM[1],
 		"Printer":  cfg.Printer.Name,
+		"Media":    s.printerMedia(cfg),
 		"HasImage": data.Image != "",
 		"Created":  r.URL.Query().Get("created") == "1" && entry.Editable,
 	})
@@ -965,6 +968,110 @@ func (s *Server) postCardsOffset(w http.ResponseWriter, r *http.Request) {
 
 func fmtMM(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 
+// mediaData is the paper and tray choice on the card layout page: what the
+// printer's driver offers (Windows).
+type mediaData struct {
+	Papers, Trays []mediaChoice
+	Paper, Tray   string // configured
+	Rotate        int
+	Size          string // paper_size_mm, "140 × 90"
+	Auto          string // the paper picked by size, "" = none
+	Missing       string // a configured paper or tray the printer lacks
+	Err           string
+}
+
+type mediaChoice struct {
+	Value, Label string
+	Selected     bool
+}
+
+// mediaTimeout bounds asking a printer driver for its papers: a network
+// printer that does not answer must not hold up the page.
+const mediaTimeout = 5 * time.Second
+
+// printerMedia is the paper and tray choice for the configured printer;
+// nil when the platform has none to offer (CUPS takes printer.paper and
+// printer.tray from the config file).
+func (s *Server) printerMedia(cfg *config.Config) *mediaData {
+	lister, ok := s.printer.(printer.MediaLister)
+	if !ok {
+		return nil
+	}
+	type result struct {
+		papers, trays []printer.Media
+		err           error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, t, err := lister.Media(cfg.Printer.Name)
+		ch <- result{p, t, err}
+	}()
+	var res result
+	select {
+	case res = <-ch:
+	case <-time.After(mediaTimeout):
+		res.err = errors.New("the printer did not answer")
+	}
+	w, h := cfg.Printer.PaperSizeMM[0], cfg.Printer.PaperSizeMM[1]
+	d := &mediaData{Paper: cfg.Printer.Paper, Tray: cfg.Printer.Tray, Rotate: cfg.Printer.Rotate, Size: fmtMM(w) + " × " + fmtMM(h)}
+	if res.err != nil {
+		d.Err = res.err.Error()
+		return d
+	}
+	if m, ok := printer.PickPaper(res.papers, "", w, h); ok {
+		d.Auto = m.Name
+	}
+	sel, ok := printer.PickPaper(res.papers, d.Paper, w, h)
+	if d.Paper != "" && !ok {
+		d.Missing = d.Paper
+		d.Papers = append(d.Papers, mediaChoice{d.Paper, d.Paper, true})
+	}
+	for _, m := range res.papers {
+		d.Papers = append(d.Papers, mediaChoice{m.Name, fmt.Sprintf("%s (%s × %s mm)", m.Name, fmtMM(m.WMM), fmtMM(m.HMM)),
+			d.Paper != "" && ok && m.ID == sel.ID})
+	}
+	tray, ok := printer.PickTray(res.trays, d.Tray)
+	if d.Tray != "" && !ok {
+		d.Missing = cmpOr(d.Missing, d.Tray)
+		d.Trays = append(d.Trays, mediaChoice{d.Tray, d.Tray, true})
+	}
+	for _, m := range res.trays {
+		d.Trays = append(d.Trays, mediaChoice{m.Name, m.Name, d.Tray != "" && ok && m.ID == tray.ID})
+	}
+	return d
+}
+
+// postCardsMedia stores the paper, tray and turn (paper=, tray=, rotate=;
+// empty = automatic / the printer's default / not turned) as printer.paper,
+// printer.tray and printer.rotate.
+func (s *Server) postCardsMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.canEditLayouts(w, r) {
+		return
+	}
+	paper, tray := strings.TrimSpace(r.FormValue("paper")), strings.TrimSpace(r.FormValue("tray"))
+	rotate := strings.TrimSpace(r.FormValue("rotate"))
+	if rotate == "" {
+		rotate = "0"
+	}
+	if rotate != "0" && rotate != "90" && rotate != "270" {
+		s.fail(w, r, http.StatusBadRequest, "The card can be turned by 0, 90 or 270 degrees.")
+		return
+	}
+	layoutMu.Lock()
+	defer layoutMu.Unlock()
+	if err := updateConfigFile(s.cfgPath, map[string]any{"printer.paper": paper, "printer.tray": tray,
+		"printer.rotate": &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: rotate}}); err != nil {
+		s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
+		return
+	}
+	if _, err := s.reloadConfig(); err != nil {
+		s.fail(w, r, http.StatusInternalServerError, "config saved, but reloading it failed: %s", err.Error())
+		return
+	}
+	s.notice(w, r, "Paper and tray saved.")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // testCardLabel is printed small on a test card.
 func (s *Server) testCardLabel(r *http.Request, name string, x, y float64) string {
 	return s.tr(r, "qslotter test card - %s - offset X %s / Y %s mm", name, fmtMM(x), fmtMM(y))
@@ -1006,9 +1113,7 @@ func (s *Server) htmxCardsTest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, "rendering the test card: %s", err.Error())
 		return
 	}
-	if _, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
-		PaperWMM: cfg.Printer.PaperSizeMM[0], PaperHMM: cfg.Printer.PaperSizeMM[1], Copies: 1,
-	}); err != nil {
+	if _, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printOptions(cfg)); err != nil {
 		s.fail(w, r, http.StatusBadGateway, "printing the test card: %s", err.Error())
 		return
 	}

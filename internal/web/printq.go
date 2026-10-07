@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/dl9et/qslotter/internal/adif"
+	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/printer"
 	"github.com/dl9et/qslotter/internal/store"
 )
@@ -141,12 +142,16 @@ func (s *Server) printJob(cards []*PrintCard) error {
 	}
 	// The job is not followed (printer.Watcher): the run is checked by the
 	// operator and confirmed as a whole.
-	_, err = s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
-		PaperWMM: cfg.Printer.PaperSizeMM[0],
-		PaperHMM: cfg.Printer.PaperSizeMM[1],
-		Copies:   1,
-	})
+	_, err = s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printOptions(cfg))
 	return err
+}
+
+// printOptions are the configured paper and tray for one copy of a print.
+func printOptions(cfg *config.Config) printer.Options {
+	return printer.Options{
+		PaperWMM: cfg.Printer.PaperSizeMM[0], PaperHMM: cfg.Printer.PaperSizeMM[1], Copies: 1,
+		Paper: cfg.Printer.Paper, Tray: cfg.Printer.Tray, Rotate: cfg.Printer.Rotate,
+	}
 }
 
 // templateHasNote reports whether the card template prints the card note.

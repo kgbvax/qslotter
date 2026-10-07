@@ -87,6 +87,14 @@ type Options struct {
 	PaperWMM float64
 	PaperHMM float64
 	Copies   int
+	// Paper is the printer's paper (form) by its driver name or number
+	// (printer.paper); empty = the one of PaperWMM x PaperHMM. Tray is the
+	// paper source (printer.tray); empty = the driver's default.
+	Paper string
+	Tray  string
+	// Rotate turns the card by 90 or 270 degrees (Windows); 0 = by the
+	// paper's orientation.
+	Rotate int
 }
 
 // RenderOptions adjust a rendered card beyond its template.

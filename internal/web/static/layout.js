@@ -695,6 +695,12 @@
         .catch(function () { /* toast shown */ });
     });
   }
+  if ($('lay-media-save')) {
+    $('lay-media-save').addEventListener('click', function () {
+      post('/settings/cards/media', new URLSearchParams({ paper: $('lay-media-paper').value, tray: $('lay-media-tray').value, rotate: $('lay-media-rotate').value }))
+        .catch(function () { /* toast shown */ });
+    });
+  }
 
   // --- the card picture ---
 

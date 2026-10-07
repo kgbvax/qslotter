@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -450,6 +451,82 @@ func TestLayoutOffset(t *testing.T) {
 	if strings.Count(string(disk), "offset_mm") != 1 || !strings.Contains(string(disk), "offset_mm: [0, 2]") {
 		t.Fatalf("config after the second save:\n%s", disk)
 	}
+}
+
+// mediaPrinter is a printer whose driver lists papers and trays (Windows).
+type mediaPrinter struct {
+	fakePrinter
+	opts []printer.Options
+}
+
+func (m *mediaPrinter) Media(string) ([]printer.Media, []printer.Media, error) {
+	return []printer.Media{{Name: "A4", ID: 9, WMM: 210, HMM: 297}, {Name: "QSL 140x90", ID: 260, WMM: 90, HMM: 140}},
+		[]printer.Media{{Name: "Automatic", ID: 7}, {Name: "Manual Feed", ID: 4}}, nil
+}
+
+func (m *mediaPrinter) PrintPDF(path, name string, opts printer.Options) (printer.Job, error) {
+	m.opts = append(m.opts, opts)
+	return m.fakePrinter.PrintPDF(path, name, opts)
+}
+
+// TestLayoutMedia: the paper and tray the driver offers are offered on the
+// card layout page, land in the config and go with every print.
+func TestLayoutMedia(t *testing.T) {
+	srv, h, _, cfgFile := newLayoutServer(t)
+	mp := &mediaPrinter{}
+	srv.printer = mp
+	srv.cfg.Printer.PaperSizeMM = [2]float64{140, 90}
+	body := get(t, h, "/settings/cards").Body.String()
+	for _, want := range []string{"Automatic: QSL 140x90", `<option value="Manual Feed">Manual Feed</option>`, "A4 (210 × 297 mm)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if r := postForm(t, h, "/settings/cards/media", url.Values{"paper": {"QSL 140x90"}, "tray": {"Manual Feed"}}); r.Code != http.StatusNoContent {
+		t.Fatalf("media = %d: %s", r.Code, r.Body)
+	}
+	disk, _ := os.ReadFile(cfgFile)
+	if !strings.Contains(string(disk), `paper: "QSL 140x90"`) || !strings.Contains(string(disk), `tray: "Manual Feed"`) {
+		t.Fatalf("config:\n%s", disk)
+	}
+	body = get(t, h, "/settings/cards").Body.String()
+	if !strings.Contains(body, `<option value="Manual Feed" selected>`) {
+		t.Error("the saved tray is not selected")
+	}
+	if r := postJSON(t, h, "/settings/cards/test?sample=short", template.Default()); r.Code != http.StatusNoContent {
+		t.Fatalf("test card = %d: %s", r.Code, r.Body)
+	}
+	if len(mp.opts) != 1 || mp.opts[0].Paper != "QSL 140x90" || mp.opts[0].Tray != "Manual Feed" {
+		t.Fatalf("print options = %+v", mp.opts)
+	}
+	// A tray the printer lacks is said; none of the card's size too.
+	srv.cfg.Printer.Tray, srv.cfg.Printer.Paper, srv.cfg.Printer.PaperSizeMM = "Tray 9", "", [2]float64{150, 100}
+	body = get(t, h, "/settings/cards").Body.String()
+	for _, want := range []string{"no paper or tray Tray 9", "no paper of 150 × 100 mm", "Automatic (none of 150 × 100 mm)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+
+	// All of it in German too.
+	missing := map[string]bool{}
+	i18n.Default.OnMissing = func(lang, text string) { missing[text] = true }
+	defer func() { i18n.Default.OnMissing = nil }()
+	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	srv.cfg.Printer.PaperSizeMM = [2]float64{140, 90}
+	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	requestDE(t, h, http.MethodPost, "/settings/cards/media", url.Values{"paper": {""}, "tray": {""}})
+	srv.printer = &failingMedia{}
+	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	for text := range missing {
+		t.Errorf("no German for %q", text)
+	}
+}
+
+type failingMedia struct{ fakePrinter }
+
+func (failingMedia) Media(string) ([]printer.Media, []printer.Media, error) {
+	return nil, nil, errors.New("RPC server unavailable")
 }
 
 // TestLayoutNoConfig: without a config file the editor shows layouts and

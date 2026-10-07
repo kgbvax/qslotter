@@ -100,6 +100,16 @@ type PrinterCfg struct {
 	// for a printer that feeds the card a little off (set under Settings >
 	// Card layout from a printed test card).
 	OffsetMM [2]float64 `yaml:"offset_mm"`
+	// Paper is the printer's paper (form) the cards print on, by the
+	// driver's name or number; empty = the one of paper_size_mm. Tray is
+	// the paper source (e.g. the manual feed); empty = the driver's
+	// default. Both are chosen under Settings > Card layout on Windows.
+	Paper string `yaml:"paper"`
+	Tray  string `yaml:"tray"`
+	// Rotate turns the card by 90 or 270 degrees on its way to the
+	// printer (Windows), for a printer that takes the card the other way
+	// round; 0 = as the driver reports the paper.
+	Rotate int `yaml:"rotate"`
 }
 
 // CardCfg selects the card layout: Template is the active layout file

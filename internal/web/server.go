@@ -268,6 +268,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/settings/cards/image", s.postCardsImage) // multipart "image": the card scan shown behind the fields
 	r.Post("/settings/cards/image/delete", s.postCardsImageDelete)
 	r.Post("/settings/cards/offset", s.postCardsOffset) // x=, y=: printer.offset_mm
+	r.Post("/settings/cards/media", s.postCardsMedia)   // paper=, tray=: printer.paper, printer.tray
 	r.Post("/settings/cards/test", s.htmxCardsTest)     // JSON layout: print a test card with the mm ruler
 	r.Post("/settings/cards/pdf", s.htmxCardsPDF)       // JSON layout: the card as a PDF
 	// Card actions take ?key=... (form/query value): keys contain "|" and

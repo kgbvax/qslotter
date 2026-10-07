@@ -100,9 +100,15 @@ func (p *unixPrinter) PrintPDF(path, printerName string, opts Options) (Job, err
 // lpArgs returns the lp arguments that print the PDF at path on printerName.
 func lpArgs(path, printerName string, opts Options) []string {
 	media := fmt.Sprintf("Custom.%.0fx%.0fmm", opts.PaperWMM, opts.PaperHMM)
+	if opts.Paper != "" {
+		media = opts.Paper // a CUPS media name, e.g. a PPD's custom size
+	}
 	// One PDF page is one physical card: never let a duplex printer put the
 	// next card on the back of this one.
 	args := []string{"-d", printerName, "-o", "media=" + media, "-o", "sides=one-sided"}
+	if opts.Tray != "" {
+		args = append(args, "-o", "InputSlot="+opts.Tray) // the PPD's name, e.g. Manual
+	}
 	if opts.Copies > 1 {
 		args = append(args, "-n", fmt.Sprintf("%d", opts.Copies))
 	}
