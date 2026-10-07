@@ -135,7 +135,7 @@ Local QSL state is kept in `qsl_sent_local`, `qsl_rcvd_local`, `qslsdate_local`,
 - A QSO whose card already went out (Clublog `QSL_SENT=Y` or local) is never queued - checked first, before the override.
 - `override_marker`: a substring (e.g. `QSL!`) in the QSO notes force-includes the QSO despite mode, cutoff and first-contact rules; the reason is stored in `override_reason` and shown on the card.
 - `since`: only QSOs on/after this date are queued. Empty = the day qslotter first ran (`meta.first_run_date`), `all` = no cutoff.
-- `include_digital` (default off; checkbox under Settings, switched live via `Rules.SetIncludeDigital` - main shares the web server's `Rules()` with the UDP listener and the sync loop): digital modes (`qualify.IsDigital`: any mode starting with `FT`, `JS8`, `WSPR`, `MSK`, or `FST`) are skipped unless it is on; it alone decides for them, also over digital entries in `exclude_modes`. Switched on under Settings, a full scan queues the skipped ones at once.
+- `include_digital` (default off; Settings box "Filter FT8, FT4, FT2", ticked = off, switched live via `Rules.SetIncludeDigital` - main shares the web server's `Rules()` with the UDP listener and the sync loop): digital modes (`qualify.IsDigital`: any mode starting with `FT`, `JS8`, `WSPR`, `MSK`, or `FST`) are skipped unless it is on; it alone decides for them, also over digital entries in `exclude_modes`. Switched on under Settings, a full scan queues the skipped ones at once.
 - `exclude_modes`: exact non-digital modes to skip.
 - `first_contact_only` (default off): only the first-ever QSO with a callsign is eligible. Off by default: repeat contacts are queued and shown with their history.
 

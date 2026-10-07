@@ -49,7 +49,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"station.name":            strings.TrimSpace(r.FormValue("station_name")),
 		"station.qth":             strings.TrimSpace(r.FormValue("station_qth")),
 		"ui.language":             "",
-		"qualify.include_digital": r.FormValue("qualify_include_digital") == "1",
+		"qualify.include_digital": r.FormValue("qualify_filter_digital") != "1", // the box says "Filter FT8, FT4, FT2"
 	}
 	// The UI language: one with a catalog, or empty = the browser's.
 	for _, l := range s.i18n.Languages() {

@@ -42,14 +42,15 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	// Save: new username, empty password (keep old), numeric-looking app
 	// password (must stay a string on reload), new station name.
 	form := url.Values{
-		"qrz_username":         {"newcall"},
-		"qrz_password":         {""},
-		"clublog_email":        {"a@b.c"},
-		"clublog_app_password": {"12345"},
-		"clublog_call":         {"DL9ET"},
-		"clublog_api_key":      {""},
-		"station_name":         {"Ingo M."},
-		"station_qth":          {"Bavaria"},
+		"qrz_username":           {"newcall"},
+		"qrz_password":           {""},
+		"clublog_email":          {"a@b.c"},
+		"clublog_app_password":   {"12345"},
+		"clublog_call":           {"DL9ET"},
+		"clublog_api_key":        {""},
+		"station_name":           {"Ingo M."},
+		"station_qth":            {"Bavaria"},
+		"qualify_filter_digital": {"1"},
 	}
 	r := postForm(t, h, "/settings/save", form)
 	if r.Code != 200 {
@@ -123,7 +124,8 @@ func TestSettingsIncludeDigital(t *testing.T) {
 		t.Fatal("include_digital on by default")
 	}
 
-	if r := postForm(t, h, "/settings/save", url.Values{"qualify_include_digital": {"1"}}); r.Code != 200 {
+	// "Filter FT8, FT4, FT2" unticked = digital modes let in.
+	if r := postForm(t, h, "/settings/save", url.Values{}); r.Code != 200 {
 		t.Fatalf("save = %d: %s", r.Code, r.Body)
 	}
 	onDisk, _ := os.ReadFile(cfgFile)
@@ -144,12 +146,12 @@ func TestSettingsIncludeDigital(t *testing.T) {
 		t.Fatalf("FT8 QSO not queued after switching on: %+v %v", it, err)
 	}
 	r := get(t, h, "/settings")
-	if !strings.Contains(r.Body.String(), `name="qualify_include_digital" value="1" checked`) {
-		t.Fatal("checkbox not shown as checked")
+	if strings.Contains(r.Body.String(), `name="qualify_filter_digital" value="1" checked`) {
+		t.Fatal("filter box still ticked")
 	}
 
-	// Unticked: off again, on disk and live.
-	if r := postForm(t, h, "/settings/save", url.Values{}); r.Code != 200 {
+	// Ticked again: filtered, on disk and live.
+	if r := postForm(t, h, "/settings/save", url.Values{"qualify_filter_digital": {"1"}}); r.Code != 200 {
 		t.Fatalf("save = %d", r.Code)
 	}
 	if srv.Rules().IncludeDigital() {

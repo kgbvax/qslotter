@@ -48,8 +48,7 @@
     <label>{{t "QTH"}} <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
 
     <h3>{{t "Inbox"}}</h3>
-    <label class="check"><input type="checkbox" name="qualify_include_digital" value="1"{{if .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Digital modes need a card decision too (FT8, FT4, FT2, FST4, JS8, ...)"}}</label>
-    <p class="muted">{{t "Off: digital QSOs never enter the Inbox. Switched on, the digital QSOs since the cutoff that were skipped so far are queued at once."}}</p>
+    <label class="check"><input type="checkbox" name="qualify_filter_digital" value="1"{{if not .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Filter FT8, FT4, FT2"}}</label>
 
     <h3>{{t "Language"}}</h3>
     <label>{{t "User interface"}} <select name="ui_language">
