@@ -209,7 +209,8 @@ var layoutJSStrings = []string{
 	"Network error - is the qslotter server running?", "Error", "Discard the unsaved changes?",
 	"X is where the text starts (left), its middle (centre) or where it ends (right).",
 	"The printer is set up for %s x %s mm paper (printer.paper_size_mm in the config file), this card is %s x %s mm.",
-	"Only on satellite cards", "satellite cards",
+	"Only on satellite cards", "satellite cards", "Lines",
+	"Width 0: one line up to the card margin. With a width, a longer text wraps onto up to Lines lines, then gets smaller.",
 	"For a satellite column and its heading: an HF card leaves them out.",
 }
 
@@ -260,9 +261,7 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		Labels: map[string]string{}, Strings: map[string]string{}, Fonts: template.Fonts, Margin: printer.FitMarginMM,
 		Paper: cfg.Printer.PaperSizeMM, CanSave: s.cfgPath != ""}
 	for _, n := range template.CardFieldNames() {
-		if n != "qslmsg" { // nothing fills it
-			data.Card = append(data.Card, catField{n, s.tr(r, fieldLabels[n])})
-		}
+		data.Card = append(data.Card, catField{n, s.tr(r, fieldLabels[n])})
 	}
 	for _, n := range template.RowFieldNames() {
 		data.Row = append(data.Row, catField{n, s.tr(r, fieldLabels[n])})
@@ -328,7 +327,7 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB",
 				RSTSent: "59", RSTRcvd: "57", Freq: "14.250"}}}
 	case "sat":
-		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name,
+		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name, QSLMsg: "Tnx for my first RS-44 QSO!",
 			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240615", TimeOn: "1842", Band: "70cm", Mode: "FM",
 				RSTSent: "59", RSTRcvd: "59", Freq: "145.850", SatName: "RS-44", FreqRX: "435.640"}}}
 	case "long", "":
@@ -352,7 +351,7 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 	}
 	card := printer.CardFields{Call: "VP2V/DL9ET", Name: "Hans-Joachim Müller-Lüdenscheidt", QTH: "Garmisch-Partenkirchen",
 		MyCall: myCall, MyName: cmpOr(cfg.Station.Name, "Ingomar Otter"), MyQTH: cmpOr(cfg.Station.QTH, "Bad Tölz, JN57"),
-		Via: "KC4AAA"}
+		Via: "KC4AAA", QSLMsg: "Thanks for the nice QSO on 2190 m - hope to work you again, 73!"}
 	long := []printer.QSORow{
 		{QSODate: "20241231", TimeOn: "235959", Band: "2190m", Mode: "OLIVIA", RSTSent: "59+20", RSTRcvd: "599", Freq: "0.1375"},
 		{QSODate: "20240615", TimeOn: "000000", Band: "70cm", Mode: "SSB", RSTSent: "59", RSTRcvd: "59", Freq: "435.645",

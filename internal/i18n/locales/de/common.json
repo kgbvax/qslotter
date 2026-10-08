@@ -105,5 +105,9 @@
   "Club Log settings": "Club-Log-Einstellungen",
   "The API key identifies the program, not your account, and is not shown in your Club Log settings. Club Log issues it on request: ask once with their form (login needed) and use the same key on every computer running qslotter.": "Der API-Schlüssel kennzeichnet das Programm, nicht dein Konto, und steht nicht in deinen Club-Log-Einstellungen. Club Log vergibt ihn auf Anfrage: einmal über das Formular beantragen (Login nötig) und denselben Schlüssel auf jedem Rechner mit qslotter verwenden.",
   "Request an API key": "API-Schlüssel beantragen",
-  "Uses the saved credentials: save changes first.": "Verwendet die gespeicherten Zugangsdaten: Änderungen zuerst speichern."
+  "Uses the saved credentials: save changes first.": "Verwendet die gespeicherten Zugangsdaten: Änderungen zuerst speichern.",
+  "(unknown commit)": "(unbekannter Stand)",
+  "(with local changes)": "(mit lokalen Änderungen)",
+  "built %s": "gebaut %s",
+  "committed %s": "Stand vom %s"
 }

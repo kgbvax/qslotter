@@ -36,6 +36,7 @@ import (
 	"github.com/dl9et/qslotter/internal/store"
 	"github.com/dl9et/qslotter/internal/sync"
 	"github.com/dl9et/qslotter/internal/udplistener"
+	"github.com/dl9et/qslotter/internal/version"
 	"github.com/dl9et/qslotter/internal/web"
 )
 
@@ -79,6 +80,7 @@ func main() {
 	if err != nil {
 		fatal("Configuration", err)
 	}
+	log.Printf("qslotter %s", version.Get())
 	log.Printf("config %s, database %s, log %s", cfgPath, cfg.Store.Path, logPath)
 	uiValue := cfg.UI.Mode
 	if *uiFlag != "" {

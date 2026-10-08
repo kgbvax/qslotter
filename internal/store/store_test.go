@@ -976,3 +976,33 @@ func TestSentPerLog(t *testing.T) {
 		}
 	}
 }
+
+// TestUpsertKeepsLoggerFields: Clublog's export has no NAME, QTH, NOTES or
+// QSLMSG - a pull must not blank what the logger's UDP feed brought.
+func TestUpsertKeepsLoggerFields(t *testing.T) {
+	st, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	udp := &QSO{QSLKey: "DL1ABC|20240101|120000|20m", Call: "DL1ABC", QSODate: "20240101", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", Name: "Hans", QTH: "Berlin", Notes: "QSL!", QSLMsg: "Tnx for the QSO", Hash: "udp"}
+	if _, _, err := st.UpsertQSO(udp); err != nil {
+		t.Fatal(err)
+	}
+	pull := &QSO{QSLKey: udp.QSLKey, Call: "DL1ABC", QSODate: "20240101", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", RSTSent: "59", Hash: "clublog"}
+	if _, changed, err := st.UpsertQSO(pull); err != nil || !changed {
+		t.Fatalf("pull: changed=%v err=%v", changed, err)
+	}
+	q, _ := st.GetQSO(udp.QSLKey)
+	if q.Name != "Hans" || q.QTH != "Berlin" || q.Notes != "QSL!" || q.QSLMsg != "Tnx for the QSO" || q.RSTSent != "59" {
+		t.Fatalf("after a pull without them: %+v", q)
+	}
+	// A value that does come along still wins.
+	pull.Hash, pull.Name, pull.QSLMsg = "clublog2", "Hans-Jürgen", "73!"
+	st.UpsertQSO(pull)
+	if q, _ := st.GetQSO(udp.QSLKey); q.Name != "Hans-Jürgen" || q.QSLMsg != "73!" {
+		t.Fatalf("new values: %+v", q)
+	}
+}

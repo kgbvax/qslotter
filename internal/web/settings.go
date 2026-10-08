@@ -15,6 +15,7 @@ import (
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/sync"
+	"github.com/dl9et/qslotter/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,7 +25,7 @@ func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
 	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
 	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt(), "LastPull": lastPull, "LastPush": lastPush})
+		"ClublogPaused": s.clublogPausedAt(), "LastPull": lastPull, "LastPush": lastPush, "Build": version.Get()})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -99,6 +100,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"ClublogPaused": s.clublogPausedAt(),
 		"LastPull":      lastPull,
 		"LastPush":      lastPush,
+		"Build":         version.Get(),
 	})
 }
 

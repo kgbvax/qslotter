@@ -77,7 +77,7 @@ func newPrintServer(t *testing.T) (*Server, http.Handler, *watchPrinter) {
 	wp := newWatchPrinter()
 	srv.printer = wp
 	srv.pq.pollEvery = 5 * time.Millisecond
-	srv.pq.giveUp = 300 * time.Millisecond
+	srv.pq.giveUp = 10 * time.Second // the stall test shortens it
 	return srv, srv.Routes(), wp
 }
 
@@ -128,7 +128,8 @@ func TestPrintFailsAndRecovers(t *testing.T) {
 	if !strings.Contains(pq, "Media jam") || !strings.Contains(pq, "/work/printq/retry?id=1") {
 		t.Fatalf("print list:\n%s", pq)
 	}
-	// Retry: a new job (2); the failed item goes.
+	// Retry: a new job (2); the failed item goes. This one stalls: give up soon.
+	srv.pq.giveUp = 300 * time.Millisecond
 	if r := postForm(t, h, "/work/printq/retry?id=1", nil); r.Code != 200 {
 		t.Fatalf("retry = %d: %s", r.Code, r.Body)
 	}
@@ -259,7 +260,7 @@ func TestPrintGerman(t *testing.T) {
 	}
 	wp.set(1, printer.JobStatus{State: printer.JobCompleted})
 	wp.set(2, printer.JobStatus{State: printer.JobAborted, Message: "Media jam"})
-	wp.set(3, printer.JobStatus{State: printer.JobProcessing})
+	wp.set(3, printer.JobStatus{State: printer.JobAborted, Reasons: []string{"printer-stopped"}})
 	waitFor(t, "jobs 1-3 finished", func() bool {
 		return !srv.pq.printing(keys[0]) && !srv.pq.printing(keys[1]) && !srv.pq.printing(keys[2])
 	})

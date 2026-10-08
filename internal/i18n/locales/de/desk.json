@@ -126,5 +126,6 @@
   "only a failed card can be marked as printed": "nur eine fehlgeschlagene Karte kann als gedruckt markiert werden",
   "Printing failed again: %s": "Drucken erneut fehlgeschlagen: %s",
   "this card is being printed right now - its result appears in the print list": "diese Karte wird gerade gedruckt - das Ergebnis erscheint in der Druckliste",
-  "Your card to %s is printing (%s) - it counts as sent once the printer has finished; the Desk shows the result.": "Deine Karte an %s wird gedruckt (%s) - sie gilt als verschickt, sobald der Drucker fertig ist; der Schreibtisch zeigt das Ergebnis."
+  "Your card to %s is printing (%s) - it counts as sent once the printer has finished; the Desk shows the result.": "Deine Karte an %s wird gedruckt (%s) - sie gilt als verschickt, sobald der Drucker fertig ist; der Schreibtisch zeigt das Ergebnis.",
+  "QSL message: %s": "QSL-Nachricht: %s"
 }

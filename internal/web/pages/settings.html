@@ -63,5 +63,6 @@
   <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
   <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
   {{end}}
+  <p class="muted build-info">qslotter {{with .Build}}{{if .Commit}}{{.Commit}}{{else}}{{t "(unknown commit)"}}{{end}}{{if .Modified}} {{t "(with local changes)"}}{{end}}{{if not .Time.IsZero}} &middot; {{if .IsBuild}}{{t "built %s" (.Time.UTC.Format "2006-01-02 15:04 UTC")}}{{else}}{{t "committed %s" (.Time.UTC.Format "2006-01-02 15:04 UTC")}}{{end}}{{end}}{{end}}</p>
 </main>
 </body></html>{{end}}

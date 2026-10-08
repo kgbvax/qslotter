@@ -338,19 +338,45 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 		}
 		fitted := false
 		room := roomFor(f.Align, f.X, width)
-		w := measure(font, style, size, text)
-		for w > room && size > minFontPt {
+		if f.W > 0 {
+			room = math.Min(room, f.W)
+		}
+		mw := func(s string) float64 { return measure(font, style, size, s) }
+		maxLines := f.MaxLines()
+		tooBig := func(ls []string) bool {
+			if len(ls) > maxLines {
+				return true
+			}
+			for _, l := range ls {
+				if mw(l) > room {
+					return true
+				}
+			}
+			return false
+		}
+		lines := wrapText(text, room, maxLines, mw)
+		for tooBig(lines) && size > minFontPt {
 			size = math.Max(size-fontStepPt, minFontPt)
-			w = measure(font, style, size, text)
+			lines = wrapText(text, room, maxLines, mw)
 			fitted = true
 		}
-		if w > room {
-			text, w = cutToFit(text, room, func(s string) float64 { return measure(font, style, size, s) })
+		if len(lines) > maxLines {
+			// Even the smallest size needs more lines: cut in the last one.
+			rest := strings.Join(lines[maxLines-1:], " ")
+			lines = append(lines[:maxLines-1], rest)
 			fitted = true
 		}
-		x := clampX(anchor(f.Align, f.X, w), w, width)
-		ops = append(ops, drawOp{X: x, Y: y, W: w, Text: text, Font: font, Style: style, FontSize: size,
-			Field: idx, Row: row, Fitted: fitted})
+		step := template.LineSpacing * ptToMM(size)
+		for i, line := range lines {
+			w := mw(line)
+			if w > room {
+				line, w = cutToFit(line, room, mw)
+				fitted = true
+			}
+			x := clampX(anchor(f.Align, f.X, w), w, width)
+			ops = append(ops, drawOp{X: x, Y: y + float64(i)*step, W: w, Text: line, Font: font, Style: style,
+				FontSize: size, Field: idx, Row: row, Fitted: fitted})
+		}
 	}
 	for i, f := range tmpl.Fields {
 		if strings.EqualFold(f.When, template.WhenSat) && !sat {
@@ -448,6 +474,46 @@ func Preview(tmpl *template.Template, card CardFields) ([]Op, int, error) {
 		return nil, 0, pdf.Error()
 	}
 	return out, len(chunks), nil
+}
+
+// wrapText breaks text into lines at most room wide (by width) at spaces.
+// With max 1 it returns the text as one line (shrinking and cutting are the
+// caller's). A word wider than room is split. It may return more than max
+// lines: the caller sets the text smaller then.
+func wrapText(text string, room float64, max int, width func(string) float64) []string {
+	if max <= 1 || width(text) <= room {
+		return []string{text}
+	}
+	var lines []string
+	cur := ""
+	for _, word := range strings.Fields(text) {
+		try := word
+		if cur != "" {
+			try = cur + " " + word
+		}
+		if width(try) <= room {
+			cur = try
+			continue
+		}
+		if cur != "" {
+			lines = append(lines, cur)
+		}
+		// A word longer than a whole line: split it.
+		for width(word) > room {
+			r := []rune(word)
+			n := len(r) - 1
+			for n > 1 && width(string(r[:n])) > room {
+				n--
+			}
+			lines = append(lines, string(r[:n]))
+			word = string(r[n:])
+		}
+		cur = word
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
 }
 
 // anchor returns the left edge of a text w mm wide whose template anchor is

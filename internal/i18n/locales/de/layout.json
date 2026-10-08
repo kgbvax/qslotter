@@ -122,5 +122,7 @@
   "Only on satellite cards": "Nur auf Satellitenkarten",
   "satellite cards": "Satellitenkarten",
   "For a satellite column and its heading: an HF card leaves them out.": "Für eine Satellitenspalte und ihre Überschrift: eine KW-Karte lässt sie weg.",
-  "Sample: a satellite QSO": "Beispiel: ein Satelliten-QSO"
+  "Sample: a satellite QSO": "Beispiel: ein Satelliten-QSO",
+  "Lines": "Zeilen",
+  "Width 0: one line up to the card margin. With a width, a longer text wraps onto up to Lines lines, then gets smaller.": "Breite 0: eine Zeile bis zum Kartenrand. Mit einer Breite bricht ein längerer Text auf bis zu „Zeilen“ Zeilen um und wird erst dann kleiner."
 }

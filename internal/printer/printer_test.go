@@ -251,7 +251,7 @@ func TestDefaultTemplateFits(t *testing.T) {
 	tmpl := template.Default()
 	var rows []QSORow
 	for _, r := range []QSORow{
-		{QSODate: "20240101", TimeOn: "235959", Band: "2190m", Mode: "DOMINO", RSTSent: "599"},
+		{QSODate: "20240101", TimeOn: "235959", Band: "2190m", Mode: "DOMINO", RSTSent: "599", SatName: "TEVEL-12"},
 		{QSODate: "20241231", TimeOn: "000000", Band: "160m", Mode: "OLIVIA", RSTSent: "59+20"},
 		{QSODate: "20240615", TimeOn: "120000", Band: "70cm", Mode: "PSK31", RSTSent: "579", SatName: "TEVEL-12"},
 	} {
@@ -267,9 +267,10 @@ func TestDefaultTemplateFits(t *testing.T) {
 		card := CardFields{
 			Call: "VP2V/DL9ET", Name: name, MyCall: "DL9ET",
 			MyName: "Ingomar Otter-Hohenzollern-Sigmaringen", Via: "KC4AAA",
-			Rows: rows,
+			QSLMsg: "Thanks for the nice QSO on 2190 m and hope to work you again on 6 m, best 73 de Ingo",
+			Rows:   rows,
 		}
-		ops := layout(tmpl, card, card.Rows, fpdfWidth())
+		ops := layout(tmpl, card, chunkRows(card.Rows, MaxRows(tmpl))[0], fpdfWidth()) // one physical card
 
 		type box struct{ l, r, t, b float64 }
 		boxes := make([]box, len(ops))
@@ -531,7 +532,7 @@ func TestPreview(t *testing.T) {
 			want = 0 // no satellite QSO on this card
 		case template.IsRowField(f.Name):
 			want = 3
-		case f.Name == "via" || f.Name == "my_name":
+		case f.Name == "via" || f.Name == "my_name" || f.Name == "qslmsg":
 			want = 0 // no value on this card
 		}
 		if count[i] != want {
@@ -586,5 +587,49 @@ func TestSatelliteColumn(t *testing.T) {
 	one.Rows = template.RowsCfg{Max: 1, PitchMM: 6.5}
 	if ops := layout(one, sat, sat.Rows[:1], fpdfWidth()); len(findOps(ops, "Satellite")) != 0 {
 		t.Error("the HF page of a split card carries the satellite heading")
+	}
+}
+
+// TestQSLMsg: the card prints the QSO's QSLMSG where the layout has the field.
+func TestQSLMsg(t *testing.T) {
+	card := CardFields{Call: "DL1ABC", QSLMsg: "Tnx QSO 73", Rows: testRows(1)}
+	if ops := layout(template.Default(), card, card.Rows, fpdfWidth()); len(findOps(ops, "Tnx QSO 73")) != 1 {
+		t.Fatalf("the default card lacks the QSL message: %+v", ops)
+	}
+}
+
+// TestWrap: a text with a width wraps onto its lines, then shrinks, then is
+// cut in the last line.
+func TestWrap(t *testing.T) {
+	// fixedWidth: 2 mm per rune, any size.
+	got := wrapText("aaaa bbbb cccc", 16, 3, func(s string) float64 { return fixedWidth("", "", 0, s) })
+	if strings.Join(got, "|") != "aaaa|bbbb|cccc" {
+		t.Fatalf("wrap = %q", got)
+	}
+	if got := wrapText("abcdefghijklmnop", 10, 3, func(s string) float64 { return fixedWidth("", "", 0, s) }); strings.Join(got, "|") != "abcde|fghij|klmno|p" {
+		t.Fatalf("long word = %q", got)
+	}
+
+	tmpl := &template.Template{WidthMM: 140, HeightMM: 90, Fields: []template.Field{
+		{Name: "qslmsg", X: 6, Y: 70, W: 80, Lines: 2, FontSize: 11, Font: "Helvetica"},
+	}}
+	card := CardFields{QSLMsg: "Thanks for the nice QSO on 2190 m - hope to work you again soon, 73!"}
+	ops := layout(tmpl, card, testRows(1), fpdfWidth())
+	if len(ops) != 2 || ops[1].Y <= ops[0].Y || ops[0].FontSize != 11 {
+		t.Fatalf("two-line message = %+v", ops)
+	}
+	if d := ops[1].Y - ops[0].Y; math.Abs(d-template.LineSpacing*11*25.4/72) > 1e-9 {
+		t.Errorf("line step = %v", d)
+	}
+	for _, op := range ops {
+		if op.W > 80 {
+			t.Errorf("%q is %v mm wide, more than the 80 mm width", op.Text, op.W)
+		}
+	}
+	// Far too long for two lines: smaller, and the last line cut.
+	card.QSLMsg = strings.Repeat("Thanks for the nice QSO and the good report, ", 6)
+	ops = layout(tmpl, card, testRows(1), fpdfWidth())
+	if len(ops) != 2 || ops[0].FontSize != minFontPt || !strings.HasSuffix(ops[1].Text, ellipsis) || !ops[1].Fitted {
+		t.Fatalf("overlong message = %+v", ops)
 	}
 }

@@ -34,6 +34,7 @@
         <td>{{if not $c.Extra}}<input type="hidden" name="key" value="{{.Item.QSLKey}}">{{end}}{{fmtDate .QSO.QSODate}}</td><td>{{fmtTime .QSO.TimeOn}}</td><td>{{.QSO.Band}}</td><td>{{.QSO.Mode}}</td><td>{{.QSO.RSTSent}}</td><td>{{.QSO.RSTRcvd}}</td><td>{{if or .QSO.SatName (and (eq (upper .QSO.PropMode) "SAT") .QSO.FreqRX)}}{{template "satline" .QSO}}{{else}}{{.QSO.Freq}}{{end}}</td><td>{{.QSO.Notes}}</td>
       </tr>{{end}}</tbody>
     </table>
+    {{range $c.Rows}}{{if .QSO.QSLMsg}}<p class="qsoextra">{{t "QSL message: %s" .QSO.QSLMsg}}</p>{{end}}{{end}}
     <div class="routes" id="route-pick" role="radiogroup" aria-label="{{t "Send via"}}">
       <label class="stamp b"><input type="radio" name="route" value="B" data-key="b"{{if eq $c.Route "B"}} checked{{end}}> {{t "Bureau"}} <kbd>b</kbd></label>
       <label class="stamp d"><input type="radio" name="route" value="D" data-key="d"{{if eq $c.Route "D"}} checked{{end}}> {{t "Direct"}} <kbd>d</kbd></label>

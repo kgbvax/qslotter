@@ -95,7 +95,7 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 func TestSettingsPullButton(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv.Routes(), "/settings").Body.String()
-	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled"} {
+	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled", `class="muted build-info">qslotter`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page lacks %q", want)
 		}

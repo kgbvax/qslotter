@@ -60,7 +60,8 @@ type Field struct {
 	// Kind is "text" (also when empty), "line" or "rect".
 	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
 	// Name is the placeholder to substitute. Once per card:
-	//   call, name, qth, my_call, my_name, my_qth (station.qth), qslmsg,
+	//   call, name, qth, my_call, my_name, my_qth (station.qth),
+	//   qslmsg (the QSO's ADIF QSLMSG; on a card for several QSOs the newest),
 	//   via (prints "via <manager call>" on a manager card, nothing otherwise)
 	// Once per QSO row (see Template.Rows):
 	//   qso_date, time_on, band, mode, rst_sent, rst_rcvd, freq, sat_name, freq_rx
@@ -71,9 +72,15 @@ type Field struct {
 	// Y is the vertical middle of the text line; for a row field it is the
 	// line of the first row.
 	Y float64 `yaml:"y_mm" json:"y_mm"`
-	// W and H are the extent of a line or rectangle (unused for text).
+	// W and H are the extent of a line or rectangle. For a text, W > 0 is
+	// the width it may take: a longer text wraps onto further lines (at
+	// most Lines), set smaller, and only then cut. 0 = one line up to the
+	// card's margin.
 	W float64 `yaml:"w_mm,omitempty" json:"w_mm,omitempty"`
 	H float64 `yaml:"h_mm,omitempty" json:"h_mm,omitempty"`
+	// Lines is how many lines a text with a width may wrap onto (0 =
+	// DefaultLines).
+	Lines int `yaml:"lines,omitempty" json:"lines,omitempty"`
 	// StrokeMM is the line width of a line or rectangle; 0 = DefaultStrokeMM.
 	StrokeMM float64 `yaml:"stroke_mm,omitempty" json:"stroke_mm,omitempty"`
 	// FontSize is in points. A text that would come closer than 4 mm to
@@ -100,6 +107,26 @@ const (
 	DefaultWidthMM  = 140.0
 	DefaultHeightMM = 90.0
 )
+
+// DefaultLines is how many lines a text with a width wraps onto when the
+// field does not say.
+const DefaultLines = 2
+
+// LineSpacing is the distance from one wrapped line to the next, as a
+// multiple of the font size.
+const LineSpacing = 1.2
+
+// MaxLines reports how many lines a text field may take: 1 without a
+// width, else Lines (DefaultLines when unset).
+func (f *Field) MaxLines() int {
+	if f.W <= 0 {
+		return 1
+	}
+	if f.Lines > 0 {
+		return f.Lines
+	}
+	return DefaultLines
+}
 
 // DefaultStrokeMM is the line width of a shape whose stroke_mm is not set.
 const DefaultStrokeMM = 0.3
@@ -267,6 +294,12 @@ func (f *Field) validate() error {
 		if f.Text == "" && !IsCardField(name) && !IsRowField(name) {
 			return fmt.Errorf("%q is not a data field and has no text", f.Name)
 		}
+		if f.W < 0 || f.W > 1000 {
+			return fmt.Errorf("width %g mm: must be 0 to 1000", f.W)
+		}
+		if f.Lines < 0 || f.Lines > 20 {
+			return fmt.Errorf("lines %d: must be 0 to 20", f.Lines)
+		}
 		if f.FontSize < MinFontPt || f.FontSize > MaxFontPt {
 			return fmt.Errorf("font size %g pt: must be %g to %g", f.FontSize, MinFontPt, MaxFontPt)
 		}
@@ -397,6 +430,8 @@ func Default() *Template {
 			{Name: "mode", X: 70, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
 			{Name: "rst_sent", X: 90, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
 			{Name: "sat_name", X: 108, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
+			// The QSO's QSLMSG (ADIF), when the logger has one.
+			{Name: "qslmsg", X: 6, Y: 73, W: 128, Lines: 2, FontSize: 11, Align: "L", Font: "Helvetica"},
 			{Name: "text", Text: "73 de DL9ET", X: 70, Y: 84, FontSize: 12, Align: "C", Font: "Helvetica"},
 		},
 	}

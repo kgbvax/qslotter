@@ -623,6 +623,7 @@ func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.Ca
 	for _, q := range qsos {
 		card.Name = cmpOr(q.Name, card.Name) // newest non-empty wins, as on the Desk
 		card.QTH = cmpOr(q.QTH, card.QTH)
+		card.QSLMsg = cmpOr(strings.TrimSpace(q.QSLMsg), card.QSLMsg) // ADIF QSLMSG, the newest one
 		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
 			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq, SatName: q.SatName, FreqRX: q.FreqRX})
 	}

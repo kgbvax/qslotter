@@ -68,6 +68,12 @@ func Open(path string) (Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
+	if path == ":memory:" {
+		// Every connection to ":memory:" is a database of its own: one
+		// connection, or a background goroutine (QRZ refresher, print
+		// watcher) would find an empty database without tables.
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping store: %w", err)
 	}
@@ -110,6 +116,9 @@ func (s *SQLiteStore) ensureSchema() error {
 		{"qsl_work_queue", "note", `ALTER TABLE qsl_work_queue ADD COLUMN note TEXT DEFAULT ''`},
 		{"qsl_work_queue", "channel", `ALTER TABLE qsl_work_queue ADD COLUMN channel TEXT DEFAULT ''`},
 		{"qsos", "freq_rx", `ALTER TABLE qsos ADD COLUMN freq_rx TEXT DEFAULT ''`},
+		// QSLMSG arrives only with the logger's UDP feed (Clublog's export
+		// has none), so earlier QSOs simply have none.
+		{"qsos", "qslmsg", `ALTER TABLE qsos ADD COLUMN qslmsg TEXT DEFAULT ''`},
 	}
 	// sat_name came with freq_rx. Satellite QSOs stored before have neither:
 	// clearing their hash makes the next Clublog pull store them again.
@@ -192,6 +201,7 @@ CREATE TABLE IF NOT EXISTS qsos (
   qth        TEXT,                      -- station location (ADIF QTH)
   sat_name   TEXT DEFAULT '',           -- satellite (ADIF SAT_NAME) for PROP_MODE SAT
   freq_rx    TEXT DEFAULT '',           -- receive frequency, MHz (ADIF FREQ_RX), split/satellite
+  qslmsg     TEXT DEFAULT '',           -- message for the card (ADIF QSLMSG)
   hash       TEXT NOT NULL,             -- sha256 of canonical ADIF repr
   first_seen_at TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
@@ -303,6 +313,7 @@ type QSO struct {
 	QTH                string
 	SatName            string // ADIF SAT_NAME (PROP_MODE SAT)
 	FreqRX             string // ADIF FREQ_RX, MHz: the receive frequency of a split or satellite QSO
+	QSLMsg             string // ADIF QSLMSG: the message printed on the card
 	Hash               string
 	FirstSeenAt        string
 	UpdatedAt          string
@@ -335,9 +346,9 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, sat_name, freq_rx,
+		name, qth, sat_name, freq_rx, qslmsg,
 		hash, first_seen_at, updated_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?)
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?)
 	ON CONFLICT(qsl_key) DO UPDATE SET
 		call=excluded.call, qso_date=excluded.qso_date, time_on=excluded.time_on,
 		band=excluded.band, mode=excluded.mode, freq=excluded.freq,
@@ -346,15 +357,21 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		qslsdate=excluded.qslsdate, qslrdate=excluded.qslrdate,
 		lotw_qsl_rcvd=excluded.lotw_qsl_rcvd, dxcc=excluded.dxcc,
 		prop_mode=excluded.prop_mode, gridsquare=excluded.gridsquare,
-		operator=excluded.operator, notes=excluded.notes,
-		name=excluded.name, qth=excluded.qth, sat_name=excluded.sat_name, freq_rx=excluded.freq_rx,
+		operator=excluded.operator,
+		-- Clublog's export carries no NOTES, NAME, QTH or QSLMSG (checked
+		-- 2026-10-06): an empty value never overwrites one the logger sent.
+		notes=CASE WHEN COALESCE(excluded.notes,'')<>'' THEN excluded.notes ELSE qsos.notes END,
+		name=CASE WHEN COALESCE(excluded.name,'')<>'' THEN excluded.name ELSE qsos.name END,
+		qth=CASE WHEN COALESCE(excluded.qth,'')<>'' THEN excluded.qth ELSE qsos.qth END,
+		sat_name=excluded.sat_name, freq_rx=excluded.freq_rx,
+		qslmsg=CASE WHEN COALESCE(excluded.qslmsg,'')<>'' THEN excluded.qslmsg ELSE qsos.qslmsg END,
 		hash=excluded.hash, updated_at=excluded.updated_at,
 		qsl_rcvd_local=CASE WHEN excluded.qsl_rcvd='Y' AND qsos.qsl_rcvd_local='R' THEN NULL ELSE qsos.qsl_rcvd_local END
 	WHERE qsos.hash <> excluded.hash`,
 		q.QSLKey, q.Call, q.QSODate, q.TimeOn, q.Band, q.Mode, q.Freq,
 		q.RSTSent, q.RSTRcvd, q.QSLSent, q.QSLRcvd, q.QSLSDate, q.QSLRDate,
 		q.LoTWQSLRcvd, q.DXCC, q.PropMode, q.Gridsquare, q.Operator, q.Notes,
-		q.Name, q.QTH, q.SatName, q.FreqRX,
+		q.Name, q.QTH, q.SatName, q.FreqRX, q.QSLMsg,
 		q.Hash, q.FirstSeenAt, q.UpdatedAt)
 	if err != nil {
 		return false, false, err
@@ -369,7 +386,7 @@ func (s *SQLiteStore) RecentQSOsByCall(call string, n int) ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, qslmsg, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos WHERE call=? ORDER BY qso_date DESC, time_on DESC LIMIT ?`,
 		call, n)
@@ -387,7 +404,7 @@ func (s *SQLiteStore) GetQSO(qslKey string) (*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, qslmsg, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos WHERE qsl_key=?`, qslKey)
 	if err != nil {
@@ -410,7 +427,7 @@ func (s *SQLiteStore) AllQSOs() ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, qslmsg, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos ORDER BY qso_date DESC, time_on DESC`)
 	if err != nil {
@@ -438,7 +455,7 @@ func qsoColumns(prefix string) string {
 	cols := []string{"qsl_key", "call", "qso_date", "time_on", "band", "mode", "freq",
 		"rst_sent", "rst_rcvd", "qsl_sent", "qsl_rcvd", "qslsdate", "qslrdate",
 		"lotw_qsl_rcvd", "dxcc", "prop_mode", "gridsquare", "operator", "notes",
-		"name", "qth", "sat_name", "freq_rx", "hash", "first_seen_at", "updated_at",
+		"name", "qth", "sat_name", "freq_rx", "qslmsg", "hash", "first_seen_at", "updated_at",
 		"qsl_sent_local", "qsl_sent_method_local", "qsl_rcvd_local", "qslsdate_local", "qslrdate_local", "qsl_sent_as"}
 	for i := range cols {
 		cols[i] = prefix + cols[i]
@@ -453,7 +470,7 @@ func scanQSOInto(q *QSO, sc interface{ Scan(dest ...any) error }, extra ...any) 
 		&q.QSLKey, &q.Call, &q.QSODate, &q.TimeOn, &q.Band, &q.Mode, &q.Freq,
 		&q.RSTSent, &q.RSTRcvd, &q.QSLSent, &q.QSLRcvd, &q.QSLSDate, &q.QSLRDate,
 		&q.LoTWQSLRcvd, &q.DXCC, &q.PropMode, &q.Gridsquare, &q.Operator, &q.Notes,
-		&q.Name, &q.QTH, &q.SatName, &q.FreqRX,
+		&q.Name, &q.QTH, &q.SatName, &q.FreqRX, &q.QSLMsg,
 		&q.Hash, &q.FirstSeenAt, &q.UpdatedAt,
 		&q.QSLSentLocal, &q.QSLSentMethodLocal, &q.QSLRcvdLocal, &q.QSLSDateLocal, &q.QSLRDateLocal, &q.QSLSentAs,
 	}
@@ -603,7 +620,7 @@ func (s *SQLiteStore) PendingPushBack() ([]*QSO, error) {
 	rows, err := s.db.Query(`SELECT qsl_key, call, qso_date, time_on, band, mode, freq,
 		rst_sent, rst_rcvd, qsl_sent, qsl_rcvd, qslsdate, qslrdate,
 		lotw_qsl_rcvd, dxcc, prop_mode, gridsquare, operator, notes,
-		name, qth, sat_name, freq_rx, hash, first_seen_at, updated_at,
+		name, qth, sat_name, freq_rx, qslmsg, hash, first_seen_at, updated_at,
 		qsl_sent_local, qsl_sent_method_local, qsl_rcvd_local, qslsdate_local, qslrdate_local, qsl_sent_as
 		FROM qsos
 		WHERE ` + pendingPushWhere)

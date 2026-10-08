@@ -698,13 +698,18 @@ func TestStationRefresh(t *testing.T) {
 	if err != nil || si == nil || si.Addr1 != "1 Main St" {
 		t.Fatalf("station after refresh = %+v, %v", si, err)
 	}
-	select {
-	case ev := <-evs:
-		if ev.Type != "station_updated" || ev.Data != "EA8/DL1ABC" {
-			t.Fatalf("event = %+v", ev)
+	// The card rendered above may have started a background lookup of
+	// DL1ABC (its entry is a day old): its event can come first.
+	for got := false; !got; {
+		select {
+		case ev := <-evs:
+			got = ev.Type == "station_updated" && ev.Data == "EA8/DL1ABC"
+			if !got && !(ev.Type == "station_updated" && ev.Data == "DL1ABC") {
+				t.Fatalf("event = %+v", ev)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no station_updated event for EA8/DL1ABC")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("no station_updated event")
 	}
 
 	down.Store(true)

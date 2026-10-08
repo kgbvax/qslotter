@@ -580,6 +580,8 @@ button:disabled:hover { background: var(--card); color: var(--ink); }
 #lay-svg .lay-el:hover .lay-op.shape, #lay-svg .lay-el.sel .lay-op.shape { stroke: var(--blue); }
 #lay-svg .lay-selbox { fill: none; stroke: var(--blue); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 #lay-svg .lay-handle { fill: var(--blue); cursor: nwse-resize; }
+#lay-svg .lay-handle-w { cursor: ew-resize; }
+#lay-svg .lay-wrapbox { fill: transparent; stroke: var(--teal); stroke-opacity: 0.55; stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; cursor: move; }
 .lay-view { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 8px 0 0; font-size: 13px; color: var(--ink-soft); }
 .lay-view select { font-size: 13px; padding: 3px 6px; max-width: 340px; }
 .lay-view input[type=range] { width: 90px; vertical-align: middle; }

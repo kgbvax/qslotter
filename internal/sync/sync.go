@@ -242,6 +242,7 @@ func toQSO(rec adif.Record) (*store.QSO, error) {
 		QTH:         rec.Get("QTH"),
 		SatName:     rec.Get("SAT_NAME"),
 		FreqRX:      rec.Get("FREQ_RX"),
+		QSLMsg:      rec.Get("QSLMSG"),
 		Hash:        hashRecord(rec),
 	}
 	return q, nil
