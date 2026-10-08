@@ -14,58 +14,194 @@
   <h1>qslotter</h1>
   {{template "nav" .}}
 </header>
-<div class="band"><div class="band-in"><div class="band-title"><h2>{{t "Settings"}}</h2></div></div></div>
-<main>
-  {{if .Saved}}<p class="ok">{{t "Saved. Credential checks:"}} <b>QRZ:</b> {{tm .QrzStatus}} &nbsp;·&nbsp; <b>Clublog:</b> {{tm .ClublogStatus}} <span class="muted">{{t "(also written to the server log)"}}</span></p>{{end}}
-  <p class="muted">{{t "Leave a password field empty to keep the stored value. Changes apply immediately; QRZ lookups use the new credentials at once. Sync interval changes need a restart."}}</p>
-  <form method="post" action="/settings/save" class="settings-form">
-    <h3>{{t "QRZ (callsign lookups; needs the XML subscription)"}}</h3>
-    <label>{{t "Username"}} <input type="text" name="qrz_username" value="{{.Cfg.QRZ.Username}}"></label>
-    <label>{{t "Password"}} <input type="password" name="qrz_password" value="" placeholder="{{if .Cfg.QRZ.Password}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
+<div class="band"><div class="band-in"><div class="band-title"><h2>{{t "Settings"}}</h2></div>
+  {{template "settings_tabs" .Tab}}</div></div>
+<main class="set">
+  {{if .NoConfig}}<p class="err">{{t "Settings cannot be saved: qslotter was started without a config file."}}</p>{{end}}
+  {{if .Saved}}<p class="ok">{{t "Saved."}}</p>{{end}}
 
-    <h3>{{t "Clublog (log sync + push-back)"}}</h3>
-    {{if .ClublogPaused}}<p class="err">{{t "Clublog refused these credentials (403) %s ago. Automatic sync is paused until you change them here or a pull by hand on the Log page gets through - Clublog bans an IP that keeps failing." (since .ClublogPaused)}}</p>{{end}}
-    <label>{{t "Email"}} <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
-    <div class="labelrow"><label for="clublog_app_password">{{t "Application password"}}</label>
-      <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
-        <p>{{t "Not your Club Log login password: an application password, which only lets programs upload and download your log. Log in at Club Log, open Settings > App Passwords, create one (e.g. named qslotter) and paste it here."}}</p>
-        <p><a href="https://clublog.org/edituser.php" target="_blank" rel="noopener">{{t "Club Log settings"}} &#8599;</a></p>
-      </div></details></div>
-    <input type="password" id="clublog_app_password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
-    <label>{{t "Callsign"}} <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>
-    <div class="labelrow"><label for="clublog_api_key">{{t "API key"}}</label>
-      <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
-        <p>{{t "The API key identifies the program, not your account, and is not shown in your Club Log settings. Club Log issues it on request: ask once with their form (login needed) and use the same key on every computer running qslotter."}}</p>
-        <p><a href="https://clublog.org/requestapikey.php" target="_blank" rel="noopener">{{t "Request an API key"}} &#8599;</a></p>
-      </div></details></div>
-    <input type="password" id="clublog_api_key" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
-    <p class="pullrow"><button type="button" class="mini" hx-post="/sync/pull" hx-target="#settings-sync" hx-swap="innerHTML" hx-disabled-elt="this"
-      title="{{t "Uses the saved credentials: save changes first."}}">{{t "Pull from Clublog"}}</button>
-      <span id="settings-sync" class="sync">{{template "sync_status.html" .}}</span></p>
-
-    <h3>{{t "Station identity (printed on cards)"}}</h3>
-    <label>{{t "Operator name"}} <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>
-    <label>{{t "QTH"}} <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
-
-    <h3>{{t "Inbox"}}</h3>
-    <label class="check"><input type="checkbox" name="qualify_filter_digital" value="1"{{if not .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Filter FT8, FT4, FT2"}}</label>
-
-    <h3>{{t "Language"}}</h3>
-    <label>{{t "User interface"}} <select name="ui_language">
-      <option value="">{{t "Automatic (browser / system language)"}}</option>
-      {{range .Langs}}<option value="{{.Code}}"{{if eq $.Cfg.UI.Language .Code}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select></label>
-
-    <p><button type="submit">{{t "Save & validate"}}</button></p>
+{{if eq .Tab "connections"}}
+  {{if .Checked}}<p class="ok">{{t "Saved. Credential checks:"}} <b>QRZ:</b> {{tm .QrzStatus}} &nbsp;·&nbsp; <b>Clublog:</b> {{tm .ClublogStatus}} <span class="muted">{{t "(also written to the server log)"}}</span></p>{{end}}
+  <form method="post" action="/settings/save">
+    <input type="hidden" name="tab" value="connections">
+    <section class="set-sec">
+      <div class="set-head"><h3>QRZ</h3>
+        <p>{{t "Looks up the stations you worked: name, QTH and how they want their card. Needs the QRZ XML subscription."}}</p></div>
+      <div class="set-body">
+        <label>{{t "Username"}} <input type="text" name="qrz_username" value="{{.Cfg.QRZ.Username}}" autocomplete="username"></label>
+        <label>{{t "Password"}} <input type="password" name="qrz_password" value="" autocomplete="current-password" placeholder="{{if .Cfg.QRZ.Password}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}"></label>
+      </div>
+    </section>
+    <section class="set-sec">
+      <div class="set-head"><h3>Clublog</h3>
+        <p>{{t "Your log comes from Clublog, and the cards you send go back to it."}}</p>
+        <p class="set-status">{{template "sync_status.html" .}}<br><a href="/log">{{t "Pull and push on the Log page"}}</a></p></div>
+      <div class="set-body">
+        {{if .ClublogPaused}}<p class="err">{{t "Clublog refused these credentials (403) %s ago. Automatic sync is paused until you change them here or a pull by hand on the Log page gets through - Clublog bans an IP that keeps failing." (since .ClublogPaused)}}</p>{{end}}
+        <label>{{t "Email"}} <input type="text" name="clublog_email" value="{{.Cfg.Clublog.Email}}"></label>
+        <label>{{t "Callsign"}} <input type="text" name="clublog_call" value="{{.Cfg.Clublog.Call}}"></label>
+        <div class="labelrow"><label for="clublog_app_password">{{t "Application password"}}</label>
+          <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
+            <p>{{t "Not your Club Log login password: an application password, which only lets programs upload and download your log. Log in at Club Log, open Settings > App Passwords, create one (e.g. named qslotter) and paste it here."}}</p>
+            <p><a href="https://clublog.org/edituser.php" target="_blank" rel="noopener">{{t "Club Log settings"}} &#8599;</a></p>
+          </div></details></div>
+        <input type="password" id="clublog_app_password" name="clublog_app_password" value="" placeholder="{{if .Cfg.Clublog.AppPassword}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
+        <div class="labelrow"><label for="clublog_api_key">{{t "API key"}}</label>
+          <details class="help"><summary title="{{t "Where do I get this?"}}" aria-label="{{t "Where do I get this?"}}">?</summary><div class="help-body">
+            <p>{{t "The API key identifies the program, not your account, and is not shown in your Club Log settings. Club Log issues it on request: ask once with their form (login needed) and use the same key on every computer running qslotter."}}</p>
+            <p><a href="https://clublog.org/requestapikey.php" target="_blank" rel="noopener">{{t "Request an API key"}} &#8599;</a></p>
+          </div></details></div>
+        <input type="password" id="clublog_api_key" name="clublog_api_key" value="" placeholder="{{if .Cfg.Clublog.APIKey}}{{t "stored - leave empty to keep"}}{{else}}{{t "not set"}}{{end}}">
+      </div>
+    </section>
+    <div class="set-foot"><button type="submit"{{if .NoConfig}} disabled{{end}}>{{t "Save and check"}}</button>
+      <span class="muted">{{t "Leave a password field empty to keep the stored one. Both logins are checked right away."}}</span></div>
   </form>
-  <h3>{{t "Card layout"}}</h3>
-  <p class="muted">{{t "Where the QSO data prints on your cards, on a picture of the card; test card and printer offset."}}</p>
-  <p><a href="/settings/cards">{{t "Edit the card layout"}} &rarr;</a></p>
-  <h3>{{t "Program"}}</h3>
-  <p class="muted" id="build">{{t "Version %s" .Build.Version}}{{if not .Build.Built.IsZero}} &middot; {{t "built %s" (.Build.Built.UTC.Format "2006-01-02 15:04 UTC")}}{{end}}</p>
-  {{if .CanQuit}}
-  <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
-  <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
-  {{end}}
+{{end}}
+
+{{if eq .Tab "printing"}}
+  {{with .LayoutNote}}<p class="err">{{.}}</p>{{end}}
+  <section class="set-sec set-cards">
+    <div class="set-head"><h3>{{t "Card layout"}}</h3>
+      <p>{{t "Where the QSO data prints on your pre-printed cards. Keep several layouts; one prints."}}</p></div>
+    <div class="set-body">
+      {{range .Layouts}}{{if .Active}}
+      <div class="card-hero">
+        <a class="card-pic" href="/settings/cards?name={{.ID}}" aria-label="{{t "Edit layout %s" .Label}}">{{if .SVG}}{{.SVG}}{{else}}<span class="err">{{.Err}}</span>{{end}}</a>
+        <div class="card-hero-txt">
+          <span class="card-prints">{{t "Prints the cards"}}</span>
+          <h4>{{.Label}}</h4>
+          <p class="muted">{{.Size}}</p>
+          <p><a class="btn" href="/settings/cards?name={{.ID}}">{{t "Edit layout"}}</a></p>
+        </div>
+      </div>
+      {{end}}{{end}}
+      <ul class="card-others">
+        {{range .Layouts}}{{if not .Active}}
+        <li>
+          <a class="card-pic" href="/settings/cards?name={{.ID}}" aria-label="{{t "Edit layout %s" .Label}}">{{if .SVG}}{{.SVG}}{{else}}<span class="err">{{.Err}}</span>{{end}}</a>
+          <span class="card-name"><a href="/settings/cards?name={{.ID}}">{{.Label}}</a></span>
+          {{if and (not $.NoConfig) (not .Err)}}<form method="post" action="/settings/cards/activate"><input type="hidden" name="name" value="{{.ID}}"><input type="hidden" name="back" value="printing">
+            <button type="submit" class="mini">{{t "Print with this one"}}</button></form>{{end}}
+        </li>
+        {{end}}{{end}}
+        {{if not $.NoConfig}}<li class="card-new"><a class="card-pic" href="/settings/cards?name=:builtin"><span>{{t "New layout"}}</span></a>
+          <span class="card-name muted">{{t "starts from the built-in one"}}</span></li>{{end}}
+      </ul>
+    </div>
+  </section>
+
+  <form method="post" action="/settings/save">
+    <input type="hidden" name="tab" value="printing">
+    <section class="set-sec">
+      <div class="set-head"><h3>{{t "Your station on the card"}}</h3>
+        <p>{{t "Printed where a layout has the fields operator name and QTH."}}</p></div>
+      <div class="set-body set-grid2">
+        <label>{{t "Operator name"}} <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>
+        <label>{{t "QTH"}} <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
+        <p class="set-act"><button type="submit"{{if .NoConfig}} disabled{{end}}>{{t "Save"}}</button></p>
+      </div>
+    </section>
+  </form>
+
+  <section class="set-sec" id="printer">
+    <div class="set-head"><h3>{{t "Printer"}}</h3>
+      <p>{{if .Media}}{{t "Where the cards go, and on which paper and tray."}}{{else}}{{t "Where the cards go."}}{{end}}</p></div>
+    <div class="set-body">
+      <form method="post" action="/settings/printer" class="set-inline">
+        <label>{{t "Printer"}} <select name="name">
+          <option value="">{{t "System default printer"}}</option>
+          {{range .Printers}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select></label>
+        <button type="submit"{{if .NoConfig}} disabled{{end}}>{{t "Use this printer"}}</button>
+      </form>
+      {{with .PrintersErr}}<p class="err">{{t "The printers could not be listed: %s" .}}</p>{{end}}
+      {{with .Media}}
+      <form class="set-media" hx-post="/settings/cards/media" hx-swap="none">
+        <p class="muted">{{t "What the printer is told to print on. Many printers choose the tray by the paper size: printed on A4, the card is fed from the A4 tray."}}</p>
+        {{if .Err}}<p class="err">{{t "The printer's papers and trays could not be read: %s" .Err}}</p>{{else}}
+        <div class="set-grid3">
+          <label>{{t "Paper"}} <select name="paper">
+            <option value="">{{if .Auto}}{{t "Automatic: %s" .Auto}}{{else}}{{t "Automatic (none of %s mm)" .Size}}{{end}}</option>
+            {{range .Papers}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select></label>
+          <label>{{t "Tray"}} <select name="tray">
+            <option value="">{{t "Printer default"}}</option>
+            {{range .Trays}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select></label>
+          <label>{{t "Turn the card"}} <select name="rotate">
+            <option value="0">{{t "Not turned"}}</option>
+            <option value="90"{{if eq .Rotate 90}} selected{{end}}>{{t "90° clockwise"}}</option>
+            <option value="270"{{if eq .Rotate 270}} selected{{end}}>{{t "90° counter-clockwise"}}</option>
+          </select></label>
+        </div>
+        {{if .Missing}}<p class="err">{{t "The printer has no paper or tray %s: printing stops until you choose another." .Missing}}</p>{{end}}
+        {{if and (not .Paper) (not .Auto)}}<p class="err">{{t "The printer has no paper of %s mm, so the driver uses its default (A4). Add a form of the card's size in Windows (Print server properties > Forms > Create a new form), then choose it here." .Size}}</p>{{end}}
+        <p><button type="submit"{{if $.NoConfig}} disabled{{end}}>{{t "Save paper and tray"}}</button></p>
+        {{end}}
+      </form>
+      {{end}}
+    </div>
+  </section>
+
+  <section class="set-sec" id="offset">
+    <div class="set-head"><h3>{{t "Printer offset"}}</h3>
+      <p>{{t "When the printer feeds the card a little off. Applies to every layout."}}</p></div>
+    <div class="set-body">
+      <form hx-post="/settings/cards/offset" hx-swap="none">
+        <ol class="set-steps">
+          <li>{{t "Print a test card: the layout that prints, with a millimetre ruler along the edges."}}</li>
+          <li>{{t "Measure from the card's left edge to the tick marked 10: at 11.5 mm set X to -1.5, at 9 mm to +1. Likewise from the top edge for Y."}}</li>
+          <li>{{t "Save, and print another test card to check."}}</li>
+        </ol>
+        <div class="set-inline">
+          <label>X (mm) <input type="number" name="x" step="0.1" min="-20" max="20" value="{{.OffsetX}}"></label>
+          <label>Y (mm) <input type="number" name="y" step="0.1" min="-20" max="20" value="{{.OffsetY}}"></label>
+          <button type="button" hx-post="/settings/testcard" hx-include="closest form" hx-swap="none" hx-disabled-elt="this">{{t "Print test card"}}</button>
+          <button type="submit"{{if .NoConfig}} disabled{{end}}>{{t "Save offset"}}</button>
+        </div>
+      </form>
+    </div>
+  </section>
+{{end}}
+
+{{if eq .Tab "general"}}
+  <form method="post" action="/settings/save">
+    <input type="hidden" name="tab" value="general">
+    <section class="set-sec">
+      <div class="set-head"><h3>{{t "New QSOs"}}</h3>
+        <p>{{t "Which QSOs ask for a card decision."}}</p></div>
+      <div class="set-body">
+        <label class="check"><input type="checkbox" name="qualify_filter_digital" value="1"{{if not .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Filter FT8, FT4, FT2"}}</label>
+      </div>
+    </section>
+    <section class="set-sec">
+      <div class="set-head"><h3>{{t "Language"}}</h3></div>
+      <div class="set-body">
+        <label>{{t "User interface"}} <select name="ui_language">
+          <option value="">{{t "Automatic (browser / system language)"}}</option>
+          {{range .Langs}}<option value="{{.Code}}"{{if eq $.Cfg.UI.Language .Code}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select></label>
+      </div>
+    </section>
+    <div class="set-foot"><button type="submit"{{if .NoConfig}} disabled{{end}}>{{t "Save"}}</button></div>
+  </form>
+  <section class="set-sec">
+    <div class="set-head"><h3>{{t "Version"}}</h3></div>
+    <div class="set-body">
+      <p id="build"><b class="set-ver">{{.Build.Version}}</b>{{if not .Build.Built.IsZero}}<br><span class="muted">{{t "built %s" (.Build.Built.UTC.Format "2006-01-02 15:04 UTC")}}</span>{{end}}</p>
+      {{if .CanQuit}}
+      <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
+      <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
+      {{end}}
+    </div>
+  </section>
+{{end}}
 </main>
 </body></html>{{end}}
+
+{{define "settings_tabs"}}<div class="views" role="group" aria-label="{{t "Settings"}}">
+  <a href="/settings"{{if eq . "connections"}} class="on" aria-current="page"{{end}}>{{t "Connections"}}</a>
+  <a href="/settings/printing"{{if eq . "printing"}} class="on" aria-current="page"{{end}}>{{t "Cards & printer"}}</a>
+  <a href="/settings/general"{{if eq . "general"}} class="on" aria-current="page"{{end}}>{{t "General"}}</a>
+</div>{{end}}

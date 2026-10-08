@@ -269,17 +269,78 @@ kbd {
 
 /* --- settings / misc --- */
 
-.settings-form { max-width: 480px; }
-.settings-form h3 { margin-top: 20px; }
-.settings-form label { display: block; margin: 10px 0 2px; font-size: 13.5px; color: var(--ink-soft); }
-.settings-form input { width: 100%; }
-.settings-form label.check { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
-.settings-form label.check input { width: auto; }
-.settings-form .labelrow { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; }
-.settings-form .labelrow label { display: inline; margin: 0; }
-.settings-form .pullrow { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 10px 0 0; font-size: 13px; }
+/* --- settings: tabs in the band, sections as a label column + the controls --- */
 
-/* (?) help next to a field: a small popover with where to get the value. */
+.set-sec {
+  display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 8px 40px;
+  border-top: 1.5px solid var(--ink); padding: 18px 0 26px;
+}
+.set-head h3 { margin: 0 0 6px; }
+.set-head p { margin: 0 0 6px; font-size: 13.5px; color: var(--ink-soft); max-width: 34ch; }
+.set-head .set-status { font-size: 12.5px; }
+.set-head .set-status span { display: block; }
+.set-body { max-width: 520px; }
+.set-body > :first-child { margin-top: 0; }
+.set-body label { display: block; margin: 0 0 10px; font-size: 13.5px; color: var(--ink-soft); }
+.set-body label input, .set-body label select { display: block; width: 100%; margin-top: 2px; }
+.set-body label.check { display: flex; gap: 8px; align-items: baseline; color: var(--ink); }
+.set-body label.check input { width: auto; margin: 0; }
+.set-body > input { width: 100%; margin: 0 0 10px; }
+.set-body .labelrow { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; }
+.set-body .labelrow label { display: inline; margin: 0; }
+.set-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.set-grid2 .set-act { grid-column: 1 / -1; margin: 2px 0 0; }
+.set-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px; }
+.set-inline { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin: 0 0 10px; }
+.set-inline label { margin: 0; }
+.set-inline label:has(input[type=number]) { width: 92px; }
+.set-inline label:has(select) { flex: 1 1 220px; }
+.set-media { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.set-media p { font-size: 13px; }
+.set-steps { margin: 0 0 14px; padding-left: 20px; font-size: 13.5px; }
+.set-steps li { margin: 0 0 4px; }
+.set-foot { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; border-top: 1.5px solid var(--ink); padding: 14px 0 0; }
+.set-foot .muted { font-size: 13px; }
+.set-ver { font: 600 17px 'IBM Plex Mono', monospace; }
+main.set > .ok, main.set > .err { margin: 0 0 14px; }
+
+/* The layouts are shown as the cards they print: the one in use lies on the
+   desk full size, the others as small cards beside it. */
+.card-pic { display: block; line-height: 0; background: var(--card); }
+.card-pic svg { width: 100%; height: auto; display: block; }
+.card-pic:hover { text-decoration: none; }
+.card-hero { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; margin: 0 0 22px; }
+.card-hero .card-pic {
+  flex: 0 1 380px;
+  box-shadow: 0 1px 2px rgba(29, 39, 51, 0.18), 0 10px 22px -14px rgba(29, 39, 51, 0.45);
+}
+.card-hero .card-pic:hover { box-shadow: 0 0 0 1.5px var(--ink), 0 10px 22px -14px rgba(29, 39, 51, 0.45); }
+.card-hero-txt h4 { font-size: 21px; margin: 4px 0 0; letter-spacing: -0.01em; }
+.card-hero-txt p { margin: 2px 0 10px; font-size: 13.5px; }
+.card-prints { display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--ok); }
+.card-prints::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
+a.btn {
+  display: inline-block; font: 600 14px 'Schibsted Grotesk', sans-serif;
+  color: var(--card); background: var(--ink); border: 1.5px solid var(--ink); border-radius: 3px; padding: 6px 16px;
+}
+a.btn:hover { background: var(--card); color: var(--ink); text-decoration: none; }
+.card-others { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.card-others li { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; font-size: 13.5px; }
+.card-others .card-pic { width: 100%; outline: 1px solid var(--rule); }
+.card-others .card-pic:hover { outline: 1.5px solid var(--ink); }
+.card-others form { margin: 0; }
+.card-new .card-pic {
+  aspect-ratio: 140 / 90; display: grid; place-items: center; line-height: 1.3;
+  background: transparent; outline: 1.5px dashed var(--rule); color: var(--ink); font-weight: 600;
+}
+.card-new .card-pic:hover { outline-color: var(--ink); }
+.card-new .card-name { font-size: 12.5px; }
+
+@media (max-width: 760px) {
+  .set-sec { grid-template-columns: 1fr; }
+  .set-grid2, .set-grid3 { grid-template-columns: 1fr; }
+}
+
 details.help { position: relative; display: inline-block; }
 details.help summary {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;

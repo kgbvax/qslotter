@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,20 +20,71 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// pageSettings renders the service-configuration form (QRZ/Clublog
-// credentials, station identity).
-func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
-	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
-	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
-	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt(), "Build": buildinfo.Get(), "LastPull": lastPull, "LastPush": lastPush})
+// The settings tabs: Connections (QRZ, Clublog), Cards & printer (layouts,
+// station identity, printer) and General (Inbox, language, version).
+const (
+	tabConnections = "connections"
+	tabPrinting    = "printing"
+	tabGeneral     = "general"
+)
+
+// settingsTabPath is the page of a tab.
+func settingsTabPath(tab string) string {
+	if tab == tabConnections {
+		return "/settings"
+	}
+	return "/settings/" + tab
 }
 
-// saveSettings writes the form values into the config file on disk (a
-// YAML-node edit that preserves comments and unknown keys), reloads it as the
-// live config, swaps the QRZ client in the shared refresher, and validates
-// both credential sets immediately so the outcome shows up in the page (and
-// in the log). Sync intervals still need a restart.
+// settingsData is what every settings tab renders with.
+func (s *Server) settingsData(r *http.Request, tab string, cfg *config.Config) map[string]any {
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
+	d := map[string]any{"Tab": tab, "Cfg": cfg, "NoConfig": s.cfgPath == "", "Saved": r.URL.Query().Get("saved") == "1"}
+	switch tab {
+	case tabConnections:
+		d["ClublogPaused"], d["LastPull"], d["LastPush"] = s.clublogPausedAt(), lastPull, lastPush
+	case tabPrinting:
+		list, _, note := s.layouts(r)
+		d["Layouts"], d["LayoutNote"] = s.layoutThumbs(list), note
+		d["Printers"], d["PrintersErr"] = s.printerChoices(cfg)
+		d["Media"] = s.printerMedia(cfg)
+		d["OffsetX"], d["OffsetY"] = fmtMM(cfg.Printer.OffsetMM[0]), fmtMM(cfg.Printer.OffsetMM[1])
+	case tabGeneral:
+		d["Langs"], d["Build"], d["CanQuit"] = s.langChoices(), buildinfo.Get(), s.Quit != nil
+	}
+	return d
+}
+
+// pageSettings renders the Connections tab (QRZ and Clublog credentials).
+func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
+	s.render(w, r, "settings.html", s.settingsData(r, tabConnections, s.config()))
+}
+
+// pageSettingsPrinting renders the Cards & printer tab.
+func (s *Server) pageSettingsPrinting(w http.ResponseWriter, r *http.Request) {
+	s.render(w, r, "settings.html", s.settingsData(r, tabPrinting, s.config()))
+}
+
+// pageSettingsGeneral renders the General tab.
+func (s *Server) pageSettingsGeneral(w http.ResponseWriter, r *http.Request) {
+	s.render(w, r, "settings.html", s.settingsData(r, tabGeneral, s.config()))
+}
+
+// settingsSections are the config keys each tab's form writes (tab= in the
+// form); a form without a tab writes them all.
+var settingsSections = map[string][]string{
+	tabConnections: {"qrz.", "clublog."},
+	tabPrinting:    {"station."},
+	tabGeneral:     {"ui.", "qualify."},
+}
+
+// saveSettings writes the form values of one tab into the config file on
+// disk (a YAML-node edit that preserves comments and unknown keys), reloads
+// it as the live config and swaps the QRZ client in the shared refresher.
+// The Connections tab validates both credential sets at once so the outcome
+// shows up in the page (and in the log); the other tabs go back to their
+// page. Sync intervals still need a restart.
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if s.cfgPath == "" {
 		s.fail(w, r, http.StatusServiceUnavailable, "settings editing is disabled (no config path given at startup)")
@@ -66,6 +118,14 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if vals["clublog.api_key"] == "" {
 		vals["clublog.api_key"] = cur.Clublog.APIKey
+	}
+	tab := r.FormValue("tab")
+	if prefixes, ok := settingsSections[tab]; ok {
+		for k := range vals {
+			if !slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(k, p) }) {
+				delete(vals, k)
+			}
+		}
 	}
 
 	if err := updateConfigFile(s.cfgPath, vals); err != nil {
@@ -105,21 +165,14 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		s.refresher.SetClient(qc)
 	}
 
+	if tab == tabPrinting || tab == tabGeneral {
+		http.Redirect(w, r, settingsTabPath(tab)+"?saved=1", http.StatusSeeOther)
+		return
+	}
 	qrzStatus, clublogStatus := s.validateFn(newCfg)
-	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
-	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
-	s.render(w, r, "settings.html", map[string]any{
-		"Cfg":           newCfg,
-		"CanQuit":       s.Quit != nil,
-		"Langs":         s.langChoices(),
-		"Saved":         true,
-		"QrzStatus":     qrzStatus,
-		"ClublogStatus": clublogStatus,
-		"ClublogPaused": s.clublogPausedAt(),
-		"LastPull":      lastPull,
-		"LastPush":      lastPush,
-		"Build":         buildinfo.Get(),
-	})
+	d := s.settingsData(r, tabConnections, newCfg)
+	d["Checked"], d["QrzStatus"], d["ClublogStatus"] = true, qrzStatus, clublogStatus
+	s.render(w, r, "settings.html", d)
 }
 
 // LangChoice is one entry of the language select.

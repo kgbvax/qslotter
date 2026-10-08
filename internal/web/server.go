@@ -256,7 +256,11 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/receive/reply", s.htmxReceiveReply)      // key=..., how=written|print|later
 	r.Get("/receive/research", s.htmxReceiveResearch) // key=... of a reply card (live QRZ refresh)
 	r.Get("/settings", s.pageSettings)
-	r.Post("/settings/save", s.saveSettings)
+	r.Post("/settings/save", s.saveSettings) // tab= limits it to that tab's fields
+	r.Get("/settings/printing", s.pageSettingsPrinting)
+	r.Get("/settings/general", s.pageSettingsGeneral)
+	r.Post("/settings/printer", s.postSettingsPrinter)   // name=: printer.name
+	r.Post("/settings/testcard", s.postSettingsTestCard) // x=, y=: the active layout with the mm ruler
 	// Card layout editor (layout.go): ?name= is a layout in cards/ or :builtin.
 	r.Get("/settings/cards", s.pageCards)
 	r.Post("/settings/cards/preview", s.htmxCardsPreview) // JSON layout -> the card as the printer lays it out

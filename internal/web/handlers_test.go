@@ -550,7 +550,7 @@ func TestExportRun(t *testing.T) {
 // TestSettingsShowsBuild: Settings names the running build.
 func TestSettingsShowsBuild(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	if b := get(t, srv.Routes(), "/settings").Body.String(); !strings.Contains(b, `id="build"`) || !strings.Contains(b, "Version ") || !strings.Contains(b, "built ") {
+	if b := get(t, srv.Routes(), "/settings/general").Body.String(); !strings.Contains(b, `id="build"`) || !strings.Contains(b, ">Version<") || !strings.Contains(b, "built ") {
 		t.Fatalf("settings without the build:\n%s", b)
 	}
 }
@@ -1134,12 +1134,12 @@ func TestQuitEndpoint(t *testing.T) {
 	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusNotImplemented {
 		t.Fatalf("quit without desktop = %d, want 501", r.Code)
 	}
-	if strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+	if strings.Contains(get(t, h, "/settings/general").Body.String(), "/api/quit") {
 		t.Fatal("settings offers Quit outside the desktop app")
 	}
 	quit := make(chan struct{})
 	srv.Quit = func() { close(quit) }
-	if !strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+	if !strings.Contains(get(t, h, "/settings/general").Body.String(), "/api/quit") {
 		t.Fatal("settings must offer Quit in the desktop app")
 	}
 	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusOK {

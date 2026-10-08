@@ -288,10 +288,9 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		"NoConfig": s.cfgPath == "",
 		"Data":     data,
 		"Samples":  s.sampleChoices(r),
-		"OffsetX":  cfg.Printer.OffsetMM[0],
-		"OffsetY":  cfg.Printer.OffsetMM[1],
+		"OffsetX":  fmtMM(cfg.Printer.OffsetMM[0]),
+		"OffsetY":  fmtMM(cfg.Printer.OffsetMM[1]),
 		"Printer":  cfg.Printer.Name,
-		"Media":    s.printerMedia(cfg),
 		"HasImage": data.Image != "",
 		"Created":  r.URL.Query().Get("created") == "1" && entry.Editable,
 	})
@@ -685,6 +684,10 @@ func (s *Server) postCardsActivate(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
 			return
 		}
+	}
+	if r.FormValue("back") == tabPrinting {
+		http.Redirect(w, r, settingsTabPath(tabPrinting), http.StatusSeeOther)
+		return
 	}
 	s.redirectCards(w, r, id)
 }
@@ -1095,31 +1098,11 @@ func (s *Server) htmxCardsTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	cfg := s.config()
-	pdfPath := printer.TempPDFPath()
-	defer func() {
-		if err := os.Remove(pdfPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			log.Printf("test card: removing %s: %v", pdfPath, err)
-		}
-	}()
 	name := cmpOr(r.URL.Query().Get("name"), tmpl.Name)
 	if name == builtinLayout {
 		name = s.tr(r, "Built-in layout")
 	}
-	card := s.sampleCard(r.URL.Query().Get("sample"), tmpl)
-	card.Rows = card.Rows[:min(len(card.Rows), printer.MaxRows(tmpl))] // one card
-	if err := printer.Render(pdfPath, tmpl, card, printer.RenderOptions{
-		OffsetXMM: x, OffsetYMM: y, Ruler: true, Label: s.testCardLabel(r, name, x, y),
-	}); err != nil {
-		s.fail(w, r, http.StatusInternalServerError, "rendering the test card: %s", err.Error())
-		return
-	}
-	if _, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printOptions(cfg)); err != nil {
-		s.fail(w, r, http.StatusBadGateway, "printing the test card: %s", err.Error())
-		return
-	}
-	s.notice(w, r, "Test card sent to the printer.")
-	w.WriteHeader(http.StatusNoContent)
+	s.printTestCard(w, r, tmpl, name, r.URL.Query().Get("sample"), x, y)
 }
 
 // htmxCardsPDF answers the posted layout with the sample ?sample= as a PDF

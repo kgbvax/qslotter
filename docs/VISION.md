@@ -56,7 +56,7 @@ where it stands today.
   asynchronous = the Desk, card by card or batch Print (B1, B5).
 - **Print QSO data onto the card via a configurable template.** Done: YAML
   templates with millimetre coordinates; DX name and QTH included. Since
-  2026-10-04 configured visually (Settings > Card layout, see section 4).
+  2026-10-04 configured visually (Settings > Cards & printer, see section 4).
 - **Hand-written QSL cards supported**, usually synchronously. Partly done:
   Written at the Desk records the decided route and shows the data to copy;
   written now in the Inbox is still route-less (A3: it must record bureau or
@@ -200,7 +200,7 @@ Two parallel paths, equal citizens:
   renders every queued card into one PDF via the YAML template and sends one
   job; the run is confirmed (or cards reprinted) before the cards are sent.
 - **Card layout:** the
-  layout is set visually under **Settings > Card layout** (2026-10-04): the
+  layout is set visually under **Settings > Cards & printer** (2026-10-04): the
   fields are dragged onto a scan of the pre-printed card (shown, never
   printed); the card is drawn from the printer's own layout code, so
   shrink-to-fit, overlaps and off-card elements show before printing. Several

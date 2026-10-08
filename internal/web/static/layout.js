@@ -86,9 +86,6 @@
     });
   }
   function sample() { return $('lay-sample') ? $('lay-sample').value : 'long'; }
-  function offsetQuery() {
-    return '&ox=' + encodeURIComponent($('lay-ox').value) + '&oy=' + encodeURIComponent($('lay-oy').value);
-  }
 
   var seq = 0, timer = null;
   function schedule() { clearTimeout(timer); timer = setTimeout(preview, 80); }
@@ -705,13 +702,13 @@
   $('lay-test').addEventListener('click', function () {
     var b = this;
     b.disabled = true;
-    post('/settings/cards/test?name=' + encodeURIComponent(D.id) + '&sample=' + encodeURIComponent(sample()) + offsetQuery(), snapshot(), true)
+    post('/settings/cards/test?name=' + encodeURIComponent(D.id) + '&sample=' + encodeURIComponent(sample()), snapshot(), true)
       .catch(function () { /* toast shown */ })
       .then(function () { b.disabled = false; });
   });
   var pdfURL = null;
   $('lay-pdf').addEventListener('click', function () {
-    post('/settings/cards/pdf?sample=' + encodeURIComponent(sample()) + offsetQuery(), snapshot(), true)
+    post('/settings/cards/pdf?sample=' + encodeURIComponent(sample()), snapshot(), true)
       .then(function (r) { return r.blob(); })
       .then(function (blob) {
         if (pdfURL) URL.revokeObjectURL(pdfURL);
@@ -722,18 +719,6 @@
       }, function () { /* toast shown */ });
   });
   $('lay-pdf-close').addEventListener('click', function () { $('lay-pdfview').hidden = true; });
-  if ($('lay-offset-save')) {
-    $('lay-offset-save').addEventListener('click', function () {
-      post('/settings/cards/offset', new URLSearchParams({ x: $('lay-ox').value, y: $('lay-oy').value }))
-        .catch(function () { /* toast shown */ });
-    });
-  }
-  if ($('lay-media-save')) {
-    $('lay-media-save').addEventListener('click', function () {
-      post('/settings/cards/media', new URLSearchParams({ paper: $('lay-media-paper').value, tray: $('lay-media-tray').value, rotate: $('lay-media-rotate').value }))
-        .catch(function () { /* toast shown */ });
-    });
-  }
 
   // --- the card picture ---
 
