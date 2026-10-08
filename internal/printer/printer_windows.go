@@ -55,8 +55,8 @@ func (p *windowsPrinter) findSumatra() (string, error) {
 }
 
 // defaultPrinterName resolves the system default printer via winspool
-// directly. (SumatraPDF -list-printers hangs on some setups, so it is only
-// used for the explicit List() debug helper, never on the print path.)
+// directly (SumatraPDF -list-printers hangs on some setups, so it is not
+// used at all).
 func defaultPrinterName() (string, error) {
 	proc := winspool.NewProc("GetDefaultPrinterW")
 	var n uint32
@@ -75,41 +75,36 @@ func defaultPrinterName() (string, error) {
 	return windows.UTF16ToString(buf), nil
 }
 
+// List enumerates the local and connected printers via winspool
+// (EnumPrintersW, level 4: names only, no driver queries, so a printer that
+// is offline does not hold it up).
 func (p *windowsPrinter) List() ([]string, error) {
-	bin, err := p.findSumatra()
-	if err != nil {
-		return nil, err
+	const flags = 0x2 | 0x4 // PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
+	type printerInfo4 struct {
+		PrinterName *uint16
+		ServerName  *uint16
+		Attributes  uint32
 	}
-	out, err := exec.Command(bin, "-list-printers").CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("sumatra -list-printers: %w (%s)", err, strings.TrimSpace(string(out)))
+	var needed, returned uint32
+	procEnumPrintersW.Call(flags, 0, 4, 0, 0, uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&returned)))
+	if needed == 0 {
+		return nil, nil
 	}
-	var names []string
-	for _, line := range strings.Split(string(out), "\n") {
-		s := strings.TrimSpace(line)
-		if s == "" || strings.HasPrefix(s, "Printer") {
-			continue
-		}
-		// Lines are "printer name : <status info>"
-		if i := strings.Index(s, ":"); i > 0 {
-			names = append(names, strings.TrimSpace(s[:i]))
-		} else {
-			names = append(names, s)
-		}
+	buf := make([]byte, needed)
+	r1, _, err := procEnumPrintersW.Call(flags, 0, 4, uintptr(unsafe.Pointer(&buf[0])), uintptr(needed),
+		uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&returned)))
+	if r1 == 0 {
+		return nil, fmt.Errorf("EnumPrintersW: %w", err)
+	}
+	infos := unsafe.Slice((*printerInfo4)(unsafe.Pointer(&buf[0])), returned)
+	names := make([]string, 0, returned)
+	for _, in := range infos {
+		names = append(names, windows.UTF16PtrToString(in.PrinterName))
 	}
 	return names, nil
 }
 
-func (p *windowsPrinter) Default() (string, error) {
-	names, err := p.List()
-	if err != nil {
-		return "", err
-	}
-	if len(names) > 0 {
-		return names[0], nil
-	}
-	return "", nil
-}
+func (p *windowsPrinter) Default() (string, error) { return defaultPrinterName() }
 
 // PrintPDF prints through SumatraPDF, which returns once the job is
 // spooled: Windows jobs cannot be followed (Job.ID 0).
@@ -222,6 +217,7 @@ func sumatraSettings(opts Options, paper, tray *Media, landscape bool) string {
 var (
 	winspool                = windows.NewLazySystemDLL("winspool.drv")
 	procDeviceCapabilitiesW = winspool.NewProc("DeviceCapabilitiesW")
+	procEnumPrintersW       = winspool.NewProc("EnumPrintersW")
 	procOpenPrinterW        = winspool.NewProc("OpenPrinterW")
 	procClosePrinter        = winspool.NewProc("ClosePrinter")
 	procDocumentPropertiesW = winspool.NewProc("DocumentPropertiesW")
