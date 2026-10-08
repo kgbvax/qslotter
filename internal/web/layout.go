@@ -1031,7 +1031,7 @@ func (s *Server) printerMedia(cfg *config.Config) *mediaData {
 		d.Papers = append(d.Papers, mediaChoice{d.Paper, d.Paper, true})
 	}
 	for _, m := range res.papers {
-		d.Papers = append(d.Papers, mediaChoice{m.Name, fmt.Sprintf("%s (%s × %s mm)", m.Name, fmtMM(m.WMM), fmtMM(m.HMM)),
+		d.Papers = append(d.Papers, mediaChoice{m.Name, paperLabel(m),
 			d.Paper != "" && ok && m.ID == sel.ID})
 	}
 	tray, ok := printer.PickTray(res.trays, d.Tray)
@@ -1043,6 +1043,19 @@ func (s *Server) printerMedia(cfg *config.Config) *mediaData {
 		d.Trays = append(d.Trays, mediaChoice{m.Name, m.Name, d.Tray != "" && ok && m.ID == tray.ID})
 	}
 	return d
+}
+
+// hasSize: a paper name that already says its size ("A4 (210 x 297 mm)",
+// "10 x 15 cm"), as many drivers name their papers.
+var hasSize = regexp.MustCompile(`\d\s*[x×]\s*\d`)
+
+// paperLabel is a paper in the select: its name, plus the size in mm when
+// the name does not say it.
+func paperLabel(m printer.Media) string {
+	if hasSize.MatchString(m.Name) {
+		return m.Name
+	}
+	return fmt.Sprintf("%s (%s × %s mm)", m.Name, fmtMM(m.WMM), fmtMM(m.HMM))
 }
 
 // postCardsMedia stores the paper, tray and turn (paper=, tray=, rotate=;
