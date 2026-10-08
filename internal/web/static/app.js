@@ -102,6 +102,8 @@ function qslTr(text) {
     if (r) q.append('route', r.value);
     var m = form.querySelector('input[name="manager"]');
     if (m && m.value.trim()) q.append('manager', m.value.trim());
+    var n = card.querySelector('input[name="cardnote"]');
+    if (n && n.value.trim()) q.append('cardnote', n.value.trim());
     open(b.dataset.preview + '?' + q.toString());
   });
   document.addEventListener('keydown', function (ev) {

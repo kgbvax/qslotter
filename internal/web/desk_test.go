@@ -42,7 +42,7 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {"DL1ABC/P|20240103|140000|40m"}})
 
 	page := get(t, h, "/work/card?key="+url.QueryEscape(key)).Body.String()
-	for _, want := range []string{"card 2 of 2", "Confirming 2 two-way QSOs with", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
+	for _, want := range []string{"card 2 of 2", "2 QSOs on this card", `name="key" value="` + key + `" checked`, `name="key" value="` + k2 + `" checked`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -55,8 +55,15 @@ func TestDeskOneCardForSeveralQSOs(t *testing.T) {
 
 	fp := srv.printer.(*fakePrinter)
 	r := postForm(t, h, "/work/print?view=work", url.Values{"key": {key, k2}, "route": {"B"}})
-	if r.Code != 200 || len(fp.printed) != 1 {
-		t.Fatalf("print card = %d, printed %d: %s", r.Code, len(fp.printed), r.Body)
+	if r.Code != 200 || len(fp.printed) != 0 {
+		t.Fatalf("to print = %d, printed %d: %s", r.Code, len(fp.printed), r.Body)
+	}
+	if pq := get(t, h, "/work/printq").Body.String(); strings.Count(pq, "/work/unprint") != 1 {
+		t.Fatalf("one card for both QSOs in the print queue:\n%s", pq)
+	}
+	printAll(t, h)
+	if len(fp.printed) != 1 {
+		t.Fatalf("printed %d jobs, want 1", len(fp.printed))
 	}
 	for _, k := range []string{key, k2} {
 		if it := status(t, st, k); it.Status != "sent" || it.DesiredMethod != "B" || !it.PrintedAt.Valid {
@@ -148,20 +155,19 @@ func TestDeskRequested(t *testing.T) {
 	}
 }
 
-// TestDeskNoCardAndBack: change of mind at the Desk (B6), and back to the
-// Inbox, both for the whole card.
-func TestDeskNoCardAndBack(t *testing.T) {
+// TestDeskNoCard: change of mind at the Desk (B6), for the whole card; there
+// is no way back to the Inbox.
+func TestDeskNoCard(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := twoQSOCard(t, srv, st, key)
-	if r := postForm(t, h, "/work/back", url.Values{"key": {key, k2}}); r.Code != 200 {
-		t.Fatalf("back = %d", r.Code)
-	}
-	for _, k := range []string{key, k2} {
-		if it := status(t, st, k); it.Status != "queued" {
-			t.Fatalf("%s after back: %+v", k, it)
+	for _, p := range []string{"/work/back", "/queue/back"} {
+		if r := postForm(t, h, p, url.Values{"key": {key}}); r.Code != http.StatusNotFound {
+			t.Fatalf("%s = %d, want 404 (no way back to the Inbox)", p, r.Code)
 		}
-		postForm(t, h, "/queue/yes", url.Values{"key": {k}})
+	}
+	if b := get(t, h, "/work").Body.String(); strings.Contains(b, "Back to New QSOs") || strings.Contains(b, `data-key="u"`) {
+		t.Fatalf("the Desk still offers back to New QSOs:\n%s", b)
 	}
 	if r := postForm(t, h, "/work/none?view=work", url.Values{"key": {key, k2}}); r.Code != 200 {
 		t.Fatalf("no card = %d", r.Code)
@@ -187,7 +193,7 @@ func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "oqrs-hint", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
+	for _, want := range []string{`value="MD" data-key="m" checked`, "Joe Manager", "1 Main St", "QRZ mentions <b>OQRS</b>", `class="mini suggested" data-key="r"`, `data-mgr="K2ABC"`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -203,39 +209,15 @@ func TestDeskManagerAddressAndOQRSHint(t *testing.T) {
 	}
 }
 
-// TestDeskBatchCoversWholeCard: a ticked card in the list finishes all of its
-// QSOs with the card's route.
-func TestDeskBatchCoversWholeCard(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	k2 := twoQSOCard(t, srv, st, key)
-	lead := k2 // newest QSO leads the card
-	// The row's QSOs come along as card:<lead>; a QSO with the call that
-	// joined the Desk after the page was drawn is not swept along.
-	late := addQueued(t, st, "DL1ABC", "20240104")
-	postForm(t, h, "/queue/yes", url.Values{"key": {late}})
-	r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"written"}, "keys": {lead},
-		"card:" + lead: {key, k2}, "route:" + lead: {"MB"}, "manager:" + lead: {"K2ABC"}})
-	if r.Header().Get("Location") != "/work?done=1&failed=0" {
-		t.Fatalf("batch = %q", r.Header().Get("Location"))
-	}
-	for _, k := range []string{key, k2} {
-		if it := status(t, st, k); it.Status != "sent" || it.DesiredMethod != "M" || it.SendVia != "B" || it.Manager != "K2ABC" {
-			t.Fatalf("%s after batch: %+v", k, it)
-		}
-	}
-	if it := status(t, st, late); it.Status != "decided" {
-		t.Fatalf("a QSO the operator did not see was finished by the batch: %+v", it)
-	}
-}
-
 // TestDeskStaleAfterBack: a Desk page whose card went back to the Inbox in
 // another window gets 409, it does not record the QSOs as "written now".
 func TestDeskStaleAfterBack(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := twoQSOCard(t, srv, st, key)
-	postForm(t, h, "/work/back", url.Values{"key": {key, k2}})
+	if err := st.QueueBack(key, k2); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []string{"/work/written", "/work/none", "/work/print", "/work/requested"} {
 		if r := postForm(t, h, p, url.Values{"key": {key, k2}, "route": {"B"}, "channel": {"OQRS"}}); r.Code != http.StatusConflict {
 			t.Fatalf("%s on cards back in the Inbox = %d, want 409", p, r.Code)
@@ -264,7 +246,7 @@ func TestDeskReloadCarriesChoicesOnlyToTheirCard(t *testing.T) {
 		t.Fatalf("choices for a card that left were applied to another card:\n%s", b)
 	}
 	b = getHX(t, h, "/work/card?key="+url.QueryEscape(key)+"&route=&manager=").Body.String()
-	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "suggested: by QRZ") {
+	if !strings.Contains(b, `value="D" data-key="d" checked`) || !strings.Contains(b, "Preselected by QRZ:") {
 		t.Fatalf("an empty carried route wiped the preselection:\n%s", b)
 	}
 }
@@ -278,8 +260,8 @@ func TestDeskManagerBlockWithoutQRZ(t *testing.T) {
 }
 
 // TestDeskBrokenTemplateStopsPrint: a card template that exists but does not
-// load fails the print (the card stays on the Desk); a missing one falls
-// back to the built-in template.
+// load fails the print run (the cards go back to the print queue); a missing
+// one falls back to the built-in template.
 func TestDeskBrokenTemplateStopsPrint(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
@@ -289,15 +271,18 @@ func TestDeskBrokenTemplateStopsPrint(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv.cfg.Card.Template = bad
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != http.StatusInternalServerError || !strings.Contains(r.Body.String(), "card template") {
-		t.Fatalf("print with a broken template = %d: %s", r.Code, r.Body)
+	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
+		t.Fatalf("to print = %d: %s", r.Code, r.Body)
 	}
-	if it := status(t, st, key); it.Status != "decided" || len(srv.printer.(*fakePrinter).printed) != 0 {
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != http.StatusBadGateway || !strings.Contains(r.Body.String(), "card template") {
+		t.Fatalf("print run with a broken template = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, key); it.Status != "toprint" || len(srv.printer.(*fakePrinter).printed) != 0 {
 		t.Fatalf("a failed template must not print or finish the card: %+v", it)
 	}
 	srv.cfg.Card.Template = filepath.Join(t.TempDir(), "missing.yaml")
-	if r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
-		t.Fatalf("print with a missing template file = %d: %s", r.Code, r.Body)
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != 200 {
+		t.Fatalf("print run with a missing template file = %d: %s", r.Code, r.Body)
 	}
 }
 

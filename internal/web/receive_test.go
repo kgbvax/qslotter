@@ -95,10 +95,14 @@ func TestReceiveReplyLaterAndPrint(t *testing.T) {
 		t.Fatalf("a later reply goes to the Desk: %+v", it)
 	}
 	fp := srv.printer.(*fakePrinter)
-	if r := postForm(t, h, "/receive/reply?how=print", url.Values{"key": {other}, "route": {"D"}}); r.Code != 200 || len(fp.printed) != 1 {
+	if r := postForm(t, h, "/receive/reply?how=print", url.Values{"key": {other}, "route": {"D"}, "cardnote": {"tnx for your card"}}); r.Code != 200 || len(fp.printed) != 0 || !strings.Contains(r.Body.String(), "print queue") {
 		t.Fatalf("print reply = %d, printed %d: %s", r.Code, len(fp.printed), r.Body)
 	}
-	if it := status(t, st, other); it.Status != "sent" || !it.PrintedAt.Valid || it.OverrideReason != "reply to their card" {
+	if it := status(t, st, other); it.Status != "toprint" || it.DesiredMethod != "D" || it.CardNote != "tnx for your card" || it.OverrideReason != "reply to their card" {
+		t.Fatalf("reply in the print queue: %+v", it)
+	}
+	printAll(t, h)
+	if it := status(t, st, other); it.Status != "sent" || !it.PrintedAt.Valid || len(fp.printed) != 1 {
 		t.Fatalf("printed reply: %+v", it)
 	}
 }
@@ -240,10 +244,10 @@ func TestReceiveSentInQueueCounts(t *testing.T) {
 	}
 }
 
-// TestReceiveReplyRecoverableAndPrintFailure: a booked QSO still waiting
-// for your reply can be answered later from the lookup; a failed print says
-// the reply waits at the Desk (in place of the panel).
-func TestReceiveReplyRecoverableAndPrintFailure(t *testing.T) {
+// TestReceiveReplyRecoverable: a booked QSO still waiting for your reply can
+// be answered later from the lookup; a reply that fails half-way changes
+// nothing (one transaction).
+func TestReceiveReplyRecoverable(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	postForm(t, h, "/receive/book", url.Values{"call": {"DL1ABC"}, "key": {key}})
@@ -257,18 +261,18 @@ func TestReceiveReplyRecoverableAndPrintFailure(t *testing.T) {
 	if r := get(t, h, "/receive/research?key="+url.QueryEscape(key)); r.Code != 200 || !strings.Contains(r.Body.String(), "QRZ:") {
 		t.Fatalf("/receive/research = %d", r.Code)
 	}
-	srv.printer = &fakePrinter{err: errPrinterGone}
-	r := postForm(t, h, "/receive/reply?how=print", url.Values{"key": {key}, "route": {"B"}})
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "waits at the Desk") {
-		t.Fatalf("failed print = %d: %s", r.Code, r.Body)
+	// A stale QSO among the reply's keys: nothing moves, not even the good one.
+	sent := addQSO(t, st, "DL1ABC", "20240301", "40m")
+	if err := st.Enqueue(&store.QueueItem{QSLKey: sent, Status: "queued"}); err != nil {
+		t.Fatal(err)
 	}
-	if it := status(t, st, key); it.Status != "decided" {
-		t.Fatalf("after a failed print the reply waits at the Desk: %+v", it)
+	if err := st.QueueWrittenNow([]string{sent}, store.Route{Method: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := postForm(t, h, "/receive/reply?how=written", url.Values{"key": {key, sent}, "route": {"B"}}); r.Code != http.StatusConflict {
+		t.Fatalf("reply with a sent QSO = %d, want 409", r.Code)
+	}
+	if it, _ := st.QueueGet(key); it != nil && it.Status != "queued" {
+		t.Fatalf("a failed reply moved the other QSO: %+v", it)
 	}
 }
-
-var errPrinterGone = errorString("lp: printer gone")
-
-type errorString string
-
-func (e errorString) Error() string { return string(e) }

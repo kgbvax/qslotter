@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -76,8 +77,8 @@ func TestDecideCardByCardMovesDown(t *testing.T) {
 }
 
 // TestDeskMasterDetail: /work is the grouped list plus the selected card;
-// finishing a card answers with the card below in the list's order; batch
-// fields carry each card's preselected route (VISION B2).
+// finishing a card answers with the card below in the list's order (VISION
+// B2); the list has no tick boxes or batch bar.
 func TestDeskMasterDetail(t *testing.T) {
 	srv, st, key := newTestServer(t) // DL1ABC: no QRZ -> route open
 	h := srv.Routes()
@@ -100,8 +101,11 @@ func TestDeskMasterDetail(t *testing.T) {
 	if !strings.Contains(page, `data-live="md-desk"`) || !strings.Contains(page, `id="workcard" data-filter="" data-qslkey="`+key) {
 		t.Fatalf("detail must show the first card of the list:\n%s", page)
 	}
-	if !strings.Contains(page, `name="route:`+kd+`" form="batch" value="D"`) {
-		t.Fatalf("batch fields must carry the preselected route:\n%s", page)
+	if strings.Contains(page, `form="batch"`) || strings.Contains(page, "Apply to ticked") {
+		t.Fatalf("the Desk list must not offer batch actions:\n%s", page)
+	}
+	if r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"written"}, "keys": {kd}}); r.Code != http.StatusNotFound && r.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("/queue/batch = %d, want gone", r.Code)
 	}
 	// Selecting the Direct card, writing it: the Bureau card below follows.
 	sel := getHX(t, h, "/work/card?md=1&key="+url.QueryEscape(kd)).Body.String()

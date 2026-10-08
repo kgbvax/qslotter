@@ -46,6 +46,28 @@ func TestEligibleDigitalPrefixFallback(t *testing.T) {
 	}
 }
 
+// TestIncludeDigital: qualify.include_digital lets FT8/FT4/FT2 & co. in,
+// switchable at runtime, even when an old config lists FT8 in exclude_modes;
+// exclude_modes still keeps the other modes out.
+func TestIncludeDigital(t *testing.T) {
+	r := NewRules(config.QualifyCfg{IncludeDigital: true, ExcludeModes: []string{"FT8", "SSTV"}, Since: "all"}, nil)
+	for _, mode := range []string{"FT8", "FT4", "FT2", "FST4", "JS8"} {
+		q := qso("DL1AB", "20240101", "120000", "20m", mode)
+		if ok, reason := r.Eligible(q, []*store.QSO{q}); !ok {
+			t.Fatalf("%s with include_digital: not eligible (%s)", mode, reason)
+		}
+	}
+	sstv := qso("DL1AB", "20240101", "120000", "20m", "SSTV")
+	if ok, _ := r.Eligible(sstv, []*store.QSO{sstv}); ok {
+		t.Fatal("SSTV listed in exclude_modes was let in")
+	}
+	r.SetIncludeDigital(false)
+	ft8 := qso("DL1AB", "20240101", "120000", "20m", "FT8")
+	if ok, _ := r.Eligible(ft8, []*store.QSO{ft8}); ok {
+		t.Fatal("FT8 still let in after switching include_digital off")
+	}
+}
+
 func TestEligibleFirstContactOnly(t *testing.T) {
 	r := &Rules{FirstContactOnly: true}
 	// Two QSOs with DL1AB: q1 newer, q2 older.

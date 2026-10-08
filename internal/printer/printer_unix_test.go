@@ -15,6 +15,12 @@ func TestLPArgsOneSided(t *testing.T) {
 	if !slices.Equal(args, want) {
 		t.Fatalf("lpArgs = %q, want %q", args, want)
 	}
+	args = lpArgs("/tmp/card.pdf", "Card_Printer", Options{PaperWMM: 100, PaperHMM: 74, Paper: "Postcard", Tray: "Manual"})
+	want = []string{"-d", "Card_Printer", "-o", "media=Postcard", "-o", "sides=one-sided",
+		"-o", "InputSlot=Manual", "/tmp/card.pdf"}
+	if !slices.Equal(args, want) {
+		t.Fatalf("lpArgs = %q, want %q", args, want)
+	}
 }
 
 func TestParseDefault(t *testing.T) {

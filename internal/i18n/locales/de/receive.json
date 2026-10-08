@@ -38,17 +38,19 @@
   "Manager callsign": "Rufzeichen des Managers",
   "Card written by hand, marked sent via the choice above - done  (w twice, or w Enter)": "Karte von Hand geschrieben, als gesendet markiert wie oben gewählt - erledigt  (w zweimal oder w Enter)",
   "Already written": "Schon geschrieben",
-  "Print the card now, marked sent via the choice above - done  (p twice, or p Enter)": "Karte jetzt drucken, als gesendet markiert wie oben gewählt - erledigt  (p zweimal oder p Enter)",
   "Print": "Drucken",
   "Later: your card goes to the Desk as yes, card  (l twice, or l Enter)": "Später: deine Karte kommt als „Ja, Karte“ auf den Schreibtisch  (l zweimal oder l Enter)",
   "Later at the Desk": "Später am Schreibtisch",
   "Not now - their card stays recorded; the line keeps showing your card due  (x twice, or x Enter)": "Jetzt nicht - ihre Karte bleibt eingetragen; die Zeile zeigt weiter „Deine Karte fällig“  (x zweimal oder x Enter)",
   "No reply": "Keine Antwort",
   "Keys: send via": "Tasten: Versand über",
-  "print": "drucken",
   "later at the Desk": "später am Schreibtisch",
   "no reply": "keine Antwort",
   "press the key twice (or the key, then Enter)": "Taste zweimal drücken (oder Taste, dann Enter)",
   "Nothing to send back. Next card: type its callsign.": "Nichts zurückzuschicken. Nächste Karte: Rufzeichen eingeben.",
-  "Record the cards you received, then send yours back.": "Erhaltene Karten eintragen, deine Karte zurückschicken."
+  "Record the cards you received, then send yours back.": "Erhaltene Karten eintragen, deine Karte zurückschicken.",
+  "Into the print queue on the Desk with the choice above and the note  (p twice, or p Enter)": "In die Druckliste auf dem Schreibtisch, mit der Wahl oben und der Notiz  (p zweimal oder p Enter)",
+  "Want to send your card all the same?": "Deine Karte trotzdem schicken?",
+  "Your card goes to the Desk as yes, card": "Deine Karte kommt als „Ja, Karte“ auf den Schreibtisch",
+  "Your card to the Desk": "Deine Karte auf den Schreibtisch"
 }

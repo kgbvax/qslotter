@@ -9,7 +9,8 @@
 //   workcard  work card view: like decide, for decided cards
 //   (Inbox pages also keep the "QSO in progress" box current: current_contact)
 //   md-inbox, md-desk  master-detail pages: the list reloads, the detail pane
-//             follows the selection (and moves on when its card left)
+//             follows the selection (and moves on when its card left); the
+//             Desk's print queue section reloads too
 (function () {
   var mode = document.body.dataset.live;
   if (!mode || !window.EventSource) return;
@@ -37,15 +38,43 @@
   }
   es.addEventListener('queue_changed', refreshNav);
 
-  // The print list of the Desk pages: printing, printed, failed (printq.go).
+  // The Print queue view (data-live=printq) follows every move, keeping the
+  // ticks of the open run; its button in the band of every Desk page keeps
+  // its count.
   var pqTimer = null;
-  es.addEventListener('print_changed', function () {
+  function reloadPrintQueue() {
     clearTimeout(pqTimer);
     pqTimer = setTimeout(function () {
+      var badge = byId('printq-view');
+      if (badge) {
+        fetch('/work/printq?badge=1').then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+          var cur = byId('printq-view');
+          if (html === null || !cur) return;
+          var tmp = document.createElement('div');
+          tmp.innerHTML = html.trim();
+          if (tmp.firstElementChild) cur.replaceWith(tmp.firstElementChild);
+        });
+      }
       var pq = byId('printq');
-      if (pq) htmx.ajax('GET', '/work/printq', { source: pq, target: '#printq', swap: 'outerHTML' });
-    }, 200);
-  });
+      if (!pq || mode !== 'printq') return;
+      var ticks = {};
+      pq.querySelectorAll('input[name="lead"]:checked').forEach(function (c) { ticks[c.value] = true; });
+      fetch('/work/printq', { headers: { 'HX-Request': 'true' } }).then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
+        var cur = byId('printq');
+        if (html === null || !cur) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html.trim();
+        var fresh = tmp.firstElementChild;
+        if (!fresh) return;
+        fresh.querySelectorAll('input[name="lead"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
+        cur.replaceWith(fresh);
+        if (window.htmx) htmx.process(fresh);
+        var empty = byId('printq-empty');
+        if (empty) empty.hidden = !fresh.hidden;
+      });
+    }, 150);
+  }
+  es.addEventListener('queue_changed', function () { settled(reloadPrintQueue); });
 
   // The QSO in progress (Inbox pages): the box follows the logger's entry
   // field and the station's QRZ data.
@@ -188,7 +217,7 @@
   // Master-detail: the list (#md-list) only selects; the detail pane decides.
   // After an action the server answers with the card below the handled one;
   // the list follows the detail. Live changes reload the list (keeping the
-  // selection and batch ticks); when the shown card left (handled in another
+  // selection); when the shown card left (handled in another
   // window) the selection moves to the row that took its place.
   var list = byId('md-list'), box = list.closest('.md-list');
   function rows() { return Array.prototype.slice.call(list.querySelectorAll('tr.md-row')); }
@@ -266,14 +295,11 @@
   function reloadList() {
     clearTimeout(listTimer);
     listTimer = setTimeout(function () {
-      var ticks = {};
-      list.querySelectorAll('input[name="keys"]:checked').forEach(function (c) { ticks[c.value] = true; });
       var before = rows(), at = before.indexOf(rowOf(shownKeys()));
       fetch(cfg.list).then(function (r) { return r.ok ? r.text() : null; }).then(function (html) {
         if (html === null) return;
         list.innerHTML = html;
         if (window.htmx) htmx.process(list);
-        list.querySelectorAll('input[name="keys"]').forEach(function (c) { if (ticks[c.value]) c.checked = true; });
         if (countEl) countEl.textContent = rows().length;
         var el = byId(cfg.id), shown = shownKeys(), row = rowOf(shown), rs = rows();
         if (row) { // still listed; a Desk card may have grown or lost QSOs
@@ -291,4 +317,5 @@
   }
   es.addEventListener('queue_changed', function () { settled(reloadList); });
   es.addEventListener('station_updated', function () { settled(reloadList); });
+
 })();

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -243,6 +242,7 @@ type ReplyCard struct {
 	Route   string
 	Manager string
 	Mgr     MgrBlock
+	Note    string // card note offered: the newest QSLMSG from the log
 }
 
 // htmxReceiveBook books the ticked QSOs as received and answers with the
@@ -255,7 +255,6 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusBadRequest, "Tick the QSO(s) the card confirms.")
 		return
 	}
-	today := s.now().UTC().Format("20060102")
 	for _, key := range keys {
 		q, err := s.store.GetQSO(key)
 		if err != nil {
@@ -266,17 +265,11 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusNotFound, "QSO not found: %s", key)
 			return
 		}
-		if rcvd, _ := q.EffectiveRcvd(); rcvd {
-			continue // booked before: nothing to change
-		}
-		if err := s.store.SetQSLRcvdLocal(key); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := s.store.AppendEvent(&store.Event{QSLKey: key, Direction: "rcvd", Date: today, Source: "manual"}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	}
+	// QSOs booked before are left alone: ticking them just asks again.
+	if _, err := s.store.BookReceived(keys); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	if call == "" {
 		call = callFromKey(keys[0])
@@ -299,11 +292,16 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// A card that answers your request (C5) is the expected card: the
-	// station wants no card from you, for none of the QSOs it confirms.
+	// station wants no card from you, for none of the QSOs it confirms. Yours
+	// can still go out (Anyway: to the Desk).
+	var anyway []string
 	if expectedCard {
 		for _, l := range mine {
 			if l.Reply.IsZero() {
 				l.Reply, l.AtDesk = i18n.M("their card answers your request - nothing to send back"), false
+			}
+			if l.Status == "requested" || l.Status == "" || l.Status == "queued" || l.Status == "skipped" {
+				anyway = append(anyway, l.QSO.QSLKey)
 			}
 		}
 	}
@@ -314,7 +312,7 @@ func (s *Server) htmxReceiveBook(w http.ResponseWriter, r *http.Request) {
 	}
 	expected, _ := s.expectedCards()
 	s.render(w, r, "receive_reply.html", map[string]any{
-		"Call": call, "Booked": mine, "Cards": cards,
+		"Call": call, "Booked": mine, "Cards": cards, "Anyway": anyway,
 		// the Expected list on the page, refreshed out of band
 		"Expected": expected, "OverdueWeeks": s.config().Receive.OverdueWeeks, "OOB": true,
 	})
@@ -362,6 +360,7 @@ func (s *Server) replyCards(booked []*RcvdLine) ([]*ReplyCard, error) {
 		})
 		for _, l := range rc.Lines {
 			rc.Keys = append(rc.Keys, l.QSO.QSLKey)
+			rc.Note = cmpOr(l.QSO.QSLMsg, rc.Note)
 		}
 		lead := rc.Lines[len(rc.Lines)-1].QSO.QSLKey // newest, like a Desk card
 		rc.Row = s.queueRowFor(lead)
@@ -393,8 +392,9 @@ func (s *Server) htmxReceiveResearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // htmxReceiveReply answers a received card (C3): how=written (written now,
-// with its route), print (printed right here), or later (to the Desk as
-// "yes, card"). The answer replaces the reply panel.
+// with its route), print (into the print queue with its route and note), or
+// later (to the Desk as "yes, card"). Each is one transaction. The answer
+// replaces the reply panel.
 func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 	keys := deskKeys(r)
 	if len(keys) == 0 {
@@ -421,37 +421,24 @@ func (s *Server) htmxReceiveReply(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusBadRequest, "unknown reply")
 		return
 	}
-	if err := s.store.QueueReply(keys); err != nil {
-		s.queueErr(w, r, err)
-		return
-	}
 	route := i18n.M(routeName(routeCode(rt.Method, rt.Via)))
-	msg, to := i18n.M("Your card to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys)), "decided"
+	var err error
+	var msg i18n.Msg
+	to := "decided"
 	switch how {
 	case "written":
-		if err := s.store.QueueWritten(keys, rt); err != nil {
-			s.queueErr(w, r, err)
-			return
-		}
+		err = s.store.QueueReplyFinish(keys, "written", rt, "")
 		msg, to = i18n.M("Your card to %s written (%s) - done.", callFromKey(keys[0]), route), "sent"
 	case "print":
-		async, err := s.printCard(keys, rt)
-		if err != nil {
-			if errors.Is(err, store.ErrConflict) {
-				s.queueErr(w, r, err)
-				return
-			}
-			// The reply is at the Desk now: say so in place of the panel.
-			for _, k := range keys {
-				s.publishQueueChanged(k, "decided")
-			}
-			s.render(w, r, "receive_msg", map[string]any{"Msg": i18n.M("Printing failed (%s) - your card to %s waits at the Desk.", err.Error(), callFromKey(keys[0])), "Err": true})
-			return
-		}
-		msg, to = i18n.M("Your card to %s printed (%s) - done.", callFromKey(keys[0]), route), "sent"
-		if async {
-			msg = i18n.M("Your card to %s is printing (%s) - it counts as sent once the printer has finished; the Desk shows the result.", callFromKey(keys[0]), route)
-		}
+		err = s.store.QueueReplyFinish(keys, "toprint", rt, r.FormValue("cardnote"))
+		msg, to = i18n.M("Your card to %s is in the print queue (%s) - print it from the Desk.", callFromKey(keys[0]), route), "toprint"
+	default:
+		err = s.store.QueueReply(keys)
+		msg = i18n.M("Your card to %s is at the Desk (%d QSO(s)).", callFromKey(keys[0]), len(keys))
+	}
+	if err != nil {
+		s.queueErr(w, r, err)
+		return
 	}
 	for _, k := range keys {
 		s.publishQueueChanged(k, to)

@@ -15,8 +15,9 @@ OUT=dist
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-# The build time shows under Settings and in the log (internal/version).
-LDFLAGS="-s -w -X github.com/dl9et/qslotter/internal/version.Built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+BI=github.com/dl9et/qslotter/internal/buildinfo
+LDFLAGS="-s -w -X $BI.Version=$VERSION -X $BI.Date=$BUILT"
 build() { # goos goarch outname [extra ldflags]
 	echo "build $1/$2"
 	CGO_ENABLED=0 GOOS="$1" GOARCH="$2" go build -trimpath \

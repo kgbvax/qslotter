@@ -130,7 +130,7 @@ func TestEnqueueKeepsDecision(t *testing.T) {
 	if err := st.QueueAccept(q.QSLKey); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{q.QSLKey}, Route{Method: "M", Via: "D", Manager: "DL2XYZ"}); err != nil {
+	if err := printSent(st, []string{q.QSLKey}, Route{Method: "M", Via: "D", Manager: "DL2XYZ"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Enqueue(&QueueItem{QSLKey: q.QSLKey, Status: "queued"}); err != nil {
@@ -442,20 +442,20 @@ func TestQueueWrittenAndPrintedRecordDeskRoute(t *testing.T) {
 		}
 	}
 	// Printing needs a Desk card.
-	if err := st.QueuePrinted([]string{seedQueued(t, st, "DL3YYY", "20240103")}, Route{Method: "D"}); !errors.Is(err, ErrConflict) {
+	if err := printSent(st, []string{seedQueued(t, st, "DL3YYY", "20240103")}, Route{Method: "D"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("print of an Inbox card = %v, want ErrConflict", err)
 	}
 	// A manager route needs the manager and how the card travels.
-	if err := st.QueuePrinted([]string{kp}, Route{Method: "M", Via: "B"}); !errors.Is(err, ErrBadRoute) {
+	if err := printSent(st, []string{kp}, Route{Method: "M", Via: "B"}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("manager route without call = %v, want ErrBadRoute", err)
 	}
-	if err := st.QueuePrinted([]string{kp}, Route{Method: "M", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
+	if err := printSent(st, []string{kp}, Route{Method: "M", Manager: "K2ABC"}); !errors.Is(err, ErrBadRoute) {
 		t.Fatalf("manager route without bureau/direct = %v, want ErrBadRoute", err)
 	}
 	if err := st.QueueWritten([]string{kw}, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{kp}, Route{Method: "m", Via: "b", Manager: " k2abc "}); err != nil {
+	if err := printSent(st, []string{kp}, Route{Method: "m", Via: "b", Manager: " k2abc "}); err != nil {
 		t.Fatal(err)
 	}
 	if it := statusOf(t, st, kw); it.Status != "sent" || it.DesiredMethod != "D" || it.SendVia != "D" || it.Note != "" || it.PrintedAt.Valid {
@@ -566,7 +566,7 @@ func TestQueueReopenReportsAlreadyPushed(t *testing.T) {
 	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{key}, Route{Method: "B"}); err != nil {
+	if err := printSent(st, []string{key}, Route{Method: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	pend, _ := st.PendingPushBack()
@@ -676,7 +676,7 @@ func TestCallHistoryBaseCallAndQueueState(t *testing.T) {
 	if err := st.QueueAccept(k1); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{k1}, Route{Method: "M", Via: "D", Manager: "k2abc"}); err != nil {
+	if err := printSent(st, []string{k1}, Route{Method: "M", Via: "D", Manager: "k2abc"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -812,7 +812,7 @@ func TestQueueManyIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	// k2 is still in the Inbox: printing both must fail and change nothing.
-	if err := st.QueuePrinted([]string{k1, k2}, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
+	if err := printSent(st, []string{k1, k2}, Route{Method: "B"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("mixed print = %v, want ErrConflict", err)
 	}
 	if it := statusOf(t, st, k1); it.Status != "decided" {
@@ -821,7 +821,7 @@ func TestQueueManyIsAtomic(t *testing.T) {
 	if err := st.QueueAccept(k2); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{k1, k2, k1}, Route{Method: "D"}); err != nil {
+	if err := printSent(st, []string{k1, k2, k1}, Route{Method: "D"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range []string{k1, k2} {
@@ -910,7 +910,7 @@ func TestInboxAndDeskTransitionsStartFromTheirOwnStatus(t *testing.T) {
 		"no card (Inbox) on a Desk QSO":  st.QueueDecline(desk),
 		"no card (Desk) on an Inbox QSO": st.QueueDeskDecline(inbox),
 		"requested on an Inbox QSO":      st.QueueRequested([]string{inbox}, Request{Channel: "OQRS"}),
-		"printed on an Inbox QSO":        st.QueuePrinted([]string{inbox}, Route{Method: "B"}),
+		"printed on an Inbox QSO":        printSent(st, []string{inbox}, Route{Method: "B"}),
 	} {
 		if !errors.Is(err, ErrConflict) {
 			t.Errorf("%s = %v, want ErrConflict", name, err)
@@ -960,6 +960,157 @@ func TestQueueReply(t *testing.T) {
 	}
 }
 
+// TestQueueReplyRequestAndAtomic: a request may get your card once their
+// card arrived (not before); a reply finished at once (written / into the
+// print queue) is one transaction - a stale QSO among the keys moves none.
+func TestQueueReplyRequestAndAtomic(t *testing.T) {
+	st := openTemp(t)
+	req := seedQueued(t, st, "DL1ABC", "20240101")
+	if err := st.QueueAccept(req); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRequested([]string{req}, Request{Channel: "OQRS"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueReply([]string{req}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reply to a request still expected = %v, want ErrConflict", err)
+	}
+	if n, err := st.BookReceived([]string{req, req}); err != nil || n != 1 {
+		t.Fatalf("book = %d, %v; want 1", n, err)
+	}
+	if n, _ := st.BookReceived([]string{req}); n != 0 {
+		t.Fatalf("booking again = %d, want 0", n)
+	}
+	q, _ := st.GetQSO(req)
+	if q.QSLRcvdLocal.String != "Y" || q.QSLRDateLocal.String == "" {
+		t.Fatalf("booked QSO: %v %v", q.QSLRcvdLocal, q.QSLRDateLocal)
+	}
+	if err := st.QueueReplyFinish([]string{req}, "toprint", Route{Method: "D"}, " tnx "); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, req); it.Status != "toprint" || it.DesiredMethod != "D" || it.CardNote != "tnx" || it.Channel != "" {
+		t.Fatalf("reply to an answered request: %+v", it)
+	}
+
+	open := seedQueued(t, st, "DL2ZZZ", "20240102")
+	sent := seedQueued(t, st, "DL2ZZZ", "20240103")
+	if err := st.QueueWrittenNow([]string{sent}, Route{Method: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueReplyFinish([]string{open, sent}, "written", Route{Method: "B"}, ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reply with a sent QSO = %v, want ErrConflict", err)
+	}
+	if it := statusOf(t, st, open); it.Status != "queued" {
+		t.Fatalf("a failed reply moved the other QSO: %+v", it)
+	}
+	if err := st.QueueReplyFinish([]string{open}, "written", Route{Method: "M", Via: "B"}, ""); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("reply without a manager = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueueReplyFinish([]string{open}, "written", Route{Method: "B"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, open); it.Status != "sent" || it.SendVia != "B" {
+		t.Fatalf("written reply: %+v", it)
+	}
+}
+
+// TestPrintRun: the print queue, one run at a time, reprint, back, failure
+// and confirmation; nothing counts as sent before the run is confirmed.
+func TestPrintRun(t *testing.T) {
+	st := openTemp(t)
+	a := seedQueued(t, st, "DL1ABC", "20240101")
+	b := seedQueued(t, st, "DL2ZZZ", "20240102")
+	for _, k := range []string{a, b} {
+		if err := st.QueueAccept(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.QueueStartRun(); !errors.Is(err, ErrNothingToPrint) || !errors.Is(err, ErrConflict) {
+		t.Fatalf("run with an empty print queue = %v", err)
+	}
+	if err := st.QueueToPrint([]string{a}, Route{}, ""); !errors.Is(err, ErrBadRoute) {
+		t.Fatalf("to print without a route = %v, want ErrBadRoute", err)
+	}
+	if err := st.QueueToPrint([]string{a}, Route{Method: "M", Via: "D", Manager: "k2abc"}, "pse"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueToPrint([]string{a}, Route{Method: "B"}, ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("to print twice = %v, want ErrConflict", err)
+	}
+	if err := st.QueueUnprint(a); err != nil {
+		t.Fatal(err)
+	}
+	if it := statusOf(t, st, a); it.Status != "decided" || it.Manager != "K2ABC" || it.CardNote != "pse" {
+		t.Fatalf("back at the Desk keeps route and note: %+v", it)
+	}
+	if err := st.QueueToPrint([]string{a}, Route{Method: "M", Via: "D", Manager: "K2ABC"}, "pse"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueToPrint([]string{b}, Route{Method: "B"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, pend, _ := st.QueueCounts(); pend != 0 {
+		t.Fatalf("print queue pending push-back: %d", pend)
+	}
+	keys, err := st.QueueStartRun()
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("run = %v, %v", keys, err)
+	}
+	if it := statusOf(t, st, a); it.Status != "printing" || !it.PrintedAt.Valid || it.SentAt.Valid {
+		t.Fatalf("in the run: %+v", it)
+	}
+	c := seedQueued(t, st, "DL3YYY", "20240103")
+	if err := st.QueueAccept(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueToPrint([]string{c}, Route{Method: "D"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.QueueStartRun(); !errors.Is(err, ErrRunOpen) {
+		t.Fatalf("second run = %v, want ErrRunOpen", err)
+	}
+	if err := st.QueueReprint(c); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reprint of a queued card = %v, want ErrConflict", err)
+	}
+	if err := st.QueueReprint(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueRunBack(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.QueueCloseSentElsewhere(a); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Clublog close of a printed card = %v, want ErrConflict", err)
+	}
+	if _, decided, _, _ := st.QueueCounts(); decided != 3 {
+		t.Fatalf("Desk count = %d, want 3 cards (run, print queue x2)", decided)
+	}
+	sent, err := st.QueueConfirmRun()
+	if err != nil || len(sent) != 1 || sent[0] != a {
+		t.Fatalf("confirm = %v, %v", sent, err)
+	}
+	it := statusOf(t, st, a)
+	q, _ := st.GetQSO(a)
+	if it.Status != "sent" || it.SendVia != "D" || it.Manager != "K2ABC" || !it.PrintedAt.Valid || q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
+		t.Fatalf("confirmed: %+v / %v %v", it, q.QSLSentLocal, q.QSLSentMethodLocal)
+	}
+	if _, err := st.QueueConfirmRun(); !errors.Is(err, ErrConflict) {
+		t.Fatalf("confirm without a run = %v, want ErrConflict", err)
+	}
+	// A failed job puts the whole run back.
+	keys, _ = st.QueueStartRun()
+	if err := st.QueueRunFailed(keys...); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{b, c} {
+		if it := statusOf(t, st, k); it.Status != "toprint" {
+			t.Fatalf("after a failed run %s: %+v", k, it)
+		}
+	}
+	if err := st.QueueCloseSentElsewhere(b); err != nil {
+		t.Fatalf("Clublog close of a queued print = %v", err)
+	}
+}
+
 // TestSentPerLog: Clublog exports QSLSDATE but never QSL_SENT; the date
 // alone means the card went out.
 func TestSentPerLog(t *testing.T) {
@@ -1005,4 +1156,17 @@ func TestUpsertKeepsLoggerFields(t *testing.T) {
 	if q, _ := st.GetQSO(udp.QSLKey); q.Name != "Hans-Jürgen" || q.QSLMsg != "73!" {
 		t.Fatalf("new values: %+v", q)
 	}
+}
+
+// printSent takes a Desk card through the whole print path: into the print
+// queue, one run, confirmed. The error is the first failing step's.
+func printSent(st Store, keys []string, rt Route) error {
+	if err := st.QueueToPrint(keys, rt, ""); err != nil {
+		return err
+	}
+	if _, err := st.QueueStartRun(); err != nil {
+		return err
+	}
+	_, err := st.QueueConfirmRun()
+	return err
 }

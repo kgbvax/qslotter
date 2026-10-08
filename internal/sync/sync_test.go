@@ -216,7 +216,13 @@ func TestPushBackManagerAndWritten(t *testing.T) {
 	if err := st.QueueAccept(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.QueuePrinted([]string{key}, store.Route{Method: "M", Via: "B", Manager: "K2ABC"}); err != nil {
+	if err := st.QueueToPrint([]string{key}, store.Route{Method: "M", Via: "B", Manager: "K2ABC"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.QueueStartRun(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.QueueConfirmRun(); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := o.PushBack(); err != nil || n != 1 {
@@ -810,5 +816,18 @@ func TestLoopPausesAfter403(t *testing.T) {
 	waitFor(t, "sync with the new credentials", func() bool { pend, _ := st.PendingPushBack(); return len(pend) == 0 })
 	if p, _, _ := f.counts(); p < 1 {
 		t.Error("the pull must resume too")
+	}
+}
+
+// TestToQSOQSLMsg: the log's QSLMSG reaches the QSO (it prefills the note
+// printed on the card).
+func TestToQSOQSLMsg(t *testing.T) {
+	rec := adif.Record{}
+	for k, v := range map[string]string{"CALL": "DL1ABC", "QSO_DATE": "20240101", "TIME_ON": "1200", "BAND": "20m", "MODE": "SSB", "QSLMSG": "Tnx fer QSO"} {
+		rec.Set(k, v)
+	}
+	q, err := toQSO(rec)
+	if err != nil || q.QSLMsg != "Tnx fer QSO" {
+		t.Fatalf("toQSO = %+v, %v", q, err)
 	}
 }

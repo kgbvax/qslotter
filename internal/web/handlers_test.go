@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -38,6 +40,7 @@ func newTestServer(t *testing.T) (*Server, store.Store, string) {
 	}
 	cfg := &config.Config{}
 	cfg.Clublog.Call = "DL9ET"
+	cfg.Card.ExportDir = t.TempDir()
 	srv, err := New(cfg, st, events.New(), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +115,17 @@ func (f *fakePrinter) PrintPDF(path, name string, _ printer.Options) (printer.Jo
 	return printer.Job{Printer: "fake"}, nil // no ID: like Windows, not followed
 }
 
+// printAll prints what waits in the print queue as one run and confirms it.
+func printAll(t *testing.T, h http.Handler) {
+	t.Helper()
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != 200 {
+		t.Fatalf("print run = %d: %s", r.Code, r.Body)
+	}
+	if r := postForm(t, h, "/work/printconfirm", url.Values{}); r.Code != 200 {
+		t.Fatalf("confirm run = %d: %s", r.Code, r.Body)
+	}
+}
+
 func TestQueuePagesRender(t *testing.T) {
 	srv, _, key := newTestServer(t)
 	h := srv.Routes()
@@ -120,13 +134,13 @@ func TestQueuePagesRender(t *testing.T) {
 	if full.Code != 200 {
 		t.Fatalf("/queue = %d: %s", full.Code, full.Body)
 	}
-	for _, want := range []string{"DL1ABC", "Alice", "/queue/yes?key=", "/queue/none", "/queue/written?route=B&amp;key=", "/queue/written?route=D&amp;key=", key, `class="cnt"`} {
+	for _, want := range []string{"DL1ABC", "Alice", "/queue/yes?key=", "/queue/none", key, `class="cnt"`} {
 		if !strings.Contains(full.Body.String(), want) {
 			t.Fatalf("/queue missing %q; body:\n%s", want, full.Body)
 		}
 	}
 	// The Inbox decides whether; routes for the other cards are the Desk's job.
-	for _, gone := range []string{"/queue/decide", "/work/print", "route=MD", "route=MB"} {
+	for _, gone := range []string{"/queue/decide", "/queue/written", "Already written", "/work/print", "route=MD", "route=MB"} {
 		if strings.Contains(full.Body.String(), gone) {
 			t.Fatalf("/queue still offers %q", gone)
 		}
@@ -219,38 +233,6 @@ func TestDeskManagerRoute(t *testing.T) {
 	}
 }
 
-// TestWrittenNow: written now in the Inbox records bureau or direct - never a
-// manager, never no route.
-func TestWrittenNow(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	for _, f := range []url.Values{
-		{"key": {key}},
-		{"key": {key}, "route": {"MD"}, "manager": {"K2ABC"}},
-	} {
-		if r := postForm(t, h, "/queue/written", f); r.Code != http.StatusBadRequest {
-			t.Fatalf("written now %v = %d, want 400", f, r.Code)
-		}
-	}
-	if it := status(t, st, key); it.Status != "queued" {
-		t.Fatalf("refused written-now changed the card: %+v", it)
-	}
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"D"}}); r.Code != 200 {
-		t.Fatalf("written now = %d: %s", r.Code, r.Body)
-	}
-	it := status(t, st, key)
-	if it.Status != "sent" || it.DesiredMethod != "D" || it.Note != "written now" {
-		t.Fatalf("after written now: %+v", it)
-	}
-	q, _ := st.GetQSO(key)
-	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "D" {
-		t.Fatalf("local sent state = %v / method %v, want Y / D", q.QSLSentLocal, q.QSLSentMethodLocal)
-	}
-	if pend, _ := st.PendingPushBack(); len(pend) != 1 {
-		t.Fatalf("written card not pending push-back: %d", len(pend))
-	}
-}
-
 func TestNoneDeclinesAndSurvivesRecompute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
@@ -273,10 +255,10 @@ func TestNoneDeclinesAndSurvivesRecompute(t *testing.T) {
 func TestStaleActionsConflict(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
-	if r := postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}}); r.Code != 200 {
-		t.Fatalf("written = %d", r.Code)
+	if err := st.QueueWrittenNow([]string{key}, store.Route{Method: "B"}); err != nil {
+		t.Fatal(err)
 	}
-	for _, p := range []string{"/queue/yes", "/queue/none", "/queue/written", "/queue/back", "/work/print"} {
+	for _, p := range []string{"/queue/yes", "/queue/none", "/work/print"} {
 		if r := postForm(t, h, p, url.Values{"key": {key}, "route": {"D"}}); r.Code != http.StatusConflict {
 			t.Fatalf("%s on a sent card = %d, want 409", p, r.Code)
 		}
@@ -300,7 +282,7 @@ func TestDecideFlow(t *testing.T) {
 	newer := addQueued(t, st, "DL2ZZZ", "20240103")
 
 	body := get(t, h, "/decide").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="wb"`, "/queue/yes?key=", "work=1"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL2ZZZ", "card 1 of 2", `data-key="y"`, `data-key="n"`, "/queue/yes?key=", "work=1"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/decide missing %q; body:\n%s", want, body)
 		}
@@ -345,21 +327,6 @@ func TestDecideBrowse(t *testing.T) {
 	}
 }
 
-func TestBackReturnsToQueue(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
-	if r := postForm(t, h, "/queue/back", url.Values{"key": {key}}); r.Code != 200 {
-		t.Fatalf("back = %d: %s", r.Code, r.Body)
-	}
-	if it := status(t, st, key); it.Status != "queued" || it.DesiredMethod != "" {
-		t.Fatalf("after back: %+v", it)
-	}
-	if !strings.Contains(get(t, h, "/queue").Body.String(), "row-"+key) {
-		t.Fatal("card missing from the Inbox after back")
-	}
-}
-
 // TestWorkQueue: Desk cards are grouped by the route offered first (recorded,
 // else the QRZ suggestion); one card at a time with an optional filter.
 func TestWorkQueue(t *testing.T) {
@@ -387,13 +354,13 @@ func TestWorkQueue(t *testing.T) {
 	if iO < 0 || iD < iO || iM < iD || iB < iM {
 		t.Fatalf("/work groups must read Not chosen yet, Direct, Via manager, Bureau:\n%s", list)
 	}
-	if !strings.Contains(list, `form="batch" value="K2ABC"`) || !strings.Contains(list, `form="batch" value="MD"`) || !strings.Contains(list, "Via manager, direct K2ABC") {
+	if !strings.Contains(list, "Via manager, direct K2ABC") || strings.Contains(list, `name="keys"`) || strings.Contains(list, "/queue/batch") {
 		t.Fatalf("/work must preselect the suggested manager route:\n%s", list)
 	}
 
 	// Card view: full page, newest Desk card first, its suggested route preselected.
 	page := get(t, h, "/work/card").Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "suggested: by QRZ", "/work/print?view=work", `data-key="p"`, "QRZ:"} {
+	for _, want := range []string{"<!DOCTYPE html>", "DL4WWW", "card 1 of 4", `id="workcard"`, `data-route="B"`, `value="B" data-key="b" checked`, "Preselected by QRZ:", "/work/print?view=work", `data-key="p"`, "QRZ:"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/work/card missing %q:\n%s", want, page)
 		}
@@ -412,10 +379,11 @@ func TestWorkQueue(t *testing.T) {
 	}
 }
 
-// TestWorkPrintMarksSentAndPending: printing a Desk card completes it: it is
-// marked sent with the chosen route, waits for push-back, and the next card
-// shows.
-func TestWorkPrintMarksSentAndPending(t *testing.T) {
+// TestWorkPrintQueueRunConfirm: "To print" puts a Desk card into the print
+// queue (nothing printed, nothing sent yet) and shows the next card; a print
+// run prints every queued card as one job; only confirming the run marks
+// them sent with their route, for push-back.
+func TestWorkPrintQueueRunConfirm(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	fp := srv.printer.(*fakePrinter)
 	h := srv.Routes()
@@ -423,52 +391,240 @@ func TestWorkPrintMarksSentAndPending(t *testing.T) {
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
 
-	r := postForm(t, h, "/work/print", url.Values{"key": {k2}, "route": {"B"}, "view": {"work"}})
+	r := postForm(t, h, "/work/print", url.Values{"key": {k2}, "route": {"B"}, "cardnote": {" tnx QSO "}, "view": {"work"}})
 	if r.Code != 200 || strings.Contains(r.Body.String(), "<!DOCTYPE") {
-		t.Fatalf("print = %d:\n%s", r.Code, r.Body)
+		t.Fatalf("to print = %d:\n%s", r.Code, r.Body)
 	}
 	if !strings.Contains(r.Body.String(), "DL1ABC") || strings.Contains(r.Body.String(), "DL2ZZZ") {
 		t.Fatalf("work card did not advance to the next card:\n%s", r.Body)
 	}
-	if len(fp.printed) != 1 {
-		t.Fatalf("printer called %d times, want 1", len(fp.printed))
+	if it := status(t, st, k2); it.Status != "toprint" || it.DesiredMethod != "B" || it.CardNote != "tnx QSO" || it.PrintedAt.Valid {
+		t.Fatalf("after to print: %+v", it)
 	}
-	it := status(t, st, k2)
-	if it.Status != "sent" || it.DesiredMethod != "B" || !it.PrintedAt.Valid {
-		t.Fatalf("after print: %+v", it)
+	if len(fp.printed) != 0 {
+		t.Fatalf("to print reached the printer %d times", len(fp.printed))
 	}
-	q, _ := st.GetQSO(k2)
-	if q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "B" {
-		t.Fatalf("local sent state = %v/%v, want Y/B", q.QSLSentLocal, q.QSLSentMethodLocal)
-	}
-	if pend, _ := st.PendingPushBack(); len(pend) != 1 || pend[0].QSLKey != k2 {
-		t.Fatalf("pending push-back = %v", pend)
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("a queued card is pending push-back: %v", pend)
 	}
 
-	// The last card lands on the empty state.
+	// The last card lands on the empty state; the print queue shows both.
 	r = postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}})
 	if !strings.Contains(r.Body.String(), "Nothing to write or print") {
 		t.Fatalf("empty Desk:\n%s", r.Body)
 	}
+	body := get(t, h, "/work/printq").Body.String()
+	for _, want := range []string{"<!DOCTYPE html>", `id="printq"`, "To print", "Print 2 card(s)", "tnx QSO", "/work/unprint", `id="printq-view" href="/work/printq" class="on busy"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("/work/printq missing %q:\n%s", want, body)
+		}
+	}
+	// The Desk pages carry only the band's button with the count (VISION B5, 2026-10-06).
+	for _, p := range []string{"/work", "/work/card"} {
+		b := get(t, h, p).Body.String()
+		if strings.Contains(b, `id="printq"`) || !strings.Contains(b, `href="/work/printq"`) || !strings.Contains(b, `<span class="cnt">2</span>`) {
+			t.Fatalf("%s must show the Print queue button with its count and nothing more of the queue:\n%s", p, b)
+		}
+	}
+	if b := get(t, h, "/work/printq?badge=1").Body.String(); !strings.Contains(b, `<span class="cnt">2</span>`) || strings.Contains(b, "<!DOCTYPE") {
+		t.Fatalf("badge fragment:\n%s", b)
+	}
+	if b := getHX(t, h, "/work/printq").Body.String(); !strings.Contains(b, `id="printq"`) || strings.Contains(b, "<!DOCTYPE") {
+		t.Fatalf("htmx fragment:\n%s", b)
+	}
+
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != 200 || !strings.Contains(r.Body.String(), "All fine - sent") {
+		t.Fatalf("print run = %d:\n%s", r.Code, r.Body)
+	}
+	if len(fp.printed) != 1 {
+		t.Fatalf("printer called %d times, want 1 job for the run", len(fp.printed))
+	}
+	for _, k := range []string{key, k2} {
+		if it := status(t, st, k); it.Status != "printing" || !it.PrintedAt.Valid {
+			t.Fatalf("after the run: %+v", it)
+		}
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 0 {
+		t.Fatalf("an unconfirmed run is pending push-back: %v", pend)
+	}
+	// One run at a time.
+	k3 := addQueued(t, st, "DL3AAA", "20240104")
+	postForm(t, h, "/queue/yes", url.Values{"key": {k3}})
+	postForm(t, h, "/work/print", url.Values{"key": {k3}, "route": {"B"}})
+	if r := postForm(t, h, "/work/printrun", url.Values{}); r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "not confirmed") {
+		t.Fatalf("second run = %d: %s", r.Code, r.Body)
+	}
+
+	if r := postForm(t, h, "/work/printconfirm", url.Values{}); r.Code != 200 {
+		t.Fatalf("confirm = %d: %s", r.Code, r.Body)
+	}
+	it := status(t, st, k2)
+	q, _ := st.GetQSO(k2)
+	if it.Status != "sent" || it.DesiredMethod != "B" || !it.PrintedAt.Valid || q.QSLSentLocal.String != "Y" || q.QSLSentMethodLocal.String != "B" {
+		t.Fatalf("after confirm: %+v / %v %v", it, q.QSLSentLocal, q.QSLSentMethodLocal)
+	}
+	if it := status(t, st, key); it.Status != "sent" || it.DesiredMethod != "D" {
+		t.Fatalf("after confirm: %+v", it)
+	}
+	if pend, _ := st.PendingPushBack(); len(pend) != 2 {
+		t.Fatalf("pending push-back = %d, want 2", len(pend))
+	}
+	if it := status(t, st, k3); it.Status != "toprint" {
+		t.Fatalf("the card queued during the run: %+v", it)
+	}
 }
 
-// TestWorkPrintFailureKeepsCardDecided: a printer error must not complete the
-// card - it stays on the Desk.
-func TestWorkPrintFailureKeepsCardDecided(t *testing.T) {
+// TestExportRun: instead of printing, the print queue goes into one ADIF file
+// for a QSL print service (nothing reaches the printer); the run is checked
+// and confirmed like a printed one, single cards can be exported again, and
+// the file can be downloaded.
+func TestExportRun(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	fp := srv.printer.(*fakePrinter)
+	h := srv.Routes()
+	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
+	postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}, "cardnote": {"Tnx QSO"}})
+	postForm(t, h, "/work/print", url.Values{"key": {k2}, "route": {"MD"}, "manager": {"K2ABC"}})
+
+	r := postForm(t, h, "/work/exportrun", url.Values{})
+	if r.Code != 200 || !strings.Contains(r.Header().Get("HX-Trigger"), ".adi") {
+		t.Fatalf("export run = %d, trigger %q: %s", r.Code, r.Header().Get("HX-Trigger"), r.Body)
+	}
+	if len(fp.printed) != 0 {
+		t.Fatalf("an export reached the printer %d times", len(fp.printed))
+	}
+	for _, k := range []string{key, k2} {
+		if it := status(t, st, k); it.Status != "printing" {
+			t.Fatalf("after the export: %+v", it)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(srv.cfg.Card.ExportDir, "*.adi"))
+	if len(files) != 1 {
+		t.Fatalf("export files = %v", files)
+	}
+	raw, _ := os.ReadFile(files[0])
+	adi := string(raw)
+	for _, want := range []string{"<PROGRAMID:8>qslotter", "<EOH>", "<CALL:6>DL1ABC", "<QSLMSG:7>Tnx QSO", "<QSL_SENT_VIA:1>B",
+		"<CALL:6>DL2ZZZ", "<QSL_VIA:5>K2ABC", "<QSL_SENT_VIA:1>D", "<STATION_CALLSIGN:5>DL9ET", "<RST_SENT:3>599"} {
+		if !strings.Contains(adi, want) {
+			t.Fatalf("ADIF missing %q:\n%s", want, adi)
+		}
+	}
+	if strings.Count(adi, "<EOR>") != 2 || strings.Index(adi, "DL2ZZZ") > strings.Index(adi, "DL1ABC") {
+		t.Fatalf("one record per QSO, direct before bureau:\n%s", adi)
+	}
+	name := filepath.Base(files[0])
+	pq := get(t, h, "/work/printq").Body.String()
+	if !strings.Contains(pq, "Exported for the print service") || !strings.Contains(pq, name) || !strings.Contains(pq, "Export ticked again") {
+		t.Fatalf("run panel after an export:\n%s", pq)
+	}
+	if d := get(t, h, "/work/export?name="+url.QueryEscape(name)); d.Code != 200 || d.Body.String() != adi || !strings.Contains(d.Header().Get("Content-Disposition"), name) {
+		t.Fatalf("download = %d %q", d.Code, d.Header().Get("Content-Disposition"))
+	}
+	for _, bad := range []string{"../qslotter.db", "x.db", ""} {
+		if d := get(t, h, "/work/export?name="+url.QueryEscape(bad)); d.Code != http.StatusBadRequest {
+			t.Fatalf("download %q = %d, want 400", bad, d.Code)
+		}
+	}
+
+	if r := postForm(t, h, "/work/reprint?how=export", url.Values{"lead": {k2}, "card:" + k2: {k2}}); r.Code != 200 {
+		t.Fatalf("export again = %d: %s", r.Code, r.Body)
+	}
+	if files, _ := filepath.Glob(filepath.Join(srv.cfg.Card.ExportDir, "*.adi")); len(files) != 2 {
+		t.Fatalf("export again: files = %v", files)
+	}
+	printAllConfirm := postForm(t, h, "/work/printconfirm", url.Values{})
+	if printAllConfirm.Code != 200 {
+		t.Fatalf("confirm = %d", printAllConfirm.Code)
+	}
+	if it := status(t, st, k2); it.Status != "sent" || it.SendVia != "D" || it.Manager != "K2ABC" {
+		t.Fatalf("confirmed export: %+v", it)
+	}
+	if v, _ := st.MetaGet("print_run_export"); v != "" {
+		t.Fatalf("the confirmed run's export is still remembered: %q", v)
+	}
+}
+
+// TestSettingsShowsBuild: Settings names the running build.
+func TestSettingsShowsBuild(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	if b := get(t, srv.Routes(), "/settings").Body.String(); !strings.Contains(b, `id="build"`) || !strings.Contains(b, "Version ") || !strings.Contains(b, "built ") {
+		t.Fatalf("settings without the build:\n%s", b)
+	}
+}
+
+// TestPrintRunFailureBackToQueue: a printer error puts the run back into the
+// print queue - nothing counts as printed or sent.
+func TestPrintRunFailureBackToQueue(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	srv.printer = &fakePrinter{err: fmt.Errorf("lp: no default destination")}
 	h := srv.Routes()
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}})
 
-	r := postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}, "view": {"work"}})
-	if r.Code != http.StatusInternalServerError || !strings.Contains(r.Body.String(), "no default destination") {
-		t.Fatalf("failed print = %d: %s", r.Code, r.Body)
+	r := postForm(t, h, "/work/printrun", url.Values{})
+	if r.Code != http.StatusBadGateway || !strings.Contains(r.Body.String(), "no default destination") {
+		t.Fatalf("failed run = %d: %s", r.Code, r.Body)
 	}
-	if it := status(t, st, key); it.Status != "decided" || it.PrintedAt.Valid {
-		t.Fatalf("failed print changed the card: %+v", it)
+	if it := status(t, st, key); it.Status != "toprint" {
+		t.Fatalf("failed run left the card: %+v", it)
 	}
 	if q, _ := st.GetQSO(key); q.QSLSentLocal.Valid {
-		t.Fatalf("failed print marked the QSO sent: %v", q.QSLSentLocal)
+		t.Fatalf("failed run marked the QSO sent: %v", q.QSLSentLocal)
+	}
+}
+
+// TestReprintAndBack: ticked cards of the open run are printed again (one
+// job, they stay in the run) or taken back to the print queue; a card in the
+// print queue goes back to the Desk with its route and note preselected.
+func TestReprintAndBack(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	fp := srv.printer.(*fakePrinter)
+	h := srv.Routes()
+	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
+	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
+	postForm(t, h, "/queue/yes", url.Values{"key": {k2}})
+	postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"D"}})
+	postForm(t, h, "/work/print", url.Values{"key": {k2}, "route": {"MB"}, "manager": {"K2ABC"}, "cardnote": {"pse QSL"}})
+	postForm(t, h, "/work/printrun", url.Values{})
+
+	if r := postForm(t, h, "/work/reprint", url.Values{"lead": {k2}, "card:" + k2: {k2}}); r.Code != 200 {
+		t.Fatalf("reprint = %d: %s", r.Code, r.Body)
+	}
+	if len(fp.printed) != 2 || status(t, st, k2).Status != "printing" {
+		t.Fatalf("reprint: %d jobs, %+v", len(fp.printed), status(t, st, k2))
+	}
+	if r := postForm(t, h, "/work/reprint", url.Values{}); r.Code != http.StatusBadRequest {
+		t.Fatalf("reprint of nothing = %d", r.Code)
+	}
+	if r := postForm(t, h, "/work/printback", url.Values{"lead": {k2}, "card:" + k2: {k2}}); r.Code != 200 {
+		t.Fatalf("back to the print queue = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, k2); it.Status != "toprint" {
+		t.Fatalf("after back: %+v", it)
+	}
+	if r := postForm(t, h, "/work/unprint", url.Values{"key": {k2}}); r.Code != 200 {
+		t.Fatalf("unprint = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, k2); it.Status != "decided" || it.Manager != "K2ABC" || it.CardNote != "pse QSL" {
+		t.Fatalf("after unprint: %+v", it)
+	}
+	card := get(t, h, "/work/card?key="+url.QueryEscape(k2)).Body.String()
+	for _, want := range []string{`value="MB" data-key="v" checked`, `value="K2ABC"`, `value="pse QSL"`} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("Desk card after unprint missing %q:\n%s", want, card)
+		}
+	}
+	if r := postForm(t, h, "/work/reprint", url.Values{"lead": {k2}}); r.Code != http.StatusConflict {
+		t.Fatalf("reprint of a Desk card = %d, want 409", r.Code)
+	}
+	if r := postForm(t, h, "/work/printconfirm", url.Values{}); r.Code != 200 {
+		t.Fatalf("confirm = %d: %s", r.Code, r.Body)
+	}
+	if it := status(t, st, key); it.Status != "sent" {
+		t.Fatalf("confirmed: %+v", it)
 	}
 }
 
@@ -519,12 +675,13 @@ func TestPrintFindsOldQSO(t *testing.T) {
 	if r := postForm(t, h, "/work/print", url.Values{"key": {old.QSLKey}, "route": {"B"}}); r.Code != 200 {
 		t.Fatalf("print old QSO = %d: %s", r.Code, r.Body)
 	}
+	printAll(t, h)
 	if len(fp.printed) != 1 {
 		t.Fatalf("printer called %d times, want 1", len(fp.printed))
 	}
 }
 
-func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
+func TestWorkWrittenRecordsRoute(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	k2 := addQueued(t, st, "DL2ZZZ", "20240103")
@@ -539,19 +696,15 @@ func TestWorkWrittenRecordsRouteAndBack(t *testing.T) {
 	if it.Status != "sent" || it.DesiredMethod != "D" || q.QSLSentMethodLocal.String != "D" || it.PrintedAt.Valid || it.Note != "" {
 		t.Fatalf("written records the chosen route: %+v / %v", it, q.QSLSentMethodLocal)
 	}
-	if r := postForm(t, h, "/queue/back", url.Values{"key": {k2}, "view": {"work"}}); r.Code != 200 {
-		t.Fatalf("back in work view = %d", r.Code)
-	}
-	if it := status(t, st, k2); it.Status != "queued" || it.DesiredMethod != "" {
-		t.Fatalf("after back: %+v", it)
-	}
 }
 
 func TestDoneAndReopen(t *testing.T) {
 	srv, st, key := newTestServer(t)
 	h := srv.Routes()
 	kn := addQueued(t, st, "DL2ZZZ", "20240103")
-	postForm(t, h, "/queue/written", url.Values{"key": {key}, "route": {"B"}})
+	if err := st.QueueWrittenNow([]string{key}, store.Route{Method: "B"}); err != nil { // written during the QSO (older builds)
+		t.Fatal(err)
+	}
 	postForm(t, h, "/queue/none", url.Values{"key": {kn}})
 
 	body := get(t, h, "/done").Body.String()
@@ -576,6 +729,7 @@ func TestDoneAndReopen(t *testing.T) {
 	// Reopening a card Clublog already has as sent warns the operator.
 	postForm(t, h, "/queue/yes", url.Values{"key": {key}})
 	postForm(t, h, "/work/print", url.Values{"key": {key}, "route": {"B"}})
+	printAll(t, h)
 	pend, _ := st.PendingPushBack()
 	if err := st.MarkPushed(pend[0]); err != nil {
 		t.Fatal(err)
@@ -744,48 +898,6 @@ func TestQueueRowOnlyForUndecided(t *testing.T) {
 	}
 }
 
-// TestBatchActions: the Desk list applies one action to many ticked cards;
-// the Inbox has no batch (a yes/no is as quick as ticking).
-func TestBatchActions(t *testing.T) {
-	srv, st, key := newTestServer(t)
-	h := srv.Routes()
-	q2 := addQueued(t, st, "DL2ZZZ", "20240103")
-	for _, k := range []string{key, q2} {
-		postForm(t, h, "/queue/yes", url.Values{"key": {k}})
-		if it := status(t, st, k); it.Status != "decided" {
-			t.Fatalf("%s after yes: %+v", k, it)
-		}
-	}
-
-	// No batch in the Inbox, whatever the action.
-	for _, a := range []string{"yes", "none", "B", "print"} {
-		if r := postForm(t, h, "/queue/batch", url.Values{"action": {a}, "keys": {key}}); r.Code != http.StatusBadRequest {
-			t.Fatalf("Inbox batch %q = %d, want 400", a, r.Code)
-		}
-	}
-	if it := status(t, st, key); it.Status != "decided" {
-		t.Fatalf("a refused batch touched the card: %+v", it)
-	}
-
-	// Desk batches use each row's route field; a row without a route fails.
-	fp := srv.printer.(*fakePrinter)
-	r := postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"print"}, "keys": {key, q2},
-		"route:" + key: {"MD"}, "manager:" + key: {"K2ABC"}})
-	if r.Header().Get("Location") != "/work?done=1&failed=1" || len(fp.printed) != 1 {
-		t.Fatalf("batch print = %q, printed %d", r.Header().Get("Location"), len(fp.printed))
-	}
-	if it := status(t, st, key); it.Status != "sent" || !it.PrintedAt.Valid || it.DesiredMethod != "M" || it.SendVia != "D" || it.Manager != "K2ABC" {
-		t.Fatalf("batch print: %+v", it)
-	}
-	if it := status(t, st, q2); it.Status != "decided" {
-		t.Fatalf("a card without a route must stay on the Desk: %+v", it)
-	}
-	r = postForm(t, h, "/queue/batch", url.Values{"list": {"work"}, "action": {"back"}, "keys": {q2}})
-	if it := status(t, st, q2); it.Status != "queued" {
-		t.Fatalf("batch back = %q: %+v", r.Header().Get("Location"), it)
-	}
-}
-
 // TestPortableCallActions: keys with "/" (portable calls) must reach the
 // action handlers - they take the key as a query/form value, not a path
 // segment, so the slash cannot break routing.
@@ -805,6 +917,17 @@ func TestPortableCallActions(t *testing.T) {
 	}
 	if r := postForm(t, h, "/work/print", url.Values{"key": {q.QSLKey}, "route:" + q.QSLKey: {"D"}}); r.Code != 200 {
 		t.Fatalf("print for portable key = %d: %s", r.Code, r.Body)
+	}
+	if r := postForm(t, h, "/work/unprint", url.Values{"key": {q.QSLKey}}); r.Code != 200 {
+		t.Fatalf("unprint for portable key = %d: %s", r.Code, r.Body)
+	}
+	postForm(t, h, "/work/print", url.Values{"key": {q.QSLKey}, "route": {"D"}})
+	postForm(t, h, "/work/printrun", url.Values{})
+	if r := postForm(t, h, "/work/reprint", url.Values{"lead": {q.QSLKey}}); r.Code != 200 {
+		t.Fatalf("reprint for portable key = %d: %s", r.Code, r.Body)
+	}
+	if r := postForm(t, h, "/work/printconfirm", url.Values{}); r.Code != 200 {
+		t.Fatalf("confirm = %d: %s", r.Code, r.Body)
 	}
 	if item, _ := st.QueueGet(q.QSLKey); item == nil || item.Status != "sent" {
 		t.Fatalf("portable key did not complete: %+v", item)
@@ -889,9 +1012,9 @@ func TestDecideCardShowsResearch(t *testing.T) {
 
 	body := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String()
 	for _, want := range []string{
-		"earlier QSO(s) with this station", // history
-		"card already sent 2023-05-02",     // effective sent
-		"their card received 2023-06-10",   // received: reply is due
+		"2 earlier QSOs, last 2024-01-02", // history
+		"card already sent 2023-05-02",    // effective sent
+		"their card received 2023-06-10",  // received: reply is due
 		"LoTW confirmed",
 		"more QSO(s) with DL1ABC wait in New QSOs",
 		"EA8/DL1ABC",                // portable spelling in the history table

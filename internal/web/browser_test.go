@@ -101,6 +101,7 @@ func newBrowserEnv(t *testing.T, setup ...func(*Server)) *browserEnv {
 	}
 	t.Cleanup(func() { st.Close() })
 	cfg := &config.Config{}
+	cfg.Card.ExportDir = t.TempDir()
 	cfg.Clublog.Call = "DL9ET"
 	cfg.UI.Language = "en" // not the language of the machine's Chrome
 	srv, err := New(cfg, st, events.New(), "", nil)
@@ -333,33 +334,21 @@ func TestKeysInboxDecide(t *testing.T) {
 	e.waitFor("the empty Inbox", decideKey+` === ''`)
 }
 
-// TestKeysInboxWrittenNow: w arms "written now" and b/d picks the route; any
-// other key only disarms (w then n is no "no card"), so a slip decides
-// nothing. Modifier keys are left to the browser.
-func TestKeysInboxWrittenNow(t *testing.T) {
+// TestKeysInboxIgnored: modifier keys are left to the browser, and keys
+// without a button (w, b, d) decide nothing.
+func TestKeysInboxIgnored(t *testing.T) {
 	e := newBrowserEnv(t)
 	k := addQueued(t, e.st, "DL1AAA", "20240101")
 	e.open("/decide?key=" + url.QueryEscape(k))
-	armed := `document.querySelector('#decide .written-now.armed')`
 
 	e.key("n", input.ModifierCtrl)
 	e.key("y", input.ModifierMeta)
 	e.key("w")
-	e.waitFor("w to arm", armed)
-	e.key("n")
-	e.waitFor("n to disarm", `!`+armed)
-	e.key("b") // not armed any more: b alone does nothing on the Inbox card
+	e.key("b")
+	e.key("d")
 	e.still("an untouched card", decideKey+` === `+js(k))
 	if it := status(t, e.st, k); it.Status != "queued" {
-		t.Fatalf("modifiers, a disarmed w or a lone b decided the card: %+v", it)
-	}
-
-	e.key("w")
-	e.waitFor("w to arm", armed)
-	e.key("d")
-	it := e.waitStatus(k, "sent")
-	if it.Note != "written now" || it.DesiredMethod != "D" {
-		t.Errorf("w d = %+v, want written now, direct", it)
+		t.Fatalf("modifiers or w/b/d decided the card: %+v", it)
 	}
 }
 
@@ -388,6 +377,46 @@ func TestKeysDeskRoute(t *testing.T) {
 	if it.DesiredMethod != "M" || it.Manager != "K2ABC" || it.SendVia != "D" {
 		t.Errorf("written card = %+v, want via manager K2ABC, direct", it)
 	}
+}
+
+// TestDeskPrintQueue: p puts the card into the print queue (with its note) -
+// the band's button counts it live -, on the Print queue view Print sends the
+// run, the confirmation sends the cards and empties the view; a card sent to
+// print elsewhere shows up live.
+func TestDeskPrintQueue(t *testing.T) {
+	e := newBrowserEnv(t)
+	k := e.decided("DL4DDD", "20240104")
+	k2 := e.decided("DL5EEE", "20240105")
+	e.open("/work?key=" + url.QueryEscape(k))
+	pq := `(document.querySelector('#printq') || {textContent: ''})`
+
+	e.click(`#workcard input[name="cardnote"]`)
+	e.key("tnx")
+	e.key(kb.Escape)
+	e.key("b")
+	e.key("p")
+	it := e.waitStatus(k, "toprint")
+	if it.DesiredMethod != "B" || it.CardNote != "tnx" {
+		t.Errorf("queued card = %+v, want bureau with the note", it)
+	}
+	badge := `((document.getElementById('printq-view') || {textContent: ''}).textContent)`
+	e.waitFor("the band's count", badge+`.indexOf('1') >= 0`)
+	e.open("/work/printq")
+	e.waitFor("the card in the print queue", pq+`.textContent.indexOf('DL4DDD') >= 0 && `+pq+`.textContent.indexOf('tnx') >= 0`)
+
+	e.elsewhere("/work/print", url.Values{"key": {k2}, "route": {"D"}})
+	e.waitFor("the other window's card", pq+`.textContent.indexOf('DL5EEE') >= 0`)
+
+	e.click(`#printq button[hx-post="/work/printrun"]`)
+	e.waitStatus(k, "printing")
+	e.waitFor("the run to check", `!!document.querySelector('#printq-run input[name="lead"]')`)
+	if n := len(e.srv.printer.(*fakePrinter).printed); n != 1 {
+		t.Errorf("printer called %d times, want one job", n)
+	}
+	e.click(`#printq button[hx-post="/work/printconfirm"]`)
+	e.waitStatus(k, "sent")
+	e.waitStatus(k2, "sent")
+	e.waitFor("the print queue gone", `document.querySelector('#printq').hidden && !document.getElementById('printq-empty').hidden`)
 }
 
 // TestKeysDeskRequest: r opens the request with the note focused (typing it
@@ -669,8 +698,8 @@ func TestReceiveReplyLaterAndNotNow(t *testing.T) {
 // doing nothing, and a server that is gone says so - in the UI language.
 func TestToastOnError(t *testing.T) {
 	for _, c := range []struct{ lang, failed, offline string }{
-		{"en", "Error 500: ", "Network error - is the qslotter server running?"},
-		{"de", "Fehler 500: ", "Netzwerkfehler - läuft der qslotter-Server?"},
+		{"en", "Error 502: Printing failed (printer offline) - the cards wait in the print queue.", "Network error - is the qslotter server running?"},
+		{"de", "Fehler 502: Drucken fehlgeschlagen (printer offline) - die Karten warten in der Druckliste.", "Netzwerkfehler - läuft der qslotter-Server?"},
 	} {
 		t.Run(c.lang, func(t *testing.T) {
 			e := newBrowserEnv(t, func(srv *Server) {
@@ -678,17 +707,21 @@ func TestToastOnError(t *testing.T) {
 				srv.printer = &fakePrinter{err: errors.New("printer offline")}
 			})
 			k := e.decided("DL4DDD", "20240104")
-			e.open("/work/card?key=" + url.QueryEscape(k))
+			e.open("/work?key=" + url.QueryEscape(k))
 			toast := `((document.querySelector('.toast.show') || {}).textContent || '')`
 
 			e.key("dp")
-			e.waitFor("the error toast", toast+` === `+js(c.failed+"printer offline"))
-			if it := status(t, e.st, k); it.Status != "decided" {
-				t.Errorf("a failed print moved the card: %+v", it)
+			e.waitStatus(k, "toprint")
+			e.open("/work/printq")
+			e.waitFor("the print queue", `!!document.querySelector('#printq:not([hidden]) button[hx-post="/work/printrun"]')`)
+			e.click(`#printq button[hx-post="/work/printrun"]`)
+			e.waitFor("the error toast", toast+` === `+js(c.failed))
+			if it := status(t, e.st, k); it.Status != "toprint" {
+				t.Errorf("a failed print run moved the card: %+v", it)
 			}
 
 			e.stopServer()
-			e.key("w")
+			e.click(`#printq button[hx-post="/work/printrun"]`)
 			e.waitFor("the network error toast", toast+` === `+strconv.QuoteToASCII(c.offline))
 		})
 	}

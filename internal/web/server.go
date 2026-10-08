@@ -47,7 +47,6 @@ type Server struct {
 	rules      *qualify.Rules
 	refresher  *station.Refresher // shared with main (also used by the UDP listener)
 	printer    printer.Printer
-	pq         *printQueue                   // the print list (printq.go)
 	tmpls      map[string]*template.Template // per UI language
 	assessMu   sync.Mutex
 	assessMemo map[string]*qsldetermine.Result // see classifyFor
@@ -84,6 +83,11 @@ func (s *Server) config() *config.Config {
 	return s.cfg
 }
 
+// Rules are the qualifier rules of the server. main hands the same instance to
+// the UDP listener and the sync loop, so a filter switched under Settings
+// applies to every path at once.
+func (s *Server) Rules() *qualify.Rules { return s.rules }
+
 // New wires the web server. refresher is shared with main (the UDP listener
 // uses the same instance, so credential changes apply to both paths); pass
 // nil when QRZ is not configured. cfgPath is the config file the settings
@@ -98,7 +102,6 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 		rules:     rules,
 		refresher: refresher,
 		printer:   printer.New(),
-		pq:        newPrintQueue(),
 		now:       time.Now,
 		clublogFn: func(c config.ClublogCfg) *clublog.Client {
 			return clublog.New(c.Email, c.AppPassword, c.Call, c.APIKey)
@@ -121,8 +124,7 @@ func New(cfg *config.Config, st store.Store, broker *events.Broker, cfgPath stri
 			}
 			return ""
 		},
-		"yn":        yn,
-		"printJobs": srv.pq.snapshot,
+		"yn": yn,
 		// translation (VISION D3), bound per language below
 		"t":    func(text string, args ...any) string { return text },
 		"tm":   func(m i18n.Msg) string { return m.String() },
@@ -266,41 +268,40 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/settings/cards/image", s.postCardsImage) // multipart "image": the card scan shown behind the fields
 	r.Post("/settings/cards/image/delete", s.postCardsImageDelete)
 	r.Post("/settings/cards/offset", s.postCardsOffset) // x=, y=: printer.offset_mm
+	r.Post("/settings/cards/media", s.postCardsMedia)   // paper=, tray=: printer.paper, printer.tray
 	r.Post("/settings/cards/test", s.htmxCardsTest)     // JSON layout: print a test card with the mm ruler
 	r.Post("/settings/cards/pdf", s.htmxCardsPDF)       // JSON layout: the card as a PDF
 	// Card actions take ?key=... (form/query value): keys contain "|" and
 	// portable calls contain "/", which would break {key} path segments.
 	r.Post("/queue/yes", s.htmxQueueYes)
 	r.Post("/queue/none", s.htmxQueueNone)
-	r.Post("/queue/written", s.htmxQueueWritten)
-	r.Post("/queue/back", s.htmxQueueBack)
 	r.Post("/queue/reopen", s.htmxQueueReopen)
-	r.Post("/queue/batch", s.batchQueue)
-	r.Post("/work/print", s.htmxWorkPrint) // Desk card actions take key=... once per QSO on the card
+	r.Post("/work/print", s.htmxWorkPrint)           // Desk card actions take key=... once per QSO on the card; print = to the print queue
+	r.Get("/work/printq", s.pagePrintQueue)          // the Print queue view; htmx: the section alone; ?badge=1: the band button
+	r.Post("/work/printrun", s.htmxPrintRun)         // print every queued card as one job, open the run
+	r.Post("/work/exportrun", s.htmxExportRun)       // instead: every queued card into one ADIF file for a print service
+	r.Get("/work/export", s.htmxExportFile)          // ?name=qsl-....adi: download an exported file
+	r.Post("/work/printconfirm", s.htmxPrintConfirm) // the run came out right: its cards are sent
+	r.Post("/work/reprint", s.htmxReprint)           // lead=... (+ card:<lead>=key ...): print these again (how=export: export again)
+	r.Post("/work/printback", s.htmxPrintBack)       // lead=...: from the run back to the print queue
+	r.Post("/work/unprint", s.htmxUnprint)           // key=...: from the print queue back to the Desk
 	r.Post("/work/written", s.htmxWorkWritten)
 	r.Post("/work/requested", s.htmxWorkRequested)
 	r.Post("/work/none", s.htmxWorkNone)
-	r.Post("/work/back", s.htmxWorkBack)
 	r.Get("/work/manager", s.htmxWorkManager) // ?manager=CALL: who a manager card goes to
 	r.Get("/work/preview", s.htmxWorkPreview) // key=... per QSO, route=, manager=: the card as a PDF
-	r.Get("/work/printq", s.htmxPrintQueue)   // the print list (live refresh)
-	r.Post("/work/printq/retry", s.htmxPrintRetry)
-	r.Post("/work/printq/sent", s.htmxPrintMarkSent)
-	r.Post("/work/printq/dismiss", s.htmxPrintDismiss)
-	r.Post("/work/printq/clear", s.htmxPrintClear)
-	r.Get("/nav", s.htmxNav) // nav bar fragment, refreshed by live.js
+	r.Get("/nav", s.htmxNav)                  // nav bar fragment, refreshed by live.js
 	r.Post("/api/open-external", s.apiOpenExternal)
 	r.Post("/api/quit", s.apiQuit)
 	r.Post("/sync/pull", s.htmxSyncPull)
 	r.Post("/sync/push", s.htmxSyncPush)
 	r.Get("/events", s.sseEvents)
-	r.Get("/queue/row", s.htmxQueueRow)              // ?key=... for SSE-driven fetch
-	r.Get("/queue/list", s.htmxQueueList)            // Inbox master list (live refresh)
-	r.Get("/queue/current", s.htmxCurrent)           // the QSO in progress (live refresh; ?compact=1)
-	r.Post("/current/written", s.htmxCurrentWritten) // call=, route=B|D: card written during the QSO
-	r.Post("/current/decide", s.htmxCurrentDecide)   // call=, decision=yes|no: card / no card during the QSO
-	r.Post("/current/cancel", s.htmxCurrentCancel)   // call=: drop a decision (the QSO may never be logged)
-	r.Get("/work/list", s.htmxWorkList)              // Desk master list (live refresh)
+	r.Get("/queue/row", s.htmxQueueRow)            // ?key=... for SSE-driven fetch
+	r.Get("/queue/list", s.htmxQueueList)          // Inbox master list (live refresh)
+	r.Get("/queue/current", s.htmxCurrent)         // the QSO in progress (live refresh; ?compact=1)
+	r.Post("/current/decide", s.htmxCurrentDecide) // call=, decision=yes|no: card / no card during the QSO
+	r.Post("/current/cancel", s.htmxCurrentCancel) // call=: drop a decision (the QSO may never be logged)
+	r.Get("/work/list", s.htmxWorkList)            // Desk master list (live refresh)
 	r.Post("/queue/recompute", s.htmxQueueRecompute)
 	r.Post("/station/refresh", s.htmxStationRefresh) // ?call=... (query: works for portable calls)
 	r.Handle("/static/*", staticHandler())

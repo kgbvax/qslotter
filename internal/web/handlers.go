@@ -88,8 +88,7 @@ type HistoryLine struct {
 // QSL statements, the history with the station and what happened to its cards.
 type Research struct {
 	Badges     []Badge
-	Prior      int    // earlier QSOs with the station (the history query's newest 12)
-	LastDate   string // date of the newest of them
+	Prior      int // earlier QSOs with the station (the history query's newest 12)
 	History    []HistoryLine
 	Others     int      // other cards of this station awaiting a decision or production
 	BioExcerpt string   // the QSL-relevant lines of the QRZ bio
@@ -301,6 +300,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	}
 	var (
 		prior                            int
+		lastDate                         string // QSO date (YYYYMMDD) of the newest earlier QSO
 		sentBadge, rcvdBad               *Badge
 		lotw                             bool
 		sameDesk, sameInbox, otherCallOp int
@@ -313,7 +313,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 		}
 		prior++
 		if prior == 1 {
-			res.LastDate = fmtDate(q.QSODate)
+			lastDate = q.QSODate
 		}
 		line := HistoryLine{Date: fmtDate(q.QSODate), Time: fmtTime(q.TimeOn), Call: q.Call, Band: q.Band, Mode: q.Mode,
 			LoTW: q.LoTWQSLRcvd == "Y", Queue: queueStateText(h.QueueStatus, h.DesiredMethod, h.Manager)}
@@ -352,7 +352,7 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	if prior == 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "first", Text: i18n.M("first QSO")})
 	} else {
-		res.Badges = append(res.Badges, Badge{Kind: "earlier", Text: i18n.M("%d earlier QSO(s) with this station", prior)})
+		res.Badges = append(res.Badges, Badge{Kind: "earlier", Text: earlierMsg(prior, lastDate, s.now())})
 	}
 	if sentBadge != nil {
 		res.Badges = append(res.Badges, *sentBadge)
@@ -374,6 +374,32 @@ func (s *Server) researchFor(row *QueueRow, sameCard ...string) {
 	if otherCallOp > 0 {
 		res.Badges = append(res.Badges, Badge{Kind: "info", Text: i18n.M("%d open QSO(s) under other calls of this station (%s) - separate card(s)", otherCallOp, strings.Join(otherCalls, ", "))})
 	}
+}
+
+// earlierMsg is the history badge: how many QSOs came before and how long ago
+// the last one was - in days up to a week, in weeks up to 30 days, then its date.
+func earlierMsg(n int, lastDate string, now time.Time) i18n.Msg {
+	var last any = fmtDate(lastDate)
+	if d, err := time.Parse("20060102", lastDate); err == nil {
+		now = now.UTC()
+		days := int(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Sub(d).Hours() / 24)
+		switch {
+		case days < 1:
+			last = i18n.M("today")
+		case days == 1:
+			last = i18n.M("1 day ago")
+		case days < 7:
+			last = i18n.M("%d days ago", days)
+		case days < 14:
+			last = i18n.M("1 week ago")
+		case days < 30:
+			last = i18n.M("%d weeks ago", days/7)
+		}
+	}
+	if n == 1 {
+		return i18n.M("1 earlier QSO, last %s", last)
+	}
+	return i18n.M("%d earlier QSOs, last %s", n, last)
 }
 
 // --- (a) decision queue: list ---
@@ -535,7 +561,14 @@ type DoneRow struct {
 	When    string
 }
 
-func outcomeOf(it *store.QueueItem) i18n.Msg {
+// outcomeOf spells out how a card ended; q (may be nil) tells whether a
+// requested card has arrived.
+func outcomeOf(it *store.QueueItem, q *store.QSO) i18n.Msg {
+	if it.Status == "requested" && q != nil {
+		if rcvd, date := q.EffectiveRcvd(); rcvd {
+			return i18n.M("their card requested via %s, received %s", i18n.M(it.Channel), fmtDate(date))
+		}
+	}
 	switch {
 	case it.Status == "skipped" && it.Note == "backlog":
 		return i18n.M("no card (backlog)")
@@ -548,8 +581,6 @@ func outcomeOf(it *store.QueueItem) i18n.Msg {
 		return i18n.M("their card requested via %s", i18n.M(it.Channel))
 	case it.Note == "sent elsewhere":
 		return i18n.M("sent elsewhere (per Clublog)")
-	case it.DesiredMethod == "W":
-		return i18n.M("written during the QSO")
 	}
 	how := i18n.M("written")
 	if it.PrintedAt.Valid {
@@ -595,7 +626,7 @@ func (s *Server) pageDone(w http.ResponseWriter, r *http.Request) {
 		if row.Item.SentAt.Valid {
 			when = row.Item.SentAt.String
 		}
-		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item), When: when})
+		done = append(done, DoneRow{Row: row, Outcome: outcomeOf(row.Item, row.QSO), When: when})
 	}
 	s.render(w, r, "done.html", map[string]any{"Rows": done, "Total": len(items)})
 }
@@ -756,7 +787,7 @@ func parseRoute(code, manager string) (store.Route, error) {
 }
 
 // routeFrom reads one card's route from the form: the per-row fields
-// route:<key> / manager:<key> (Desk list, also posted with its batch form),
+// route:<key> / manager:<key>,
 // else route= / manager=.
 func routeFrom(r *http.Request, key string) (store.Route, error) {
 	code, mgr := r.FormValue("route:"+key), r.FormValue("manager:"+key)
@@ -796,32 +827,6 @@ func (s *Server) htmxQueueNone(w http.ResponseWriter, r *http.Request) {
 	s.afterTransition(w, r, key, "skipped")
 }
 
-// htmxQueueWritten: the card was filled in by hand, with its route - written
-// now in the Inbox (bureau or direct) or written at the Desk.
-func (s *Server) htmxQueueWritten(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	rt, err := routeFrom(r, key)
-	if err != nil {
-		s.fail(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.store.QueueWrittenNow([]string{key}, rt); err != nil {
-		s.queueErr(w, r, err)
-		return
-	}
-	s.afterTransition(w, r, key, "sent")
-}
-
-// htmxQueueBack takes a decided card back to the decision queue.
-func (s *Server) htmxQueueBack(w http.ResponseWriter, r *http.Request) {
-	key := r.FormValue("key")
-	if err := s.store.QueueBack(key); err != nil {
-		s.queueErr(w, r, err)
-		return
-	}
-	s.afterTransition(w, r, key, "queued")
-}
-
 // htmxQueueReopen puts a finished card back into the decision queue.
 func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 	key := r.FormValue("key")
@@ -837,17 +842,6 @@ func (s *Server) htmxQueueReopen(w http.ResponseWriter, r *http.Request) {
 		s.notice(w, r, "Moved back to New QSOs. Clublog already has their card as requested (QSL_RCVD=R); that is not undone there.")
 	}
 	s.afterTransition(w, r, key, "queued")
-}
-
-// batchQueue applies one action to every ticked card of the Desk list and
-// redirects back with a done/failed count. The Inbox has no batch: deciding
-// a QSO is as quick as ticking it.
-func (s *Server) batchQueue(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("list") != "work" {
-		s.fail(w, r, http.StatusBadRequest, "unknown batch action for this list")
-		return
-	}
-	s.batchDesk(w, r, r.FormValue("action"), r.Form["keys"])
 }
 
 // --- sync handlers ---

@@ -32,15 +32,22 @@ printer:
   name: ""              # empty = system default
   command: ""           # auto-detect; on Windows, path to bundled SumatraPDF
   paper_size_mm: [140, 90]
+  paper: ""             # the printer's paper (form) by name, e.g. "QSL 140x90"; "" = the one of paper_size_mm
+                        # (Windows: add a form of the card's size under Print server properties > Forms)
+  rotate: 0             # 90 or 270 turns the card on its way to the printer (Windows), if it prints across the card
+  tray: ""              # paper source, e.g. "Manual Feed"; "" = the printer's default
+                        # (both chosen under Settings > Card layout on Windows)
   offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
                         # (measure a test card under Settings > Card layout)
 
 card:
   template: ""          # active card layout: cards/<name>.yaml, edited under Settings > Card layout;
                         # "" = the built-in layout
+  # export_dir: exports   # ADIF files for a QSL print service; default: "exports" next to the database
 
 qualify:
-  exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
+  include_digital: false      # true: FT8/FT4/FT2, FST4, JS8, WSPR, MSK144 enter the queue too (also under Settings)
+  exclude_modes: []           # further modes to skip (exact names); digital modes follow include_digital
   first_contact_only: false   # false: repeat contacts enter the queue, shown with their history
   override_marker: "QSL!"     # in a QSO's notes: force it into the queue (never if a card was already sent)
   since: ""                   # only QSOs on/after this date enter the queue. "" = the day qslotter first

@@ -269,7 +269,7 @@ func TestOutcomeTexts(t *testing.T) {
 		{store.QueueItem{Status: "requested", Channel: "OQRS", Note: "2 USD"}, "their card requested via OQRS: 2 USD"},
 		{store.QueueItem{Status: "requested", Channel: "PayPal"}, "their card requested via PayPal"},
 		{store.QueueItem{Status: "sent", Note: "sent elsewhere"}, "sent elsewhere (per Clublog)"},
-		{store.QueueItem{Status: "sent", DesiredMethod: "W"}, "written during the QSO"},
+		{store.QueueItem{Status: "sent", DesiredMethod: "W"}, "sent, written"}, // legacy: written without a route
 		{store.QueueItem{Status: "sent", DesiredMethod: "B", PrintedAt: printed}, "Bureau, printed"},
 		{store.QueueItem{Status: "sent", DesiredMethod: "D"}, "Direct, written"},
 		{store.QueueItem{Status: "sent", DesiredMethod: "D", Note: "written now"}, "Direct, written during the QSO"},
@@ -280,7 +280,7 @@ func TestOutcomeTexts(t *testing.T) {
 		{store.QueueItem{Status: "sent"}, "sent, written"},
 	} {
 		it := c.it
-		m := outcomeOf(&it)
+		m := outcomeOf(&it, nil)
 		if got := m.String(); got != c.want {
 			t.Errorf("%+v: %q, want %q", c.it, got, c.want)
 		}
@@ -291,6 +291,18 @@ func TestOutcomeTexts(t *testing.T) {
 		if len(missing) > 0 {
 			t.Errorf("%q: missing from the German catalogs: %q", c.want, missing)
 		}
+	}
+}
+
+// A request whose card arrived says so on Done.
+func TestOutcomeRequestReceived(t *testing.T) {
+	it := &store.QueueItem{Status: "requested", Channel: "OQRS"}
+	q := &store.QSO{QSLRcvd: "Y", QSLRDate: "20261001"}
+	if got, want := outcomeOf(it, q).String(), "their card requested via OQRS, received 2026-10-01"; got != want {
+		t.Errorf("%q, want %q", got, want)
+	}
+	if got, want := outcomeOf(it, &store.QSO{}).String(), "their card requested via OQRS"; got != want {
+		t.Errorf("not arrived: %q, want %q", got, want)
 	}
 }
 

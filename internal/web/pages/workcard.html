@@ -17,10 +17,9 @@
 </header>
 <div class="band"><div class="band-in">
     <div class="band-title"><h2>{{t "Desk"}}</h2><p>{{t "Cards to write or print"}}</p></div>
-    <div class="views" role="group" aria-label="{{t "View"}}"><a href="/work">{{t "List"}}</a><a class="on" href="/work/card" aria-current="page">{{t "card by card"}}</a></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a href="/work">{{t "List"}}</a><a class="on" href="/work/card" aria-current="page">{{t "card by card"}}</a>{{template "printq_badge" .PQ}}</div>
   </div></div>
 <main>
-  {{template "printq" .}}
   {{template "workcard_content.html" .}}
 </main>
 <script src="/static/keys.js"></script>

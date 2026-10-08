@@ -95,12 +95,21 @@ type QRZCfg struct {
 
 type PrinterCfg struct {
 	Name        string     `yaml:"name"`
-	Command     string     `yaml:"command"`
 	PaperSizeMM [2]float64 `yaml:"paper_size_mm"`
 	// OffsetMM shifts everything printed by x, y millimetres: it makes up
 	// for a printer that feeds the card a little off (set under Settings >
 	// Card layout from a printed test card).
 	OffsetMM [2]float64 `yaml:"offset_mm"`
+	// Paper is the printer's paper (form) the cards print on, by the
+	// driver's name or number; empty = the one of paper_size_mm. Tray is
+	// the paper source (e.g. the manual feed); empty = the driver's
+	// default. Both are chosen under Settings > Card layout on Windows.
+	Paper string `yaml:"paper"`
+	Tray  string `yaml:"tray"`
+	// Rotate turns the card by 90 or 270 degrees on its way to the
+	// printer (Windows), for a printer that takes the card the other way
+	// round; 0 = as the driver reports the paper.
+	Rotate int `yaml:"rotate"`
 }
 
 // CardCfg selects the card layout: Template is the active layout file
@@ -108,6 +117,9 @@ type PrinterCfg struct {
 // cards/ next to the config file and points Template at the active one.
 type CardCfg struct {
 	Template string `yaml:"template"`
+	// ExportDir is where the ADIF files for a QSL print service are written
+	// (empty = "exports" next to the database).
+	ExportDir string `yaml:"export_dir"`
 }
 
 // ReceiveCfg configures Incoming QSLs.
@@ -119,6 +131,11 @@ type ReceiveCfg struct {
 
 type QualifyCfg struct {
 	ExcludeModes []string `yaml:"exclude_modes"`
+	// IncludeDigital lets the digital modes (FT8, FT4, FT2, FST4, JS8, WSPR,
+	// MSK144 - any mode starting with FT, JS8, WSPR, MSK or FST) into the
+	// decision queue. Off by default: they are skipped. It alone decides for
+	// them; ExcludeModes (exact names) covers the other modes.
+	IncludeDigital bool `yaml:"include_digital"`
 	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
 	// default: repeat contacts are shown with their history instead, and the
 	// operator decides.
@@ -189,6 +206,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Card.Template != "" && !filepath.IsAbs(cfg.Card.Template) {
 		cfg.Card.Template = filepath.Join(dir, cfg.Card.Template)
 	}
+	if cfg.Card.ExportDir != "" && !filepath.IsAbs(cfg.Card.ExportDir) {
+		cfg.Card.ExportDir = filepath.Join(dir, cfg.Card.ExportDir)
+	}
 	// Clublog.PullInterval / PushInterval: 0 (or omitted) disables the
 	// respective background loop; the log-page buttons always work.
 	return &cfg, nil
@@ -246,7 +266,8 @@ printer:
 card:
     template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Card layout)
 qualify:
-    exclude_modes: ["FT4", "FT8", "FST4", "JS8", "WSPR", "MSK144"]
+    include_digital: false    # true = FT8/FT4/FT2, FST4, JS8 & co. enter the queue too
+    exclude_modes: []         # further modes to skip, exact names
     first_contact_only: false
     override_marker: "QSL!"
     since: ""                 # "" = from the first start on, "all" = whole log

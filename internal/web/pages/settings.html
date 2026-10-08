@@ -47,6 +47,9 @@
     <label>{{t "Operator name"}} <input type="text" name="station_name" value="{{.Cfg.Station.Name}}"></label>
     <label>{{t "QTH"}} <input type="text" name="station_qth" value="{{.Cfg.Station.QTH}}"></label>
 
+    <h3>{{t "Inbox"}}</h3>
+    <label class="check"><input type="checkbox" name="qualify_filter_digital" value="1"{{if not .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Filter FT8, FT4, FT2"}}</label>
+
     <h3>{{t "Language"}}</h3>
     <label>{{t "User interface"}} <select name="ui_language">
       <option value="">{{t "Automatic (browser / system language)"}}</option>
@@ -58,11 +61,11 @@
   <h3>{{t "Card layout"}}</h3>
   <p class="muted">{{t "Where the QSO data prints on your cards, on a picture of the card; test card and printer offset."}}</p>
   <p><a href="/settings/cards">{{t "Edit the card layout"}} &rarr;</a></p>
-  {{if .CanQuit}}
   <h3>{{t "Program"}}</h3>
+  <p class="muted" id="build">{{t "Version %s" .Build.Version}}{{if not .Build.Built.IsZero}} &middot; {{t "built %s" (.Build.Built.UTC.Format "2006-01-02 15:04 UTC")}}{{end}}</p>
+  {{if .CanQuit}}
   <p class="muted">{{t "Closing the window keeps qslotter running for the Log4OM feed. Quit it here or from the tray icon."}}</p>
   <p id="quit-msg"><button type="button" hx-post="/api/quit" hx-target="#quit-msg" hx-swap="innerHTML" hx-confirm="{{t "Quit qslotter? The Log4OM feed stops until you start it again."}}">{{t "Quit qslotter"}}</button></p>
   {{end}}
-  <p class="muted build-info">qslotter {{with .Build}}{{if .Commit}}{{.Commit}}{{else}}{{t "(unknown commit)"}}{{end}}{{if .Modified}} {{t "(with local changes)"}}{{end}}{{if not .Time.IsZero}} &middot; {{if .IsBuild}}{{t "built %s" (.Time.UTC.Format "2006-01-02 15:04 UTC")}}{{else}}{{t "committed %s" (.Time.UTC.Format "2006-01-02 15:04 UTC")}}{{end}}{{end}}{{end}}</p>
 </main>
 </body></html>{{end}}

@@ -223,7 +223,7 @@ func TestCurrentContactFeed(t *testing.T) {
 	}
 
 	l.handleDatagram([]byte("VU2ATN"))
-	tr.MarkWritten("VU2ATN", store.Route{Method: "B"})
+	tr.MarkDecision("VU2ATN", contact.Yes)
 	now := time.Now().UTC()
 	l.handleDatagram([]byte("<CALL:6>VU2ATN<QSO_DATE:8>" + now.Format("20060102") + "<TIME_ON:6>" + now.Format("150405") + "<BAND:3>20m<MODE:3>SSB<EOR>"))
 	qsos, _ := st.RecentQSOsByCall("VU2ATN", 5)
@@ -231,8 +231,8 @@ func TestCurrentContactFeed(t *testing.T) {
 		t.Fatalf("QSO not stored: %d", len(qsos))
 	}
 	it, _ := st.QueueGet(qsos[0].QSLKey)
-	if it == nil || it.Status != "sent" || it.DesiredMethod != "B" {
-		t.Fatalf("the card written during the QSO must be booked: %+v", it)
+	if it == nil || it.Status != "decided" {
+		t.Fatalf("the card decided during the QSO must be booked: %+v", it)
 	}
 	if tr.Current() != nil {
 		t.Fatal("logging the QSO ends it")

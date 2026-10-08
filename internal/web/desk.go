@@ -5,15 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
-	"net/url"
-	"os"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
@@ -26,8 +22,11 @@ import (
 // The Desk (VISION 2.2): cards with "yes, card", worked through away from the
 // radio. One card covers every open QSO with the same worked callsign (B9; a
 // /P operation is a separate card). The route is chosen when the card is
-// finished (B4); instead of sending, the station's card can be requested
-// (B4b), or the card dropped after all (B6).
+// written or sent to printing (B4); instead of sending, the station's card
+// can be requested (B4b), or the card dropped after all (B6). Printing is
+// two-step (docs/STATES.md): cards collect in the print queue at the top of
+// the Desk, a print run sends them as one job, and the run is confirmed as a
+// whole (or single cards reprinted) before they count as sent.
 
 // DeskCard is one card at the Desk: the open QSOs with one callsign.
 type DeskCard struct {
@@ -37,7 +36,7 @@ type DeskCard struct {
 	Keys  []string    // the QSOs' keys, oldest first
 	Extra int         // QSOs beyond the lead (list display)
 
-	Name   string // the newest non-empty NAME among the card's QSOs (shown and printed)
+	Name   string // the newest non-empty NAME among the card's QSOs (printed)
 	QTH    string // likewise for QTH
 	Prints int    // physical cards a print produces (QSO rows per card from the template)
 
@@ -45,8 +44,7 @@ type DeskCard struct {
 	RouteFrom  string // where it comes from: "chosen earlier", "by QRZ"
 	MgrPrefill string // manager callsign for the manager routes
 	OQRS       bool   // QRZ mentions OQRS: "requested" is the likely outcome
-
-	PrintFailed i18n.Msg // the last print of this card failed: why
+	Note       string // card note offered: one set earlier, else the log's QSLMSG
 }
 
 // cardTemplate is the card layout in use: the configured template file, else
@@ -79,9 +77,6 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 	var cards []*DeskCard
 	byCall := map[string]*DeskCard{}
 	for _, it := range items {
-		if s.pq.printing(it.QSLKey) {
-			continue // away at the printer: back here only if it fails
-		}
 		call := strings.ToUpper(callFromKey(it.QSLKey))
 		c := byCall[call]
 		row := s.buildRow(it.QSLKey, refresh && c == nil)
@@ -109,14 +104,38 @@ func (s *Server) deskCards(refresh bool) ([]*DeskCard, error) {
 		c.Prints = (len(c.Rows) + perCard - 1) / perCard
 		c.Route, c.RouteFrom, c.MgrPrefill = preselectRoute(c)
 		c.OQRS = mentionsOQRS(c.Lead.Info)
-		for _, k := range c.Keys {
-			if m := s.pq.lastFailure(k); !m.IsZero() {
-				c.PrintFailed = m
-				break
-			}
-		}
+		c.Note = cardNote(c.Rows)
 	}
 	return cards, nil
+}
+
+// cardNote is the note a card starts with: one recorded earlier on any of its
+// QSOs (a card taken back from the print queue), else the newest QSLMSG from
+// the log.
+func cardNote(rows []*QueueRow) string {
+	for _, r := range rows {
+		if r.Item.CardNote != "" {
+			return r.Item.CardNote
+		}
+	}
+	note := ""
+	for _, r := range rows { // oldest first: the newest non-empty wins
+		note = cmpOr(r.QSO.QSLMsg, note)
+	}
+	return note
+}
+
+// Head is the card's head: callsign, name, history, and how many QSOs the
+// card covers when more than one.
+func (c *DeskCard) Head() CallHead {
+	var extra i18n.Msg
+	switch {
+	case c.Prints > 1:
+		extra = i18n.M("%d QSOs on this card, prints as %d cards", len(c.Rows), c.Prints)
+	case c.Extra > 0:
+		extra = i18n.M("%d QSOs on this card", len(c.Rows))
+	}
+	return headFor(c.Call, c.Name, c.Lead.Info, c.Lead.Research, extra)
 }
 
 // cmpOr returns a unless it is empty, else b.
@@ -207,8 +226,7 @@ func listOrder(groups []WorkGroup) []*DeskCard {
 
 // pageWork is the Desk master-detail view (VISION B2): the cards grouped by
 // the route offered first on one side, the selected card on the other;
-// finishing a card moves to the one below. Batch actions use each card's
-// preselected route.
+// finishing a card moves to the one below.
 func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	cards, err := s.deskCards(true)
 	if err != nil {
@@ -218,7 +236,7 @@ func (s *Server) pageWork(w http.ResponseWriter, r *http.Request) {
 	groups := groupCards(cards)
 	data := s.workCardData(r, listOrder(groups), "", true)
 	data["Groups"] = groups
-	data["Done"], data["Failed"] = r.URL.Query().Get("done"), r.URL.Query().Get("failed")
+	data["PQ"] = s.printBadge()
 	s.render(w, r, "worklist.html", data)
 }
 
@@ -301,6 +319,7 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 	}
 	data := s.workCardData(r, cards, filter, md)
 	if fullPage {
+		data["PQ"] = s.printBadge()
 		s.render(w, r, "workcard.html", data)
 		return
 	}
@@ -312,7 +331,8 @@ func (s *Server) renderWorkCard(w http.ResponseWriter, r *http.Request, fullPage
 // operator's unsaved choices: route, manager, unticked QSOs), else after an
 // action the card that was below the finished one (next=, else prev=).
 func (s *Server) workCardData(r *http.Request, cards []*DeskCard, filter string, md bool) map[string]any {
-	data := map[string]any{"Total": len(cards), "Filter": filter, "MD": md, "Channels": store.RequestChannels, "Down": "", "Up": ""}
+	data := map[string]any{"Total": len(cards), "Filter": filter, "MD": md, "Channels": store.RequestChannels, "Down": "", "Up": "",
+		"NoteField": s.templateHasNote()}
 	want := r.URL.Query().Get("key")
 	if r.Method != http.MethodGet {
 		want = ""
@@ -404,8 +424,6 @@ func (s *Server) deskAction(w http.ResponseWriter, r *http.Request, to string, a
 			s.fail(w, r, http.StatusBadRequest, err.Error())
 		case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrBadRoute):
 			s.queueErr(w, r, err)
-		case errors.Is(err, errPrinting):
-			s.fail(w, r, http.StatusConflict, err.Error())
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -432,16 +450,15 @@ func cardRoute(r *http.Request, keys []string) (store.Route, error) {
 	return routeFrom(r, keys[0])
 }
 
-// htmxWorkPrint renders and prints the card with the chosen route; only a
-// successful print completes it (a printer error leaves it on the Desk).
+// htmxWorkPrint sends the card to printing with the chosen route and note: it
+// waits in the print queue for the next print run.
 func (s *Server) htmxWorkPrint(w http.ResponseWriter, r *http.Request) {
-	s.deskAction(w, r, "sent", func(keys []string) error {
+	s.deskAction(w, r, "toprint", func(keys []string) error {
 		rt, err := cardRoute(r, keys)
 		if err != nil {
 			return err
 		}
-		_, err = s.printCard(keys, rt)
-		return err
+		return s.store.QueueToPrint(keys, rt, r.FormValue("cardnote"))
 	})
 }
 
@@ -467,101 +484,6 @@ func (s *Server) htmxWorkRequested(w http.ResponseWriter, r *http.Request) {
 // htmxWorkNone: no card after all (B6).
 func (s *Server) htmxWorkNone(w http.ResponseWriter, r *http.Request) {
 	s.deskAction(w, r, "skipped", func(keys []string) error { return s.store.QueueDeskDecline(keys...) })
-}
-
-// htmxWorkBack takes the card back to the Inbox.
-func (s *Server) htmxWorkBack(w http.ResponseWriter, r *http.Request) {
-	s.deskAction(w, r, "queued", func(keys []string) error { return s.store.QueueBack(keys...) })
-}
-
-// printMu serialises printing: the status check, render, print and the
-// transition of one card must not interleave with another request for the
-// same card (two windows) - it would be printed twice.
-var printMu sync.Mutex
-
-// printCard prints one card for the given Desk QSOs (one row per QSO, further
-// cards when the template holds fewer rows). Every attempt lands in the
-// print list (printq.go). When the print system can follow the job, async
-// is true: the card leaves the Desk while it prints and is marked sent when
-// the job completed (watchPrint); otherwise it is marked sent once handed
-// over. An error leaves the card at the Desk.
-func (s *Server) printCard(keys []string, rt store.Route) (async bool, err error) {
-	printMu.Lock()
-	defer printMu.Unlock()
-	var qsos []*store.QSO
-	for _, key := range keys {
-		if s.pq.printing(key) {
-			return false, errPrinting
-		}
-		item, err := s.store.QueueGet(key)
-		if err != nil {
-			return false, err
-		}
-		if item == nil || item.Status != "decided" {
-			return false, store.ErrConflict
-		}
-		q, err := s.store.GetQSO(key)
-		if err != nil {
-			return false, err
-		}
-		if q == nil {
-			return false, fmt.Errorf("QSO %s not found", key)
-		}
-		qsos = append(qsos, q)
-	}
-	cfg := s.config()
-	it := &printItem{Call: strings.ToUpper(qsos[0].Call), Keys: keys, Route: rt}
-	failed := func(err error) (bool, error) {
-		it.State, it.Reason = printFailed, i18n.M("%s", err.Error())
-		s.pq.add(it)
-		s.publishPrint()
-		return false, err
-	}
-	tmpl, err := s.cardTemplate()
-	if err != nil {
-		return failed(err)
-	}
-	via := ""
-	if rt.Method == "M" {
-		via = rt.Manager
-	}
-	card := cardFieldsFor(cfg, qsos, via)
-	it.Call = strings.ToUpper(card.Call)
-	pdfPath := printer.TempPDFPath()
-	defer func() {
-		if err := os.Remove(pdfPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			log.Printf("print: removing %s: %v", pdfPath, err)
-		}
-	}()
-	if err := printer.Render(pdfPath, tmpl, card, printer.RenderOptions{
-		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
-	}); err != nil {
-		return failed(err)
-	}
-	job, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printer.Options{
-		PaperWMM: cfg.Printer.PaperSizeMM[0],
-		PaperHMM: cfg.Printer.PaperSizeMM[1],
-		Copies:   1,
-	})
-	if err != nil {
-		return failed(err)
-	}
-	it.Job = job
-	if w, ok := s.printer.(printer.Watcher); ok && job.ID > 0 {
-		// The spool has its own copy: the temp file may go now.
-		it.State = printPrinting
-		s.pq.add(it)
-		s.publishPrint()
-		go s.watchPrint(it, w)
-		return true, nil
-	}
-	if err := s.store.QueuePrinted(keys, rt); err != nil {
-		return false, err
-	}
-	it.State = printPrinted
-	s.pq.add(it)
-	s.publishPrint()
-	return false, nil
 }
 
 // htmxWorkPreview answers the card for the QSOs key=... (as ticked on the
@@ -592,7 +514,9 @@ func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.config()
-	raw, err := printer.RenderBytes(tmpl, cardFieldsFor(cfg, qsos, via), printer.RenderOptions{
+	card := cardFieldsFor(cfg, qsos, via)
+	card.QSLMsg = strings.TrimSpace(r.FormValue("cardnote")) // the note as typed on the card
+	raw, err := printer.RenderBytes(tmpl, card, printer.RenderOptions{
 		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
 	})
 	if err != nil {
@@ -623,57 +547,8 @@ func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.Ca
 	for _, q := range qsos {
 		card.Name = cmpOr(q.Name, card.Name) // newest non-empty wins, as on the Desk
 		card.QTH = cmpOr(q.QTH, card.QTH)
-		card.QSLMsg = cmpOr(strings.TrimSpace(q.QSLMsg), card.QSLMsg) // ADIF QSLMSG, the newest one
 		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
 			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq, SatName: q.SatName, FreqRX: q.FreqRX})
 	}
 	return card
-}
-
-// batchDesk applies one action to every ticked card of the Desk list. Each
-// checkbox carries the card's lead key; the QSOs the row showed come as
-// card:<lead> fields (a QSO that joined the card after the page was drawn is
-// not swept along), the route from the row's route:<lead> field. Redirects
-// back with a count of cards.
-func (s *Server) batchDesk(w http.ResponseWriter, r *http.Request, action string, leads []string) {
-	var apply func(keys []string, lead string) (to string, err error)
-	switch action {
-	case "print", "written":
-		apply = func(keys []string, lead string) (string, error) {
-			rt, err := routeFrom(r, lead)
-			if err != nil {
-				return "", err
-			}
-			if action == "print" {
-				_, err := s.printCard(keys, rt)
-				return "sent", err
-			}
-			return "sent", s.store.QueueWritten(keys, rt)
-		}
-	case "none":
-		apply = func(keys []string, _ string) (string, error) { return "skipped", s.store.QueueDeskDecline(keys...) }
-	case "back":
-		apply = func(keys []string, _ string) (string, error) { return "queued", s.store.QueueBack(keys...) }
-	default:
-		s.fail(w, r, http.StatusBadRequest, "unknown batch action for the Desk")
-		return
-	}
-	done, failed := 0, 0
-	for _, lead := range leads {
-		keys := r.Form["card:"+lead]
-		if len(keys) == 0 {
-			keys = []string{lead}
-		}
-		to, err := apply(keys, lead)
-		if err != nil {
-			failed++
-			continue
-		}
-		done++
-		for _, k := range keys {
-			s.publishQueueChanged(k, to)
-		}
-	}
-	q := url.Values{"done": {fmt.Sprint(done)}, "failed": {fmt.Sprint(failed)}}
-	http.Redirect(w, r, "/work?"+q.Encode(), http.StatusSeeOther)
 }

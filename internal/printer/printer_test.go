@@ -100,7 +100,7 @@ func TestRenderCardPages(t *testing.T) {
 			Call: "DL1ABC", Name: "Jürgen Müller", MyCall: "DL9ET", Via: "K2ABC",
 			Rows: testRows(c.rows),
 		}
-		pdf, err := buildPDF(tmpl, card, RenderOptions{})
+		pdf, err := buildPDF(tmpl, []CardFields{card}, RenderOptions{})
 		if err != nil {
 			t.Fatalf("%d rows: %v", c.rows, err)
 		}
@@ -114,6 +114,28 @@ func TestRenderCardPages(t *testing.T) {
 		if got := pageCount(t, out); got != c.pages {
 			t.Errorf("%d rows: file has %d pages, want %d", c.rows, got, c.pages)
 		}
+	}
+}
+
+// A print run is one PDF: every card's pages in order, a card with more QSOs
+// than the template holds still continues on its own further pages.
+func TestRenderCardsOneJob(t *testing.T) {
+	tmpl := template.Default()
+	max := MaxRows(tmpl)
+	cards := []CardFields{
+		{Call: "DL1ABC", MyCall: "DL9ET", QSLMsg: "Tnx for the QSO", Rows: testRows(1)},
+		{Call: "K1A", MyCall: "DL9ET", Rows: testRows(max + 1)},
+		{Call: "JA1XYZ", MyCall: "DL9ET", Rows: testRows(max)},
+	}
+	out := filepath.Join(t.TempDir(), "run.pdf")
+	if err := RenderCards(out, tmpl, cards, RenderOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pageCount(t, out); got != 4 {
+		t.Errorf("run has %d pages, want 4", got)
+	}
+	if err := RenderCards(out, tmpl, append(cards, CardFields{Call: "EMPTY"}), RenderOptions{}); err == nil {
+		t.Error("a card without rows in the run succeeded, want error")
 	}
 }
 
@@ -471,7 +493,7 @@ func TestRenderOptions(t *testing.T) {
 		template.Field{Name: "sat_name", X: 4, Y: 66, FontSize: 8, Style: "B"})
 	card := CardFields{Call: "DL1ABC", Rows: testRows(4)}
 	card.Rows[0].SatName = "RS-44"
-	pdf, err := buildPDF(tmpl, card, RenderOptions{OffsetXMM: -1.5, OffsetYMM: 0.5, Ruler: true, Label: "test card"})
+	pdf, err := buildPDF(tmpl, []CardFields{card}, RenderOptions{OffsetXMM: -1.5, OffsetYMM: 0.5, Ruler: true, Label: "test card"})
 	if err != nil {
 		t.Fatal(err)
 	}

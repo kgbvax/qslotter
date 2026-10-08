@@ -212,6 +212,17 @@ func (t *Template) MaxRows() int {
 	return t.Rows.Max
 }
 
+// HasField reports whether the template draws a field with this name (e.g.
+// "qslmsg": without it a card note is not printed).
+func (t *Template) HasField(name string) bool {
+	for _, f := range t.Fields {
+		if strings.EqualFold(f.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // Load reads a YAML template file.
 func Load(path string) (*Template, error) {
 	raw, err := os.ReadFile(path)
@@ -416,6 +427,8 @@ func Default() *Template {
 			{Name: "call", X: 6, Y: 42.5, FontSize: 20, Align: "L", Font: "Helvetica"},
 			{Name: "name", X: 84, Y: 42.5, FontSize: 14, Align: "L", Font: "Helvetica"},
 			{Name: "via", X: 6, Y: 50, FontSize: 12, Align: "L", Font: "Helvetica"},
+			// The card note (set when the card is sent to printing), right of "via".
+			{Name: "qslmsg", X: 44, Y: 50, FontSize: 10, Align: "L", Font: "Helvetica"},
 			// Column labels over the QSO rows.
 			{Name: "text", Text: "Date", X: 6, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
 			{Name: "text", Text: "UTC", X: 36, Y: 56.5, FontSize: 8, Align: "L", Font: "Helvetica"},
@@ -430,8 +443,6 @@ func Default() *Template {
 			{Name: "mode", X: 70, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
 			{Name: "rst_sent", X: 90, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
 			{Name: "sat_name", X: 108, Y: 62, FontSize: 13, Align: "L", Font: "Helvetica"},
-			// The QSO's QSLMSG (ADIF), when the logger has one.
-			{Name: "qslmsg", X: 6, Y: 73, W: 128, Lines: 2, FontSize: 11, Align: "L", Font: "Helvetica"},
 			{Name: "text", Text: "73 de DL9ET", X: 70, Y: 84, FontSize: 12, Align: "C", Font: "Helvetica"},
 		},
 	}

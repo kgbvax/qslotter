@@ -1,9 +1,5 @@
 {
   "QSO in progress": "Laufendes QSO",
-  "Card written during the QSO, sent via the bureau - recorded when the QSO is logged": "Karte im QSO geschrieben, geht übers Büro - wird eingetragen, sobald das QSO geloggt ist",
-  "Card written during the QSO, sent direct - recorded when the QSO is logged": "Karte im QSO geschrieben, geht direkt - wird eingetragen, sobald das QSO geloggt ist",
-  "Card written during the QSO (%s) - it is recorded on the QSO as soon as the QSO is logged.": "Karte im QSO geschrieben (%s) - sie wird am QSO eingetragen, sobald es geloggt ist.",
-  "Card written during the QSO with %s recorded on the logged QSO (%s).": "Karte aus dem QSO mit %s am geloggten QSO eingetragen (%s).",
   "Undo": "Rückgängig",
   "the QSO in progress is not available": "das laufende QSO ist nicht verfügbar",
   "The QSO in progress has changed - look again.": "Das laufende QSO hat sich geändert - bitte nochmal schauen.",
@@ -17,14 +13,10 @@
   "No card - recorded when the QSO is logged": "Keine Karte - wird eingetragen, sobald das QSO geloggt ist",
   "%s: card wanted, waiting for the QSO to be logged (forgotten after %d h if it never is).": "%s: Karte gewünscht, wartet darauf, dass das QSO geloggt wird (wird nach %d h vergessen, falls es nie geloggt wird).",
   "%s: no card, waiting for the QSO to be logged (forgotten after %d h if it never is).": "%s: keine Karte, wartet darauf, dass das QSO geloggt wird (wird nach %d h vergessen, falls es nie geloggt wird).",
-  "%s: card written during the QSO (%s), waiting for the QSO to be logged (forgotten after %d h if it never is).": "%s: Karte im QSO geschrieben (%s), wartet darauf, dass das QSO geloggt wird (wird nach %d h vergessen, falls es nie geloggt wird).",
   "Card wanted, decided during the QSO with %s: the logged QSO is at the Desk.": "Karte gewünscht, im QSO mit %s entschieden: das geloggte QSO liegt auf dem Schreibtisch.",
   "No card, decided during the QSO with %s: recorded on the logged QSO.": "Keine Karte, im QSO mit %s entschieden: am geloggten QSO eingetragen.",
   "The decision made during the QSO with %s could not be recorded: %s": "Die im QSO mit %s getroffene Entscheidung konnte nicht eingetragen werden: %s",
   "The decision is yes (card) or no (no card).": "Die Entscheidung ist ja (Karte) oder nein (keine Karte).",
-  "A card written during the QSO goes bureau or direct.": "Eine im QSO geschriebene Karte geht übers Büro oder direkt.",
   "%d open QSO(s) with this station in New QSOs or at the Desk - a decision made during the QSO is recorded only on the QSO being logged": "%d offene(s) QSO(s) mit dieser Station bei den neuen QSOs oder auf dem Schreibtisch - eine im QSO getroffene Entscheidung wird nur am QSO eingetragen, das jetzt geloggt wird",
-  "decided during the QSO": "im QSO entschieden",
-  "1 QSO B4, last %s": "1 QSO B4, zuletzt %s",
-  "%d QSOs B4, last %s": "%d QSOs B4, zuletzt %s"
+  "decided during the QSO": "im QSO entschieden"
 }

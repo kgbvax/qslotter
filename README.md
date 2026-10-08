@@ -16,32 +16,38 @@ logbook's job.
    within a second. A Clublog pull mirrors the full log as a reconciliation
    backstop; a card Clublog already shows as sent is closed, not duplicated.
 2. **Qualify** — QSOs enter the *decision queue* unless they are digital
-   (FT\*, JS8, ...), excluded by mode, older than the `qualify.since` cutoff, or
+   (FT\*, JS8, ...; switchable under Settings), excluded by mode, older than the `qualify.since` cutoff, or
    already carded. Repeat contacts enter too, shown with their history. A
    marker (`QSL!`) in the notes force-includes a QSO.
-3. **Decide** (the decision queue) — each new QSO is presented with what helps
-   you decide: what QRZ says about the station's QSL habits (manager field, bio
-   lines, flags), earlier QSOs with the station, whether a card was already
-   sent or received. You choose **Bureau**, **Direct**, **Via manager**, **No
-   card**, or **Written** (card filled in on the spot: done, nothing to send).
-   A decided QSO leaves the decision queue at once.
-4. **Produce** (the work queue) — Bureau / Direct / Via-manager cards wait
-   here, one card at a time: print it (template on card stock) or write it by
-   hand. Done = sent; the next card appears.
+3. **Decide** (New QSOs) — each new QSO is presented with what helps you
+   decide: what QRZ says about the station's QSL habits, earlier QSOs with
+   the station, whether a card was already sent or received. You answer
+   **yes, card** or **no card**.
+4. **Produce** (the Desk) — "yes" cards wait here, one card per station. The
+   route (bureau, direct, via manager direct/bureau) is chosen when the card
+   is written by hand (done = sent) or sent **to print**, with an optional
+   note printed on the card (prefilled from the log's `QSLMSG`). Cards to
+   print collect in the print queue at the top of the Desk; **Print** sends
+   them all as one job, and once they came out right, **All fine** marks them
+   sent (single cards can be printed again first). Stations using a QSL
+   print service (e.g. DARC) **Export ADIF** instead: the queue goes into one
+   `.adi` file for the service, confirmed the same way. Every path:
+   [docs/STATES.md](docs/STATES.md).
 5. **Reconcile** — sent cards go back to Clublog (`QSL_SENT=Y` plus
    `QSL_SENT_VIA` or `QSL_VIA`) when you choose; received cards are logged the
    same way.
 
 ## The UI
 
-- **Queue** — the decision queue as a list (also the compact window from the
-  tray). One-click stamps per row, batch actions, live updates.
-- **Decide** — the decision queue card by card with the full research panel.
-  Keyboard: `b` bureau, `d` direct, `m` via manager (type the call, Enter),
-  `n` no card, `w` written on the spot, arrows to browse.
-- **Work** / **Cards** — the work queue as a list grouped by route, and card by
-  card with the address to write to. Keyboard: `p` print, `w` written,
-  `u` back to the decision queue.
+- **New QSOs** — the decision queue as a list with the card next to it (also
+  the compact window from the tray), and card by card. Keyboard: `y` yes,
+  `n` no card, arrows to browse.
+- **Desk** — the print queue on top, the cards as a list grouped by route,
+  and card by card, with the address to write to. Keyboard: `b` `d` `m` `v`
+  route, `p` to print, `w` written by hand, `r` request their card, `n` no
+  card.
+- **Incoming QSLs** — mark a received card, answer it (written, to print,
+  later at the Desk), see the cards you requested.
 - **Done** — finished cards, with Reopen for a misclick.
 - **Receive** — type a callsign, pick the QSOs, mark the card received.
 - **Settings** — edit QRZ/Clublog credentials live (with immediate

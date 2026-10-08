@@ -1,11 +1,10 @@
-{{define "work_md_rows"}}{{range .Groups}}<tr class="md-group"><th colspan="4">{{t .Title}} <small>({{len .Cards}})</small> <a class="mini" href="/work/card?filter={{.Method}}" title="{{t "This group card by card"}}">{{t "cards"}} &rarr;</a></th></tr>
+{{define "work_md_rows"}}{{range .Groups}}<tr class="md-group"><th colspan="3">{{t .Title}} <small>({{len .Cards}})</small> <a class="mini" href="/work/card?filter={{.Method}}" title="{{t "This group card by card"}}">{{t "cards"}} &rarr;</a></th></tr>
 {{range .Cards}}{{$lead := .Lead.Item.QSLKey}}<tr class="md-row" id="row-{{$lead}}" data-key="{{$lead}}" data-keys="{{range .Keys}}{{.}} {{end}}" tabindex="-1">
-  <td class="ck"><input type="checkbox" name="keys" form="batch" value="{{$lead}}" title="{{t "Select for a batch action (sent via the choice shown)"}}">{{range .Rows}}<input type="hidden" name="key" value="{{.Item.QSLKey}}"><input type="hidden" name="card:{{$lead}}" form="batch" value="{{.Item.QSLKey}}">{{end}}<input type="hidden" name="route:{{$lead}}" form="batch" value="{{.Route}}"><input type="hidden" name="manager:{{$lead}}" form="batch" value="{{.MgrPrefill}}"></td>
   <td class="c-date">{{fmtDate .Lead.QSO.QSODate}}</td>
-  <td><span class="call">{{.Call}}</span>{{if not .PrintFailed.IsZero}} <span class="badge err" title="{{tm .PrintFailed}}">{{t "not printed"}}</span>{{end}}{{if .OQRS}} <span class="badge" title="{{t "QRZ mentions OQRS"}}">OQRS</span>{{end}}<br><span class="muted">{{.Name}}{{if .Lead.Info}}{{if .Name}}, {{end}}{{.Lead.Info.Country}}{{end}}</span></td>
+  <td><span class="call">{{.Call}}</span>{{if .OQRS}} <span class="badge" title="{{t "QRZ mentions OQRS"}}">OQRS</span>{{end}}<br><span class="muted">{{.Name}}{{if .Lead.Info}}{{if .Name}}, {{end}}{{.Lead.Info.Country}}{{end}}</span></td>
   <td class="c-bm">{{range $i, $r := .Rows}}{{if $i}}, {{end}}{{$r.QSO.Band}} {{$r.QSO.Mode}}{{end}}{{if .Extra}}<br><span class="muted">{{if gt .Prints 1}}{{t "%d QSOs, prints as %d cards" (len .Rows) .Prints}}{{else}}{{t "%d QSOs, one card" (len .Rows)}}{{end}}</span>{{end}}<br><span class="routetag" title="{{if .RouteFrom}}{{t "suggested: %s" (t .RouteFrom)}}{{else}}{{t "choose how to send on the card"}}{{end}}">{{t (routeName .Route)}}{{if and .MgrPrefill (eq (slice1 .Route) "M")}} {{.MgrPrefill}}{{end}}</span></td>
 </tr>
-{{end}}{{end}}{{if not .Groups}}<tr class="md-empty"><td colspan="4" class="muted">{{t `Nothing to write or print. Cards you answer "yes" in New QSOs show up here.`}}</td></tr>{{end}}{{end}}
+{{end}}{{end}}{{if not .Groups}}<tr class="md-empty"><td colspan="3" class="muted">{{t `Nothing to write or print. Cards you answer "yes" in New QSOs show up here.`}}</td></tr>{{end}}{{end}}
 
 {{define "worklist.html"}}<!DOCTYPE html>
 <html lang="{{lang}}"><head><meta charset="utf-8"><title>qslotter - {{t "Desk"}}</title>
@@ -27,23 +26,11 @@
 </header>
 <div class="band"><div class="band-in">
     <div class="band-title"><h2>{{t "Desk"}}</h2><p>{{t "Cards to write or print"}}</p></div>
-    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/work" aria-current="page">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a></div>
+    <div class="views" role="group" aria-label="{{t "View"}}"><a class="on" href="/work" aria-current="page">{{t "List"}}</a><a href="/work/card" title="{{t "One card at a time"}}">{{t "card by card"}}</a>{{template "printq_badge" .PQ}}</div>
   </div></div>
 <main>
-  {{if or .Done .Failed}}<p class="banner">{{t "Batch: %s done" .Done}}{{if ne .Failed "0"}}, <span class="err">{{t "%s failed" .Failed}}</span> {{t "(no way chosen, manager call missing, already finished, or the printer refused)"}}{{end}}.</p>{{end}}
-  {{template "printq" .}}
   <div class="md">
     <div class="md-list" aria-label="{{t "Cards to write or print"}}">
-      <form id="batch" method="post" action="/queue/batch" class="batchbar">
-        <input type="hidden" name="list" value="work">
-        <select name="action" title="{{t "Batch action for the ticked cards"}}">
-          <option value="print">{{t "Print - sent"}}</option>
-          <option value="written">{{t "Written by hand - sent"}}</option>
-          <option value="none">{{t "No card"}}</option>
-          <option value="back">{{t "Back to New QSOs"}}</option>
-        </select>
-        <button type="submit" title="{{t "Each ticked card is sent via the choice shown in the list; cards without one are skipped"}}">{{t "Apply to ticked"}}</button>
-      </form>
       <table class="md-table"><tbody id="md-list">{{template "work_md_rows" .}}</tbody></table>
       <p class="muted legend"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> {{t "or click: select"}} &middot; {{t "finish the card on the right; the next card down follows. One card per station: QSOs with the same call share it."}}</p>
     </div>

@@ -14,75 +14,42 @@ import (
 )
 
 // TestCurrentContactBox: the QSO in progress shows on top of the Inbox with
-// its research; "written now" is remembered and booked when the QSO is
-// logged (VISION A1b).
+// its research and the card / no card question (VISION A1b).
 func TestCurrentContactBox(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	h := srv.Routes()
 	tr := contact.NewTracker(st, srv.broker, nil)
 	srv.Contacts = tr
-	if b := get(t, h, "/queue").Body.String(); !strings.Contains(b, `class="current idle"`) {
+	if b := get(t, h, "/queue").Body.String(); !strings.Contains(b, `class="current strip idle"`) {
 		t.Fatalf("no QSO in progress: the box is idle:\n%s", b)
 	}
 	addQSO(t, st, "VU2ATN", "20250101", "20m") // worked before
 	tr.Set(contact.Contact{Call: "VU2ATN", Band: "20m", Mode: "SSB", Source: "lookupinfo"})
 	page := get(t, h, "/queue").Body.String()
-	for _, want := range []string{"QSO in progress", `data-call="VU2ATN"`, "1 QSO B4, last 2025-01-01", "/current/written?route=B&amp;call=VU2ATN"} {
+	for _, want := range []string{"QSO in progress", `data-call="VU2ATN"`, "1 earlier QSO, last 2025-01-01", "/current/decide?decision=no&amp;call=VU2ATN"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("/queue misses %q:\n%s", want, page)
 		}
 	}
 	// The chip sits right under the callsign line, above the decision row, and is not repeated in the research panel.
-	head, chip, decide := strings.Index(page, `class="current-head"`), strings.Index(page, "1 QSO B4, last 2025-01-01"), strings.Index(page, "/current/decide?decision=yes")
-	if !(head >= 0 && head < chip && chip < decide) || strings.Count(page, "QSO B4") != 1 || strings.Contains(page, "earlier QSO(s)") {
+	head, chip, decide := strings.Index(page, `class="current-head"`), strings.Index(page, "1 earlier QSO, last 2025-01-01"), strings.Index(page, "/current/decide?decision=yes")
+	if !(head >= 0 && head < chip && chip < decide) || strings.Count(page, "earlier QSO") != 1 || strings.Contains(page, "earlier QSO(s)") {
 		t.Fatalf("history chip under the callsign line (head %d, chip %d, decide %d):\n%s", head, chip, decide, page)
 	}
 	addQSO(t, st, "VU2ATN", "20250315", "40m") // newest earlier QSO
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "2 QSOs B4, last 2025-03-15") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "2 earlier QSOs, last 2025-03-15") {
 		t.Fatalf("several earlier QSOs:\n%s", b)
 	}
 	tr.Set(contact.Contact{Call: "N0NEW"})
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "first QSO") || strings.Contains(b, "B4") {
+	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "first QSO") || strings.Contains(b, "earlier") {
 		t.Fatalf("a new station:\n%s", b)
 	}
 	tr.Set(contact.Contact{Call: "VU2ATN", Band: "20m", Mode: "SSB", Source: "lookupinfo"})
 	if c := get(t, h, "/queue?compact=1").Body.String(); !strings.Contains(c, `class="current compact"`) || strings.Contains(c, "QRZ:") {
 		t.Fatalf("compact box: slim, no research panel:\n%s", c)
 	}
-	// Stale page: the call moved on.
-	if r := postForm(t, h, "/current/written", url.Values{"call": {"DL1XX"}, "route": {"B"}}); r.Code != http.StatusConflict {
-		t.Fatalf("written for another call = %d, want 409", r.Code)
-	}
-	if r := postForm(t, h, "/current/written", url.Values{"call": {"VU2ATN"}, "route": {"M"}}); r.Code != http.StatusBadRequest {
-		t.Fatalf("written now via manager = %d, want 400", r.Code)
-	}
-	r := postForm(t, h, "/current/written", url.Values{"call": {"VU2ATN"}, "route": {"D"}})
-	if r.Code != 200 || !strings.Contains(r.Body.String(), "recorded on the QSO as soon as the QSO is logged") {
-		t.Fatalf("written now = %d:\n%s", r.Code, r.Body)
-	}
-	// The QSO is logged: the card is booked, the box reports it.
-	d, tm := time.Now().UTC().Format("20060102"), time.Now().UTC().Format("150405")
-	q := &store.QSO{QSLKey: "VU2ATN|" + d + "|" + tm + "|20m", Call: "VU2ATN", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB", Hash: "h-now"}
-	if _, _, err := st.UpsertQSO(q); err != nil {
-		t.Fatal(err)
-	}
-	tr.QSOLogged(q)
-	if it := status(t, st, q.QSLKey); it.Status != "sent" || it.DesiredMethod != "D" || it.Note != "written now" {
-		t.Fatalf("booked: %+v", it)
-	}
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "Card written during the QSO with VU2ATN recorded") || strings.Contains(b, "QSO in progress") {
-		t.Fatalf("after logging:\n%s", b)
-	}
-	// Undo before the QSO is logged.
-	tr.Set(contact.Contact{Call: "JA1ZZZ"})
-	tr.MarkWritten("JA1ZZZ", store.Route{Method: "B"})
-	tr.Set(contact.Contact{Call: "K1ABC"}) // moved on: the pending card is listed
-	if b := get(t, h, "/queue/current").Body.String(); !strings.Contains(b, "JA1ZZZ: card written during the QSO") {
-		t.Fatalf("pending card of a call no longer in progress:\n%s", b)
-	}
-	postForm(t, h, "/current/cancel", url.Values{"call": {"JA1ZZZ"}})
-	if len(tr.Pending()) != 0 {
-		t.Fatal("undo")
+	if strings.Contains(page, "/current/written") || strings.Contains(page, "Already written") {
+		t.Fatalf("the box offers only card / no card:\n%s", page)
 	}
 }
 
@@ -148,13 +115,11 @@ func TestCurrentContactGerman(t *testing.T) {
 	tr := contact.NewTracker(st, nil, nil)
 	srv.Contacts = tr
 	tr.Set(contact.Contact{Call: "VU2ATN"})
-	tr.MarkWritten("VU2ATN", store.Route{Method: "B"})
+	tr.MarkDecision("VU2ATN", contact.Yes)
 	tr.Set(contact.Contact{Call: "K1ABC"})
 	for _, p := range []string{"/queue", "/queue?compact=1", "/queue/current"} {
 		requestDE(t, h, http.MethodGet, p, nil)
 	}
-	requestDE(t, h, http.MethodPost, "/current/written", url.Values{"call": {"K1ABC"}, "route": {"B"}})
-	requestDE(t, h, http.MethodPost, "/current/written", url.Values{"call": {"X"}, "route": {"B"}})
 	requestDE(t, h, http.MethodPost, "/current/decide", url.Values{"call": {"K1ABC"}, "decision": {"yes"}})
 	requestDE(t, h, http.MethodPost, "/current/decide", url.Values{"call": {"K1ABC"}, "decision": {"maybe"}})
 	requestDE(t, h, http.MethodPost, "/current/decide", url.Values{"call": {"X"}, "decision": {"no"}})
@@ -174,5 +139,33 @@ func TestCurrentContactGerman(t *testing.T) {
 		}
 		sort.Strings(l)
 		t.Fatalf("missing German:\n%s", strings.Join(l, "\n"))
+	}
+}
+
+// TestEarlierMsg: the history badge counts the earlier QSOs and says how long
+// ago the last one was - days up to a week, weeks up to 30 days, then the date.
+func TestEarlierMsg(t *testing.T) {
+	now := time.Date(2026, 10, 6, 15, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		n    int
+		date string
+		want string
+	}{
+		{1, "20261006", "1 earlier QSO, last today"},
+		{3, "20261005", "3 earlier QSOs, last 1 day ago"},
+		{3, "20261001", "3 earlier QSOs, last 5 days ago"},
+		{2, "20260930", "2 earlier QSOs, last 6 days ago"},
+		{2, "20260929", "2 earlier QSOs, last 1 week ago"},
+		{2, "20260922", "2 earlier QSOs, last 2 weeks ago"},
+		{2, "20260908", "2 earlier QSOs, last 4 weeks ago"},
+		{2, "20260907", "2 earlier QSOs, last 4 weeks ago"},
+		{2, "20260906", "2 earlier QSOs, last 2026-09-06"},
+		{5, "20250101", "5 earlier QSOs, last 2025-01-01"},
+		{1, "20261007", "1 earlier QSO, last today"}, // a clock a day behind: never negative
+		{1, "garbage", "1 earlier QSO, last garbage"},
+	} {
+		if got := earlierMsg(c.n, c.date, now).String(); got != c.want {
+			t.Errorf("earlierMsg(%d, %q) = %q, want %q", c.n, c.date, got, c.want)
+		}
 	}
 }

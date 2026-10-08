@@ -2,6 +2,7 @@ package adif
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,26 @@ func TestReadAllSkipsHeader(t *testing.T) {
 	}
 	if recs[0].Call() != "AB1" || recs[1].Call() != "AB2" {
 		t.Fatalf("calls = %q, %q", recs[0].Call(), recs[1].Call())
+	}
+}
+
+// TestWriteFieldsOrdered: header and records keep the given field order and
+// leave empty values out.
+func TestWriteFieldsOrdered(t *testing.T) {
+	var b strings.Builder
+	w := NewWriter(&b)
+	if err := w.WriteHeader("export", Field{"ADIF_VER", "3.1.4"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteFields(Field{"CALL", "DL1ABC"}, Field{"FREQ", ""}, Field{"BAND", "20m"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "export\n<ADIF_VER:5>3.1.4 <EOH>\n<CALL:6>DL1ABC <BAND:3>20m <EOR>\n"
+	if b.String() != want {
+		t.Fatalf("got %q, want %q", b.String(), want)
+	}
+	recs, err := NewReader(strings.NewReader(b.String())).ReadAll()
+	if err != nil || len(recs) != 1 || recs[0].Get("BAND") != "20m" {
+		t.Fatalf("read back: %v %v", recs, err)
 	}
 }

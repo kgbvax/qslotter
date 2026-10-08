@@ -87,6 +87,14 @@ type Options struct {
 	PaperWMM float64
 	PaperHMM float64
 	Copies   int
+	// Paper is the printer's paper (form) by its driver name or number
+	// (printer.paper); empty = the one of PaperWMM x PaperHMM. Tray is the
+	// paper source (printer.tray); empty = the driver's default.
+	Paper string
+	Tray  string
+	// Rotate turns the card by 90 or 270 degrees (Windows); 0 = by the
+	// paper's orientation.
+	Rotate int
 }
 
 // RenderOptions adjust a rendered card beyond its template.
@@ -128,7 +136,13 @@ func RenderCard(path string, tmpl *template.Template, card CardFields) error {
 // Render is RenderCard with options: a printer offset, a test card's ruler
 // and label.
 func Render(path string, tmpl *template.Template, card CardFields, opts RenderOptions) error {
-	pdf, err := buildPDF(tmpl, card, opts)
+	return RenderCards(path, tmpl, []CardFields{card}, opts)
+}
+
+// RenderCards renders several cards into one PDF at path, in order (one print
+// job for a whole print run). Each card is laid out as Render does.
+func RenderCards(path string, tmpl *template.Template, cards []CardFields, opts RenderOptions) error {
+	pdf, err := buildPDF(tmpl, cards, opts)
 	if err != nil {
 		return err
 	}
@@ -137,7 +151,7 @@ func Render(path string, tmpl *template.Template, card CardFields, opts RenderOp
 
 // RenderBytes is Render into memory (the layout editor's PDF view).
 func RenderBytes(tmpl *template.Template, card CardFields, opts RenderOptions) ([]byte, error) {
-	pdf, err := buildPDF(tmpl, card, opts)
+	pdf, err := buildPDF(tmpl, []CardFields{card}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -159,14 +173,19 @@ func MaxRows(tmpl *template.Template) int {
 // ptToMM converts a font size in points to millimetres.
 func ptToMM(pt float64) float64 { return pt * 25.4 / 72 }
 
-// buildPDF lays out the whole card document, one page per MaxRows(tmpl)
-// rows, without writing it.
-func buildPDF(tmpl *template.Template, card CardFields, opts RenderOptions) (*fpdf.Fpdf, error) {
+// buildPDF lays out the whole document, one page per MaxRows(tmpl) rows of
+// each card, without writing it.
+func buildPDF(tmpl *template.Template, cards []CardFields, opts RenderOptions) (*fpdf.Fpdf, error) {
 	if tmpl == nil {
 		return nil, errors.New("printer: no card template")
 	}
-	if len(card.Rows) == 0 {
-		return nil, errors.New("printer: card has no QSO rows")
+	if len(cards) == 0 {
+		return nil, errors.New("printer: no cards")
+	}
+	for _, card := range cards {
+		if len(card.Rows) == 0 {
+			return nil, fmt.Errorf("printer: card for %s has no QSO rows", card.Call)
+		}
 	}
 	pdf := fpdf.NewCustom(&fpdf.InitType{
 		OrientationStr: "P",
@@ -185,33 +204,35 @@ func buildPDF(tmpl *template.Template, card CardFields, opts RenderOptions) (*fp
 		return pdf.GetStringWidth(tr(s))
 	}
 	ox, oy := opts.OffsetXMM, opts.OffsetYMM
-	for _, rows := range chunkRows(card.Rows, MaxRows(tmpl)) {
-		pdf.AddPage()
-		for _, op := range layout(tmpl, card, rows, measure) {
-			switch op.Kind {
-			case template.KindLine:
-				pdf.SetLineWidth(op.StrokeMM)
-				pdf.Line(op.X+ox, op.Y+oy, op.X+op.W+ox, op.Y+op.H+oy)
-			case template.KindRect:
-				pdf.SetLineWidth(op.StrokeMM)
-				pdf.Rect(op.X+ox, op.Y+oy, op.W, op.H, "D")
-			default:
-				// Y is the middle of the line: the baseline sits 0.3 of the
-				// font size below it (fpdf's CellFormat with h=0 does the
-				// same). Text takes the position as is - SetXY would read a
-				// negative coordinate (an offset past the edge) as measured
-				// from the other edge.
-				pdf.SetFont(op.Font, op.Style, op.FontSize)
-				pdf.Text(op.X+ox, op.Y+oy+0.3*ptToMM(op.FontSize), tr(op.Text))
+	for _, card := range cards {
+		for _, rows := range chunkRows(card.Rows, MaxRows(tmpl)) {
+			pdf.AddPage()
+			for _, op := range layout(tmpl, card, rows, measure) {
+				switch op.Kind {
+				case template.KindLine:
+					pdf.SetLineWidth(op.StrokeMM)
+					pdf.Line(op.X+ox, op.Y+oy, op.X+op.W+ox, op.Y+op.H+oy)
+				case template.KindRect:
+					pdf.SetLineWidth(op.StrokeMM)
+					pdf.Rect(op.X+ox, op.Y+oy, op.W, op.H, "D")
+				default:
+					// Y is the middle of the line: the baseline sits 0.3 of the
+					// font size below it (fpdf's CellFormat with h=0 does the
+					// same). Text takes the position as is - SetXY would read a
+					// negative coordinate (an offset past the edge) as measured
+					// from the other edge.
+					pdf.SetFont(op.Font, op.Style, op.FontSize)
+					pdf.Text(op.X+ox, op.Y+oy+0.3*ptToMM(op.FontSize), tr(op.Text))
+				}
 			}
-		}
-		if opts.Ruler {
-			drawRuler(pdf, tmpl.WidthMM, tmpl.HeightMM, ox, oy)
-		}
-		if opts.Label != "" {
-			pdf.SetFont("Helvetica", "", 5)
-			s := tr(cp1252Text(opts.Label))
-			pdf.Text(tmpl.WidthMM-2-pdf.GetStringWidth(s)+ox, tmpl.HeightMM-2+oy, s)
+			if opts.Ruler {
+				drawRuler(pdf, tmpl.WidthMM, tmpl.HeightMM, ox, oy)
+			}
+			if opts.Label != "" {
+				pdf.SetFont("Helvetica", "", 5)
+				s := tr(cp1252Text(opts.Label))
+				pdf.Text(tmpl.WidthMM-2-pdf.GetStringWidth(s)+ox, tmpl.HeightMM-2+oy, s)
+			}
 		}
 	}
 	if err := pdf.Error(); err != nil {

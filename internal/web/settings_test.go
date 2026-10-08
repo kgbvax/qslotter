@@ -42,14 +42,15 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	// Save: new username, empty password (keep old), numeric-looking app
 	// password (must stay a string on reload), new station name.
 	form := url.Values{
-		"qrz_username":         {"newcall"},
-		"qrz_password":         {""},
-		"clublog_email":        {"a@b.c"},
-		"clublog_app_password": {"12345"},
-		"clublog_call":         {"DL9ET"},
-		"clublog_api_key":      {""},
-		"station_name":         {"Ingo M."},
-		"station_qth":          {"Bavaria"},
+		"qrz_username":           {"newcall"},
+		"qrz_password":           {""},
+		"clublog_email":          {"a@b.c"},
+		"clublog_app_password":   {"12345"},
+		"clublog_call":           {"DL9ET"},
+		"clublog_api_key":        {""},
+		"station_name":           {"Ingo M."},
+		"station_qth":            {"Bavaria"},
+		"qualify_filter_digital": {"1"},
 	}
 	r := postForm(t, h, "/settings/save", form)
 	if r.Code != 200 {
@@ -91,11 +92,81 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSettingsIncludeDigital: the digital-mode checkbox is written as a YAML
+// bool, switches the shared rules at once and queues the skipped FT8 QSO -
+// even with FT8 in an old config's exclude_modes.
+func TestSettingsIncludeDigital(t *testing.T) {
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	src := "qualify:\n  exclude_modes: [\"FT4\", \"FT8\", \"SSTV\"]\n  since: all\n"
+	if err := os.WriteFile(cfgFile, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ft8 := &store.QSO{QSLKey: "DL1AB|20260101|120000|20M", Call: "DL1AB", QSODate: "20260101", TimeOn: "120000", Band: "20M", Mode: "FT8", Hash: "h1"}
+	if _, _, err := st.UpsertQSO(ft8); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(cfg, st, events.New(), cfgFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.validateFn = func(*config.Config) (i18n.Msg, i18n.Msg) { return i18n.M("OK - stub"), i18n.M("OK - stub") }
+	h := srv.Routes()
+	if srv.Rules().IncludeDigital() {
+		t.Fatal("include_digital on by default")
+	}
+
+	// "Filter FT8, FT4, FT2" unticked = digital modes let in.
+	if r := postForm(t, h, "/settings/save", url.Values{}); r.Code != 200 {
+		t.Fatalf("save = %d: %s", r.Code, r.Body)
+	}
+	onDisk, _ := os.ReadFile(cfgFile)
+	if !strings.Contains(string(onDisk), "include_digital: true") {
+		t.Fatalf("include_digital not written as a bool:\n%s", onDisk)
+	}
+	reloaded, err := config.Load(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.Qualify.IncludeDigital {
+		t.Fatal("include_digital not on after reload")
+	}
+	if !srv.Rules().IncludeDigital() {
+		t.Fatal("rules not switched live")
+	}
+	if it, err := st.QueueGet(ft8.QSLKey); err != nil || it == nil || it.Status != "queued" {
+		t.Fatalf("FT8 QSO not queued after switching on: %+v %v", it, err)
+	}
+	r := get(t, h, "/settings")
+	if strings.Contains(r.Body.String(), `name="qualify_filter_digital" value="1" checked`) {
+		t.Fatal("filter box still ticked")
+	}
+
+	// Ticked again: filtered, on disk and live.
+	if r := postForm(t, h, "/settings/save", url.Values{"qualify_filter_digital": {"1"}}); r.Code != 200 {
+		t.Fatalf("save = %d", r.Code)
+	}
+	if srv.Rules().IncludeDigital() {
+		t.Fatal("rules still include digital after unticking")
+	}
+	if reloaded, err = config.Load(cfgFile); err != nil || reloaded.Qualify.IncludeDigital {
+		t.Fatalf("include_digital on disk after unticking: %v %v", reloaded.Qualify.IncludeDigital, err)
+	}
+}
+
 // TestSettingsPullButton: the Clublog section offers a pull with its status.
 func TestSettingsPullButton(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv.Routes(), "/settings").Body.String()
-	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled", `class="muted build-info">qslotter`} {
+	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled", `id="build"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page lacks %q", want)
 		}

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dl9et/qslotter/internal/buildinfo"
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
 	"github.com/dl9et/qslotter/internal/sync"
-	"github.com/dl9et/qslotter/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +25,7 @@ func (s *Server) pageSettings(w http.ResponseWriter, r *http.Request) {
 	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
 	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
 	s.render(w, r, "settings.html", map[string]any{"Cfg": s.config(), "CanQuit": s.Quit != nil, "Langs": s.langChoices(),
-		"ClublogPaused": s.clublogPausedAt(), "LastPull": lastPull, "LastPush": lastPush, "Build": version.Get()})
+		"ClublogPaused": s.clublogPausedAt(), "Build": buildinfo.Get(), "LastPull": lastPull, "LastPush": lastPush})
 }
 
 // saveSettings writes the form values into the config file on disk (a
@@ -39,16 +39,17 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur := s.config()
-	vals := map[string]string{
-		"qrz.username":         strings.TrimSpace(r.FormValue("qrz_username")),
-		"qrz.password":         r.FormValue("qrz_password"),
-		"clublog.email":        strings.TrimSpace(r.FormValue("clublog_email")),
-		"clublog.app_password": r.FormValue("clublog_app_password"),
-		"clublog.call":         strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
-		"clublog.api_key":      strings.TrimSpace(r.FormValue("clublog_api_key")),
-		"station.name":         strings.TrimSpace(r.FormValue("station_name")),
-		"station.qth":          strings.TrimSpace(r.FormValue("station_qth")),
-		"ui.language":          "",
+	vals := map[string]any{
+		"qrz.username":            strings.TrimSpace(r.FormValue("qrz_username")),
+		"qrz.password":            r.FormValue("qrz_password"),
+		"clublog.email":           strings.TrimSpace(r.FormValue("clublog_email")),
+		"clublog.app_password":    r.FormValue("clublog_app_password"),
+		"clublog.call":            strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
+		"clublog.api_key":         strings.TrimSpace(r.FormValue("clublog_api_key")),
+		"station.name":            strings.TrimSpace(r.FormValue("station_name")),
+		"station.qth":             strings.TrimSpace(r.FormValue("station_qth")),
+		"ui.language":             "",
+		"qualify.include_digital": r.FormValue("qualify_filter_digital") != "1", // the box says "Filter FT8, FT4, FT2"
 	}
 	// The UI language: one with a catalog, or empty = the browser's.
 	for _, l := range s.i18n.Languages() {
@@ -77,6 +78,23 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The digital-mode filter applies at once (UDP feed, sync and Recompute
+	// share these rules). Switched on, a scan queues the digital QSOs since
+	// the cutoff that were skipped so far.
+	if s.rules != nil && s.rules.IncludeDigital() != newCfg.Qualify.IncludeDigital {
+		s.rules.SetIncludeDigital(newCfg.Qualify.IncludeDigital)
+		log.Printf("settings: qualify.include_digital = %t", newCfg.Qualify.IncludeDigital)
+		if newCfg.Qualify.IncludeDigital {
+			keys, err := s.rules.EnqueueAllKeys(s.store)
+			for _, k := range keys {
+				s.publishQueueChanged(k, "queued")
+			}
+			if err != nil {
+				log.Printf("settings: queue scan after enabling digital modes: %v", err)
+			}
+		}
+	}
+
 	// Live-swap the QRZ client: the shared refresher serves both the web UI
 	// and the UDP listener's lookups.
 	if s.refresher != nil {
@@ -100,7 +118,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"ClublogPaused": s.clublogPausedAt(),
 		"LastPull":      lastPull,
 		"LastPush":      lastPush,
-		"Build":         version.Get(),
+		"Build":         buildinfo.Get(),
 	})
 }
 
@@ -163,18 +181,6 @@ func (s *Server) reloadConfig() (*config.Config, error) {
 	return newCfg, nil
 }
 
-// updateConfigFile edits section.key = value pairs in a YAML config file
-// in place. It re-marshals the parsed node tree, so comments and unknown
-// keys survive; written values are double-quoted so passwords that look
-// like numbers or booleans stay strings on reload.
-func updateConfigFile(path string, vals map[string]string) error {
-	nodes := map[string]*yaml.Node{}
-	for k, v := range vals {
-		nodes[k] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v, Style: yaml.DoubleQuotedStyle}
-	}
-	return updateConfigNodes(path, nodes)
-}
-
 // floatPair is a YAML flow sequence of two numbers ("[1.5, -0.5]"), for
 // settings such as printer.offset_mm.
 func floatPair(a, b float64) *yaml.Node {
@@ -188,9 +194,22 @@ func floatPair(a, b float64) *yaml.Node {
 	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle, Content: []*yaml.Node{num(a), num(b)}}
 }
 
-// updateConfigNodes sets section.key to the given nodes in a YAML config
-// file in place, like updateConfigFile, for values that are not strings.
+// updateConfigNodes is updateConfigFile for values given as YAML nodes
+// (e.g. floatPair).
 func updateConfigNodes(path string, vals map[string]*yaml.Node) error {
+	m := map[string]any{}
+	for k, v := range vals {
+		m[k] = v
+	}
+	return updateConfigFile(path, m)
+}
+
+// updateConfigFile edits section.key = value pairs in a YAML config file
+// in place. It re-marshals the parsed node tree, so comments and unknown
+// keys survive; string values are double-quoted so passwords that look
+// like numbers or booleans stay strings on reload; bools are written as
+// true/false.
+func updateConfigFile(path string, vals map[string]any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read: %w", err)
@@ -214,7 +233,7 @@ func updateConfigNodes(path string, vals map[string]*yaml.Node) error {
 	sort.Strings(keys)
 	for _, k := range keys {
 		parts := strings.SplitN(k, ".", 2)
-		if err := setConfigNode(root, parts[0], parts[1], vals[k]); err != nil {
+		if err := setConfigValue(root, parts[0], parts[1], vals[k]); err != nil {
 			return err
 		}
 	}
@@ -225,10 +244,29 @@ func updateConfigNodes(path string, vals map[string]*yaml.Node) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
-// setConfigNode sets section.key to val (a node built by the caller),
-// creating the section and the key when missing. The existing value node is
-// replaced in place, so a comment on its line survives.
-func setConfigNode(root *yaml.Node, section, key string, val *yaml.Node) error {
+// configNode is the YAML node for a settings value: strings double-quoted
+// (a password that looks like a number stays a string), bools as true/false,
+// a *yaml.Node (floatPair) as given.
+func configNode(section, key string, val any) (*yaml.Node, error) {
+	switch v := val.(type) {
+	case string:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v, Style: yaml.DoubleQuotedStyle}, nil
+	case bool:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(v)}, nil
+	case *yaml.Node:
+		return v, nil
+	}
+	return nil, fmt.Errorf("config value %s.%s: unsupported type %T", section, key, val)
+}
+
+// setConfigValue sets section.key to val, creating the section and the key
+// when missing. The existing value node is replaced in place, so a comment on
+// its line survives.
+func setConfigValue(root *yaml.Node, section, key string, val any) error {
+	node, err := configNode(section, key, val)
+	if err != nil {
+		return err
+	}
 	sec := mappingValue(root, section)
 	if sec == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: section}
@@ -241,11 +279,11 @@ func setConfigNode(root *yaml.Node, section, key string, val *yaml.Node) error {
 	valueNode := mappingValue(sec, key)
 	if valueNode == nil {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-		sec.Content = append(sec.Content, keyNode, val)
+		sec.Content = append(sec.Content, keyNode, node)
 		return nil
 	}
-	val.LineComment, val.HeadComment, val.FootComment = valueNode.LineComment, valueNode.HeadComment, valueNode.FootComment
-	*valueNode = *val
+	node.LineComment, node.HeadComment, node.FootComment = valueNode.LineComment, valueNode.HeadComment, valueNode.FootComment
+	*valueNode = *node
 	return nil
 }
 

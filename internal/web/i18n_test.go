@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -89,7 +91,7 @@ func TestGermanComplete(t *testing.T) {
 	sync.NoteLogin(st, srv.clublogFn(srv.cfg.Clublog), clublog.ErrForbidden)
 
 	pages := []string{"/", "/queue", "/queue?compact=1", "/decide", "/decide?key=" + url.QueryEscape(key),
-		"/work", "/work/card", "/work/card?filter=O", "/done", "/log", "/settings", "/settings/cards", "/receive",
+		"/work", "/work/card", "/work/card?filter=O", "/work/printq", "/work/printq?badge=1", "/done", "/log", "/settings", "/settings/cards", "/receive",
 		"/nav", "/queue/list", "/work/list", "/work/manager?manager=K2ABC", "/work/manager?manager=",
 		"/receive?call=DL3YYY"}
 	for _, p := range pages {
@@ -112,6 +114,44 @@ func TestGermanComplete(t *testing.T) {
 	for _, p := range posts {
 		requestDE(t, h, http.MethodPost, p.path, p.form)
 	}
+	// The print queue: a failed run, an open run with a card queued behind
+	// it, the conflicts, a failed reprint, a template without a note field.
+	de := func(method, path string, form url.Values) { requestDE(t, h, method, path, form) }
+	de(http.MethodPost, "/work/print", url.Values{"key": {desk1, desk2}, "route": {"MD"}, "manager": {"K2ABC"}, "cardnote": {"tnx"}})
+	srv.printer = &fakePrinter{err: errPrinterGone}
+	de(http.MethodPost, "/work/printrun", nil)
+	srv.printer = &fakePrinter{}
+	de(http.MethodPost, "/work/printrun", nil)
+	later := addQueued(t, st, "DL7AAA", "20240109")
+	postForm(t, h, "/queue/yes", url.Values{"key": {later}})
+	de(http.MethodPost, "/work/print", url.Values{"key": {later}, "route": {"B"}})
+	de(http.MethodGet, "/work", nil)
+	de(http.MethodPost, "/work/printrun", nil)
+	de(http.MethodPost, "/work/reprint", nil)
+	de(http.MethodPost, "/work/printback", nil)
+	srv.printer = &fakePrinter{err: errPrinterGone}
+	de(http.MethodPost, "/work/reprint", url.Values{"lead": {desk1}, "card:" + desk1: {desk1, desk2}})
+	srv.printer = &fakePrinter{}
+	de(http.MethodPost, "/work/printconfirm", nil)
+	de(http.MethodPost, "/work/printrun", nil)
+	de(http.MethodPost, "/work/printconfirm", nil)
+	de(http.MethodPost, "/work/printrun", nil) // nothing to print
+	de(http.MethodPost, "/receive/reply?how=print", url.Values{"key": {key}, "route": {"B"}})
+	de(http.MethodPost, "/work/exportrun", nil)
+	de(http.MethodGet, "/work", nil)
+	de(http.MethodPost, "/work/reprint?how=export", url.Values{"lead": {key}})
+	de(http.MethodPost, "/work/printconfirm", nil)
+	de(http.MethodGet, "/done", nil)
+	bare := filepath.Join(t.TempDir(), "bare.yaml")
+	if err := os.WriteFile(bare, []byte("fields:\n  - name: call\n    x_mm: 4\n    y_mm: 10\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv.cfg.Card.Template = bare
+	onDesk := addQueued(t, st, "DL7BBB", "20240110")
+	postForm(t, h, "/queue/yes", url.Values{"key": {onDesk}})
+	de(http.MethodPost, "/work/print", url.Values{"key": {key}, "route": {"B"}})
+	de(http.MethodGet, "/work", nil)
+	de(http.MethodGet, "/work/card", nil)
 	if len(missing) > 0 {
 		var list []string
 		for m := range missing {
@@ -140,3 +180,9 @@ func TestLanguageChoice(t *testing.T) {
 		t.Fatal("the page must declare its language")
 	}
 }
+
+var errPrinterGone = errorString("lp: printer gone")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }

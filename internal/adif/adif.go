@@ -152,6 +152,43 @@ func (w *Writer) Write(rec Record) error {
 	return err
 }
 
+// Field is one ADIF field for the ordered writers.
+type Field struct{ Name, Value string }
+
+// WriteHeader emits a header: free text, the fields, <EOH>.
+func (w *Writer) WriteHeader(text string, fields ...Field) error {
+	if _, err := io.WriteString(w.w, text+"\n"); err != nil {
+		return err
+	}
+	if err := w.writeFields(fields); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w.w, "<EOH>\n")
+	return err
+}
+
+// WriteFields emits one record with the fields in the given order (empty
+// values are left out), followed by <EOR>.
+func (w *Writer) WriteFields(fields ...Field) error {
+	if err := w.writeFields(fields); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w.w, "<EOR>\n")
+	return err
+}
+
+func (w *Writer) writeFields(fields []Field) error {
+	for _, f := range fields {
+		if f.Value == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w.w, "<%s:%d>%s ", strings.ToUpper(f.Name), len(f.Value), f.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // --- convenience accessors ---
 
 func (r Record) Get(field string) string { return r[strings.ToUpper(field)] }
