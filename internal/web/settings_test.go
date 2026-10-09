@@ -11,6 +11,7 @@ import (
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/events"
 	"github.com/dl9et/qslotter/internal/i18n"
+	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/store"
 )
 
@@ -43,15 +44,14 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	// Save: new username, empty password (keep old), numeric-looking app
 	// password (must stay a string on reload), new station name.
 	form := url.Values{
-		"qrz_username":           {"newcall"},
-		"qrz_password":           {""},
-		"clublog_email":          {"a@b.c"},
-		"clublog_app_password":   {"12345"},
-		"clublog_call":           {"DL9ET"},
-		"clublog_api_key":        {""},
-		"station_name":           {"Ingo M."},
-		"station_qth":            {"Bavaria"},
-		"qualify_filter_digital": {"1"},
+		"qrz_username":         {"newcall"},
+		"qrz_password":         {""},
+		"clublog_email":        {"a@b.c"},
+		"clublog_app_password": {"12345"},
+		"clublog_call":         {"DL9ET"},
+		"clublog_api_key":      {""},
+		"station_name":         {"Ingo M."},
+		"station_qth":          {"Bavaria"},
 	}
 	r := postForm(t, h, "/settings/save", form)
 	if r.Code != 200 {
@@ -93,10 +93,10 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSettingsIncludeDigital: the digital-mode checkbox is written as a YAML
-// bool, switches the shared rules at once and queues the skipped FT8 QSO -
+// TestSettingsFilter: the New QSOs matrix is written as qualify.ask,
+// switch the shared rules at once and queue the FT8 QSO skipped so far -
 // even with FT8 in an old config's exclude_modes.
-func TestSettingsIncludeDigital(t *testing.T) {
+func TestSettingsFilter(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
 	src := "qualify:\n  exclude_modes: [\"FT4\", \"FT8\", \"SSTV\"]\n  since: all\n"
 	if err := os.WriteFile(cfgFile, []byte(src), 0o600); err != nil {
@@ -119,47 +119,42 @@ func TestSettingsIncludeDigital(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.validateFn = func(*config.Config) (i18n.Msg, i18n.Msg) { return i18n.M("OK - stub"), i18n.M("OK - stub") }
 	h := srv.Routes()
-	if srv.Rules().IncludeDigital() {
-		t.Fatal("include_digital on by default")
+	if srv.Rules().Filter() != qualify.DefaultFilter {
+		t.Fatalf("filter = %+v, want the default", srv.Rules().Filter())
+	}
+	body := get(t, h, "/settings/general").Body.String()
+	if !strings.Contains(body, `name="qualify_ask_cw_repeat" value="1" checked`) || strings.Contains(body, `name="qualify_ask_digital_new" value="1" checked`) {
+		t.Fatal("the default filter is not shown")
 	}
 
-	// "Filter FT8, FT4, FT2" unticked = digital modes let in.
-	if r := postForm(t, h, "/settings/save", url.Values{}); r.Code != 200 {
+	// FT8 ticked for new stations, CW only for new stations.
+	form := url.Values{"tab": {"general"}, "qualify_ask_digital_new": {"1"}, "qualify_ask_cw_new": {"1"}}
+	for _, row := range []string{"phone", "keyboard", "satellite"} {
+		for _, col := range qualify.Cols {
+			form.Set("qualify_ask_"+row+"_"+col, "1")
+		}
+	}
+	if r := postForm(t, h, "/settings/save", form); r.Code != http.StatusSeeOther {
 		t.Fatalf("save = %d: %s", r.Code, r.Body)
 	}
 	onDisk, _ := os.ReadFile(cfgFile)
-	if !strings.Contains(string(onDisk), "include_digital: true") {
-		t.Fatalf("include_digital not written as a bool:\n%s", onDisk)
+	for _, want := range []string{"cw: [new]", "digital: [new]", "phone: [new, band, repeat]"} {
+		if !strings.Contains(string(onDisk), want) {
+			t.Fatalf("config lacks %q:\n%s", want, onDisk)
+		}
 	}
-	reloaded, err := config.Load(cfgFile)
-	if err != nil {
-		t.Fatal(err)
+	want := qualify.DefaultFilter
+	want[1] = [3]bool{true, false, false}
+	want[3] = [3]bool{true, false, false}
+	if reloaded, err := config.Load(cfgFile); err != nil || qualify.FilterFrom(reloaded.Qualify) != want {
+		t.Fatalf("filter after reload = %v (%v)", qualify.FilterFrom(reloaded.Qualify), err)
 	}
-	if !reloaded.Qualify.IncludeDigital {
-		t.Fatal("include_digital not on after reload")
-	}
-	if !srv.Rules().IncludeDigital() {
-		t.Fatal("rules not switched live")
+	if srv.Rules().Filter() != want {
+		t.Fatalf("rules not switched live: %v", srv.Rules().Filter())
 	}
 	if it, err := st.QueueGet(ft8.QSLKey); err != nil || it == nil || it.Status != "queued" {
 		t.Fatalf("FT8 QSO not queued after switching on: %+v %v", it, err)
-	}
-	r := get(t, h, "/settings")
-	if strings.Contains(r.Body.String(), `name="qualify_filter_digital" value="1" checked`) {
-		t.Fatal("filter box still ticked")
-	}
-
-	// Ticked again: filtered, on disk and live.
-	if r := postForm(t, h, "/settings/save", url.Values{"qualify_filter_digital": {"1"}}); r.Code != 200 {
-		t.Fatalf("save = %d", r.Code)
-	}
-	if srv.Rules().IncludeDigital() {
-		t.Fatal("rules still include digital after unticking")
-	}
-	if reloaded, err = config.Load(cfgFile); err != nil || reloaded.Qualify.IncludeDigital {
-		t.Fatalf("include_digital on disk after unticking: %v %v", reloaded.Qualify.IncludeDigital, err)
 	}
 }
 
@@ -171,7 +166,7 @@ func TestSettingsTabs(t *testing.T) {
 	for path, want := range map[string][]string{
 		"/settings":          {`name="qrz_username"`, `name="clublog_api_key"`, "never pulled", `href="/log"`, `<input type="hidden" name="tab" value="connections">`},
 		"/settings/printing": {"Prints the cards", `href="/settings/cards?name=%3abuiltin"`, `<svg class="cardsvg"`, `action="/settings/printer"`, `hx-post="/settings/testcard"`, `name="station_name"`},
-		"/settings/general":  {`name="ui_language"`, `name="qualify_filter_digital"`, `id="build"`, "Version"},
+		"/settings/general":  {`name="ui_language"`, `name="qualify_ask_cw_repeat"`, `name="qualify_ask_satellite_band"`, `id="build"`, "Version"},
 	} {
 		r := get(t, h, path)
 		if r.Code != 200 {
@@ -214,7 +209,7 @@ func TestSettingsSaveTab(t *testing.T) {
 		return i18n.Msg{}, i18n.Msg{}
 	}
 	h := srv.Routes()
-	r := postForm(t, h, "/settings/save", url.Values{"tab": {"general"}, "ui_language": {"de"}, "qualify_filter_digital": {"1"}})
+	r := postForm(t, h, "/settings/save", url.Values{"tab": {"general"}, "ui_language": {"de"}, "qualify_ask_phone_new": {"1"}})
 	if r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/settings/general?saved=1" {
 		t.Fatalf("save = %d %q", r.Code, r.Header().Get("Location"))
 	}

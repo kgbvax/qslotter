@@ -39,7 +39,8 @@ where it stands today.
   anything UDP missed. The system never depends on UDP alone.
 - **Automatic qualification with simple, configurable rules** (skip FT\*
   modes, first-contact-only). Done: `qualify.exclude_modes`,
-  `first_contact_only`, `include_digital` (Settings checkbox, 2026-10-06).
+  `first_contact_only`, `include_digital` (Settings checkbox, 2026-10-06);
+  2026-10-08 the filter is a matrix under Settings > General (`qualify.ask`).
 - **Override for memorable QSOs, controlled via notes.** Done: the `QSL!`
   marker (`qualify.override_marker`) force-includes a QSO.
 - **Smart method determination from QRZ and other sources — none, "no paper
@@ -526,6 +527,15 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   switched on, a scan queues the digital QSOs since the cutoff at once. The
   switch alone decides for digital modes - also over FT4/FT8 in an older
   config's `exclude_modes`, which now covers the other modes only.
+
+- **2026-10-08 — New QSOs filter as a matrix.** Rows: how the QSO was made
+  (phone, CW, RTTY & other typed digital modes, FT8 & co., satellite - any
+  mode via satellite); columns: how new the contact is (new station, new
+  band - for satellites new satellite -, repeat), from the whole log. Every
+  QSO lands in one cell, a ticked cell asks, the rest is skipped silently;
+  no "always ask" rules beside the `QSL!` marker (operator's call). "First
+  contact only" is the first column alone. A change counts for new QSOs and
+  queues what it now lets in since the cutoff; waiting QSOs stay.
 - **2026-10-05 — Printing is two-step: print queue, print run, confirm.**
   "Print" no longer prints and sends at once (it replaces every print-and-send
   path: Desk card, Desk batch, Incoming reply). A card is sent to printing

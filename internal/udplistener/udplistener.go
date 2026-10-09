@@ -157,7 +157,7 @@ func (l *Listener) handleDatagram(data []byte) {
 		// Uses the fast path (mode + override + first-contact via the call's
 		// recent QSOs) rather than re-scanning the whole log on every datagram.
 		if l.rules != nil {
-			priorQSOs, err := l.store.RecentQSOsByCall(q.Call, 50)
+			priorQSOs, err := l.store.RecentQSOsByCall(q.Call, 100000) // all: first on this band / satellite
 			if err != nil {
 				// Fail open: better to show a card the operator can decide on
 				// than to lose the QSO to a transient store error.
@@ -166,9 +166,7 @@ func (l *Listener) handleDatagram(data []byte) {
 			ok, reason := l.rules.EligibleForNewQSO(q, priorQSOs)
 			if ok {
 				item := &store.QueueItem{QSLKey: q.QSLKey, Status: "queued"}
-				if strings.HasPrefix(reason, "override:") {
-					item.OverrideReason = reason // why a normally-filtered QSO is here
-				}
+				item.OverrideReason = qualify.ReasonFor(reason) // why a normally-filtered QSO is here
 				if err := l.store.Enqueue(item); err != nil {
 					log.Printf("udplistener: enqueue %s: %v", q.QSLKey, err)
 				} else if l.broker != nil {

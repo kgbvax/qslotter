@@ -3,6 +3,7 @@ package qualify
 
 import (
 	"log"
+	"slices"
 	"strings"
 	gosync "sync"
 	"sync/atomic"
@@ -13,34 +14,108 @@ import (
 )
 
 type Rules struct {
-	ExcludeModes     []string
-	FirstContactOnly bool
-	OverrideMarker   string // e.g. "QSL!" - if present in notes, the QSO is force-included
-	Since            string // YYYYMMDD: QSOs before this date are not queued ("" = no cutoff)
+	ExcludeModes   []string
+	OverrideMarker string // e.g. "QSL!" - if present in notes, the QSO is force-included
+	Since          string // YYYYMMDD: QSOs before this date are not queued ("" = no cutoff)
 
-	// includeDigital lets the digital modes in (qualify.include_digital).
-	// Atomic: Settings switches it while the UDP feed and the sync loop read.
-	includeDigital atomic.Bool
+	// filter is what the operator chose under Settings. Atomic: Settings
+	// switches it while the UDP feed and the sync loop read.
+	filter atomic.Pointer[Filter]
+}
+
+// Filter is the operator's choice of which QSOs ask for a card decision: a
+// matrix of rows (how the QSO was made) and columns (how new the contact
+// is). Every QSO lands in one cell; a true cell asks, a false one skips.
+type Filter [len(Rows)][len(Cols)]bool
+
+// Rows and columns of the Filter, by their config names.
+var (
+	Rows = [...]string{GroupPhone, GroupCW, GroupKeyboard, GroupDigital, RowSatellite}
+	Cols = [...]string{ColNew, ColBand, ColRepeat}
+)
+
+const (
+	RowSatellite = "satellite"
+
+	ColNew    = "new"    // the station was never worked before
+	ColBand   = "band"   // worked, but not on this band (satellite row: not via this satellite)
+	ColRepeat = "repeat" // worked on this band (via this satellite) before
+)
+
+// DefaultFilter: every cell asks but the FT8 & co. row.
+var DefaultFilter = func() Filter {
+	var f Filter
+	for r := range Rows {
+		for c := range Cols {
+			f[r][c] = Rows[r] != GroupDigital
+		}
+	}
+	return f
+}()
+
+// FilterFrom reads the filter from the configuration: qualify.ask, else
+// the older include_digital / first_contact_only switches.
+func FilterFrom(c config.QualifyCfg) Filter {
+	f := DefaultFilter
+	if c.Ask == nil {
+		for c2 := range Cols {
+			f[slices.Index(Rows[:], GroupDigital)][c2] = c.IncludeDigital
+		}
+		if c.FirstContactOnly {
+			for r := range Rows {
+				f[r][1], f[r][2] = false, false
+			}
+		}
+		return f
+	}
+	for r, row := range Rows {
+		cols, ok := c.Ask[row]
+		if !ok {
+			continue // a row the config does not name keeps its default
+		}
+		for ci, col := range Cols {
+			f[r][ci] = slices.ContainsFunc(cols, func(v string) bool { return strings.EqualFold(strings.TrimSpace(v), col) })
+		}
+	}
+	return f
+}
+
+// Ask is the filter as qualify.ask: per row the columns that ask.
+func (f Filter) Ask() map[string][]string {
+	out := make(map[string][]string, len(Rows))
+	for r, row := range Rows {
+		out[row] = []string{}
+		for c, col := range Cols {
+			if f[r][c] {
+				out[row] = append(out[row], col)
+			}
+		}
+	}
+	return out
 }
 
 func New(rules *Rules) *Rules { return rules }
 
-// IncludeDigital reports whether digital modes (IsDigital) may be queued.
-func (r *Rules) IncludeDigital() bool { return r.includeDigital.Load() }
+// Filter is the filter in force (DefaultFilter until one is set).
+func (r *Rules) Filter() Filter {
+	if f := r.filter.Load(); f != nil {
+		return *f
+	}
+	return DefaultFilter
+}
 
-// SetIncludeDigital switches the digital-mode filter, effective at once.
-func (r *Rules) SetIncludeDigital(on bool) { r.includeDigital.Store(on) }
+// SetFilter switches the filter, effective at once.
+func (r *Rules) SetFilter(f Filter) { r.filter.Store(&f) }
 
 // NewRules builds the rules from the configuration. The default cutoff is the
 // day qslotter first ran (remembered in the store), so only QSOs from then on
 // enter the decision queue; qualify.since: all lifts it.
 func NewRules(c config.QualifyCfg, st store.Store) *Rules {
 	r := &Rules{
-		ExcludeModes:     c.ExcludeModes,
-		FirstContactOnly: c.FirstContactOnly,
-		OverrideMarker:   c.OverrideMarker,
+		ExcludeModes:   c.ExcludeModes,
+		OverrideMarker: c.OverrideMarker,
 	}
-	r.SetIncludeDigital(c.IncludeDigital)
+	r.SetFilter(FilterFrom(c))
 	switch v := strings.ToLower(strings.TrimSpace(c.Since)); v {
 	case "all", "none":
 	case "":
@@ -77,8 +152,8 @@ func (r *Rules) hasOverride(q *store.QSO) bool {
 		strings.Contains(strings.ToUpper(q.Notes), strings.ToUpper(r.OverrideMarker))
 }
 
-// IsDigital reports the digital families (FT8/FT4/FT2, FST4, JS8, WSPR,
-// MSK144) that are skipped unless qualify.include_digital is on.
+// IsDigital reports the machine digital families (FT8/FT4/FT2, FST4, JS8,
+// WSPR, MSK144): the mode group "digital".
 func IsDigital(mode string) bool {
 	mode = strings.ToUpper(mode)
 	for _, p := range []string{"FT", "JS8", "WSPR", "MSK", "FST"} {
@@ -89,10 +164,72 @@ func IsDigital(mode string) bool {
 	return false
 }
 
+// Mode groups (ModeGroup).
+const (
+	GroupPhone    = "phone"
+	GroupCW       = "cw"
+	GroupKeyboard = "keyboard"
+	GroupDigital  = "digital"
+)
+
+// ModeGroup sorts an ADIF mode into phone (SSB, FM, AM, digital voice), CW,
+// digital (IsDigital) or keyboard - RTTY and every other mode.
+func ModeGroup(mode string) string {
+	switch m := strings.ToUpper(strings.TrimSpace(mode)); {
+	case IsDigital(m):
+		return GroupDigital
+	case m == "CW":
+		return GroupCW
+	case m == "SSB" || m == "USB" || m == "LSB" || m == "FM" || m == "AM" || m == "DIGITALVOICE" ||
+		m == "DSTAR" || m == "C4FM" || m == "DMR" || m == "FREEDV" || m == "M17":
+		return GroupPhone
+	}
+	return GroupKeyboard
+}
+
+// IsSatellite: the QSO went via a satellite (ADIF PROP_MODE SAT).
+func IsSatellite(q *store.QSO) bool { return strings.EqualFold(strings.TrimSpace(q.PropMode), "SAT") }
+
+// Row is q's row in the Filter: satellite whatever the mode, else the mode
+// group.
+func Row(q *store.QSO) int {
+	if IsSatellite(q) {
+		return slices.Index(Rows[:], RowSatellite)
+	}
+	return slices.Index(Rows[:], ModeGroup(q.Mode))
+}
+
+// Column is q's column in the Filter: how new the contact is, from the
+// older QSOs among priors (the QSOs with the same call; may include q).
+func Column(q *store.QSO, priors []*store.QSO) int {
+	before, same := false, false
+	sat := IsSatellite(q)
+	for _, p := range priors {
+		if p == q || p.QSLKey == q.QSLKey || !strings.EqualFold(p.Call, q.Call) || !isOlder(p, q) {
+			continue
+		}
+		before = true
+		if sat {
+			if IsSatellite(p) && strings.EqualFold(strings.TrimSpace(p.SatName), strings.TrimSpace(q.SatName)) {
+				same = true
+			}
+		} else if !IsSatellite(p) && strings.EqualFold(p.Band, q.Band) {
+			same = true
+		}
+	}
+	switch {
+	case !before:
+		return 0
+	case !same:
+		return 1
+	}
+	return 2
+}
+
 // check is the single eligibility decision. priors are the other QSOs with
-// the same call (newest-first, may include q itself); havePriors=false means
-// the caller could not supply them, which fails the first-contact check open.
-func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool, string) {
+// the same call (newest-first, may include q itself); without them (nil)
+// the QSO counts as a new station.
+func (r *Rules) check(q *store.QSO, priors []*store.QSO) (bool, string) {
 	// A card that already went out is never queued again - not even by the
 	// override marker on an old, already-handled QSO.
 	if q.SentPerLog() {
@@ -101,59 +238,43 @@ func (r *Rules) check(q *store.QSO, priors []*store.QSO, havePriors bool) (bool,
 	if q.QSLSentLocal.Valid && q.QSLSentLocal.String == "Y" {
 		return false, "QSL already sent (local)"
 	}
-	// The override marker force-includes the QSO despite mode, cutoff and
-	// first-contact rules.
+	// The override marker force-includes the QSO despite the filter and
+	// the cutoff.
 	if r.hasOverride(q) {
 		return true, "override: " + r.OverrideMarker + " in notes"
 	}
 	if r.Since != "" && q.QSODate < r.Since {
 		return false, "before qualify.since (" + r.Since + ")"
 	}
-	// Digital modes follow qualify.include_digital alone - also those listed
-	// in exclude_modes (older configs listed FT4/FT8/...); exclude_modes
-	// covers the other modes.
-	mode := strings.ToUpper(q.Mode)
-	if IsDigital(mode) {
-		if !r.IncludeDigital() {
-			return false, "mode " + q.Mode + " excluded (digital)"
-		}
-	} else {
+	// exclude_modes (exact names) skips further modes outside the digital
+	// row (older configs listed FT4/FT8/... there - the matrix alone
+	// decides for those).
+	if ModeGroup(q.Mode) != GroupDigital {
 		for _, ex := range r.ExcludeModes {
-			if mode == strings.ToUpper(ex) {
+			if strings.EqualFold(q.Mode, ex) {
 				return false, "mode " + q.Mode + " excluded"
 			}
 		}
 	}
-	// First-contact-only: only the first-ever QSO with a station is eligible;
-	// a later QSO with the same call is not.
-	if r.FirstContactOnly {
-		if !havePriors {
-			return false, "first-contact check skipped (no log slice)"
-		}
-		for _, p := range priors {
-			if p == q || p.QSLKey == q.QSLKey || p.Call != q.Call {
-				continue
-			}
-			if isOlder(p, q) {
-				return false, "prior QSO with " + q.Call + " exists"
-			}
-		}
+	row, col := Row(q), Column(q, priors)
+	if !r.Filter()[row][col] {
+		return false, "filter: " + Rows[row] + " / " + Cols[col]
 	}
 	return true, "eligible"
 }
 
 // Eligible returns true if the QSO should be queued for a QSL card.
-// allQSOs is the full log (newest-first) used to detect prior contacts; it
-// may be nil, in which case the first-contact check (if enabled) fails closed.
+// allQSOs is the full log (newest-first) used to tell how new the contact
+// is; nil counts it as a new station.
 func (r *Rules) Eligible(q *store.QSO, allQSOs []*store.QSO) (bool, string) {
-	return r.check(q, allQSOs, allQSOs != nil)
+	return r.check(q, allQSOs)
 }
 
 // EligibleForNewQSO is the UDP fast path: the same rules, with priorQSOs (the
 // QSOs already in the store for this call, newest-first, including q itself)
 // for the first-contact check instead of the whole log.
 func (r *Rules) EligibleForNewQSO(q *store.QSO, priorQSOs []*store.QSO) (bool, string) {
-	return r.check(q, priorQSOs, true)
+	return r.check(q, priorQSOs)
 }
 
 // isOlder returns true if p is strictly older than q (by QSO date, then time).
@@ -198,19 +319,24 @@ func (r *Rules) EnqueueAllKeys(st store.Store) ([]string, error) {
 		}
 	}
 
+	byCall := make(map[string][]*store.QSO)
+	for _, q := range qsos {
+		c := strings.ToUpper(q.Call)
+		byCall[c] = append(byCall[c], q)
+	}
 	var enqueued []string
 	for _, q := range qsos {
 		if _, ok := existingKeys[q.QSLKey]; ok {
 			continue
 		}
-		ok, reason := r.Eligible(q, qsos)
+		ok, reason := r.check(q, byCall[strings.ToUpper(q.Call)])
 		if !ok {
 			continue
 		}
 		err := st.Enqueue(&store.QueueItem{
 			QSLKey:         q.QSLKey,
 			Status:         "queued",
-			OverrideReason: reasonFor(q, reason),
+			OverrideReason: ReasonFor(reason),
 		})
 		if err != nil {
 			return enqueued, err
@@ -242,9 +368,10 @@ func (r *Rules) DiscardBacklog(st store.Store) (int, error) {
 	return n, st.MetaSet("backlog_discarded_before", r.Since)
 }
 
-// reasonFor returns the override reason if the QSO was force-included via the
-// override marker; otherwise empty (normal eligibility has no reason to log).
-func reasonFor(q *store.QSO, reason string) string {
+// ReasonFor is what the queue item keeps of an eligibility reason: why a
+// QSO the filter would skip is here (the override marker); "" for a plain
+// eligible QSO.
+func ReasonFor(reason string) string {
 	if strings.HasPrefix(reason, "override:") {
 		return reason
 	}

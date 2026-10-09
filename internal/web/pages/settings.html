@@ -170,9 +170,21 @@
     <input type="hidden" name="tab" value="general">
     <section class="set-sec">
       <div class="set-head"><h3>{{t "New QSOs"}}</h3>
-        <p>{{t "Which QSOs ask for a card decision."}}</p></div>
+        <p>{{t "Which QSOs ask for a card decision. Changes count for new QSOs; what waits in New QSOs stays."}}</p>
+        <p>{{t "New, band and repeat look at your whole log for the station."}}</p>
+        <p>{{t "%s in the QSO's notes always asks." .Cfg.Qualify.OverrideMarker}}</p></div>
       <div class="set-body">
-        <label class="check"><input type="checkbox" name="qualify_filter_digital" value="1"{{if not .Cfg.Qualify.IncludeDigital}} checked{{end}}> {{t "Filter FT8, FT4, FT2"}}</label>
+        <table class="set-matrix">
+          <caption>{{t "Tick what asks for a card; the rest is skipped silently."}}</caption>
+          <thead><tr><td></td>
+            <th scope="col">{{t "New station"}}<small>{{t "never worked"}}</small></th>
+            <th scope="col">{{t "New band"}}<small>{{t "worked, not on this band"}}</small></th>
+            <th scope="col">{{t "Repeat"}}<small>{{t "worked on this band"}}</small></th></tr></thead>
+          <tbody>{{range .Matrix}}<tr>
+            <th scope="row">{{t .Label}}{{with .Hint}}<small>{{t .}}</small>{{end}}</th>
+            {{range .Cells}}<td><input type="checkbox" name="{{.Name}}" value="1"{{if .On}} checked{{end}}></td>{{end}}
+          </tr>{{end}}</tbody>
+        </table>
       </div>
     </section>
     <section class="set-sec">

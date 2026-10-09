@@ -128,14 +128,12 @@ func main() {
 
 	// Qualifier rules shared by the web UI, the UDP listener (fast path) and
 	// the sync orchestrator (full scan after Clublog pull) - one instance, so
-	// the digital-mode switch under Settings reaches all of them.
+	// the filter switched under Settings reaches all of them.
 	rules := srv.Rules()
 	if rules.Since != "" {
 		log.Printf("qualify: queueing QSOs from %s on (qualify.since: all lifts the cutoff)", rules.Since)
 	}
-	if rules.IncludeDigital() {
-		log.Printf("qualify: digital modes (FT8/FT4/FT2, JS8, ...) enter the queue (qualify.include_digital)")
-	}
+	log.Printf("qualify: filter %+v", rules.Filter())
 	// One-time backlog discard (VISION A1): only QSOs from the cutoff on count.
 	if n, err := rules.DiscardBacklog(st); err != nil {
 		log.Printf("qualify: backlog discard: %v", err)
