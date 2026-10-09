@@ -16,6 +16,7 @@ import (
 	"github.com/dl9et/qslotter/internal/config"
 	"github.com/dl9et/qslotter/internal/i18n"
 	"github.com/dl9et/qslotter/internal/qrz"
+	"github.com/dl9et/qslotter/internal/qualify"
 	"github.com/dl9et/qslotter/internal/sync"
 	"gopkg.in/yaml.v3"
 )
@@ -52,6 +53,7 @@ func (s *Server) settingsData(r *http.Request, tab string, cfg *config.Config) m
 		d["OffsetX"], d["OffsetY"] = fmtMM(cfg.Printer.OffsetMM[0]), fmtMM(cfg.Printer.OffsetMM[1])
 	case tabGeneral:
 		d["Langs"], d["Build"], d["CanQuit"] = s.langChoices(), buildinfo.Get(), s.Quit != nil
+		d["Matrix"] = filterMatrix(qualify.FilterFrom(cfg.Qualify))
 	}
 	return d
 }
@@ -69,6 +71,53 @@ func (s *Server) pageSettingsPrinting(w http.ResponseWriter, r *http.Request) {
 // pageSettingsGeneral renders the General tab.
 func (s *Server) pageSettingsGeneral(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "settings.html", s.settingsData(r, tabGeneral, s.config()))
+}
+
+// matrixRow is one row of the New QSOs filter on the General tab.
+type matrixRow struct {
+	Label, Hint string // English, translated in the template
+	Cells       []matrixCell
+}
+
+type matrixCell struct {
+	Name string // form field
+	On   bool
+}
+
+// filterRowText labels the rows of the filter.
+var filterRowText = map[string][2]string{
+	qualify.GroupPhone:    {"Phone", "SSB, FM, AM, digital voice"},
+	qualify.GroupCW:       {"CW", ""},
+	qualify.GroupKeyboard: {"RTTY and other digital modes", "PSK, Olivia, SSTV, ..."},
+	qualify.GroupDigital:  {"FT8, FT4 and similar", "FT2, JS8, FST4, MSK144, WSPR"},
+	qualify.RowSatellite:  {"Satellite", "any mode; new band = new satellite"},
+}
+
+func filterMatrix(f qualify.Filter) []matrixRow {
+	var out []matrixRow
+	for ri, row := range qualify.Rows {
+		mr := matrixRow{Label: filterRowText[row][0], Hint: filterRowText[row][1]}
+		for ci, col := range qualify.Cols {
+			mr.Cells = append(mr.Cells, matrixCell{"qualify_ask_" + row + "_" + col, f[ri][ci]})
+		}
+		out = append(out, mr)
+	}
+	return out
+}
+
+// askNode is the filter as the YAML of qualify.ask: one row per line, the
+// columns that ask as a flow sequence ("phone: [new, band, repeat]").
+func askNode(f qualify.Filter) *yaml.Node {
+	m := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	ask := f.Ask()
+	for _, row := range qualify.Rows {
+		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle}
+		for _, col := range ask[row] {
+			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: col})
+		}
+		m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: row}, seq)
+	}
+	return m
 }
 
 // settingsSections are the config keys each tab's form writes (tab= in the
@@ -92,17 +141,24 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.config()
 	vals := map[string]any{
-		"qrz.username":            strings.TrimSpace(r.FormValue("qrz_username")),
-		"qrz.password":            r.FormValue("qrz_password"),
-		"clublog.email":           strings.TrimSpace(r.FormValue("clublog_email")),
-		"clublog.app_password":    r.FormValue("clublog_app_password"),
-		"clublog.call":            strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
-		"clublog.api_key":         strings.TrimSpace(r.FormValue("clublog_api_key")),
-		"station.name":            strings.TrimSpace(r.FormValue("station_name")),
-		"station.qth":             strings.TrimSpace(r.FormValue("station_qth")),
-		"ui.language":             "",
-		"qualify.include_digital": r.FormValue("qualify_filter_digital") != "1", // the box says "Filter FT8, FT4, FT2"
+		"qrz.username":         strings.TrimSpace(r.FormValue("qrz_username")),
+		"qrz.password":         r.FormValue("qrz_password"),
+		"clublog.email":        strings.TrimSpace(r.FormValue("clublog_email")),
+		"clublog.app_password": r.FormValue("clublog_app_password"),
+		"clublog.call":         strings.ToUpper(strings.TrimSpace(r.FormValue("clublog_call"))),
+		"clublog.api_key":      strings.TrimSpace(r.FormValue("clublog_api_key")),
+		"station.name":         strings.TrimSpace(r.FormValue("station_name")),
+		"station.qth":          strings.TrimSpace(r.FormValue("station_qth")),
+		"ui.language":          "",
 	}
+	// The New QSOs filter: one checkbox per cell of the matrix.
+	var filter qualify.Filter
+	for ri, row := range qualify.Rows {
+		for ci, col := range qualify.Cols {
+			filter[ri][ci] = r.FormValue("qualify_ask_"+row+"_"+col) == "1"
+		}
+	}
+	vals["qualify.ask"] = askNode(filter)
 	// The UI language: one with a catalog, or empty = the browser's.
 	for _, l := range s.i18n.Languages() {
 		if r.FormValue("ui_language") == l {
@@ -138,20 +194,18 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The digital-mode filter applies at once (UDP feed, sync and Recompute
-	// share these rules). Switched on, a scan queues the digital QSOs since
-	// the cutoff that were skipped so far.
-	if s.rules != nil && s.rules.IncludeDigital() != newCfg.Qualify.IncludeDigital {
-		s.rules.SetIncludeDigital(newCfg.Qualify.IncludeDigital)
-		log.Printf("settings: qualify.include_digital = %t", newCfg.Qualify.IncludeDigital)
-		if newCfg.Qualify.IncludeDigital {
-			keys, err := s.rules.EnqueueAllKeys(s.store)
-			for _, k := range keys {
-				s.publishQueueChanged(k, "queued")
-			}
-			if err != nil {
-				log.Printf("settings: queue scan after enabling digital modes: %v", err)
-			}
+	// The New QSOs filter applies at once (UDP feed, sync and Recompute
+	// share these rules). Waiting QSOs stay; a scan queues the QSOs since the
+	// cutoff that the new filter lets in.
+	if f := qualify.FilterFrom(newCfg.Qualify); s.rules != nil && s.rules.Filter() != f {
+		s.rules.SetFilter(f)
+		log.Printf("settings: qualify filter = %+v", f)
+		keys, err := s.rules.EnqueueAllKeys(s.store)
+		for _, k := range keys {
+			s.publishQueueChanged(k, "queued")
+		}
+		if err != nil {
+			log.Printf("settings: queue scan after a filter change: %v", err)
 		}
 	}
 

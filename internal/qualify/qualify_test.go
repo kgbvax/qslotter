@@ -3,6 +3,7 @@ package qualify
 import (
 	"database/sql"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -27,8 +28,14 @@ func qso(call, date, time, band, mode string) *store.QSO {
 	}
 }
 
+// fco: first contact only - only the "new" column asks (default rows).
+func fco(r *Rules) *Rules {
+	r.SetFilter(FilterFrom(config.QualifyCfg{FirstContactOnly: true}))
+	return r
+}
+
 func TestEligibleModeExcluded(t *testing.T) {
-	r := &Rules{ExcludeModes: []string{"FT8"}, FirstContactOnly: false}
+	r := &Rules{ExcludeModes: []string{"FT8"}}
 	q := qso("DL1AB", "20240101", "120000", "20m", "FT8")
 	ok, reason := r.Eligible(q, []*store.QSO{q})
 	if ok {
@@ -38,7 +45,7 @@ func TestEligibleModeExcluded(t *testing.T) {
 
 func TestEligibleDigitalPrefixFallback(t *testing.T) {
 	// FST4 is not in the explicit list but matches the FT/FST prefix fallback.
-	r := &Rules{ExcludeModes: []string{"FT8"}, FirstContactOnly: false}
+	r := &Rules{ExcludeModes: []string{"FT8"}}
 	q := qso("DL1AB", "20240101", "120000", "20m", "FST4")
 	ok, _ := r.Eligible(q, []*store.QSO{q})
 	if ok {
@@ -61,7 +68,7 @@ func TestIncludeDigital(t *testing.T) {
 	if ok, _ := r.Eligible(sstv, []*store.QSO{sstv}); ok {
 		t.Fatal("SSTV listed in exclude_modes was let in")
 	}
-	r.SetIncludeDigital(false)
+	r.SetFilter(DefaultFilter)
 	ft8 := qso("DL1AB", "20240101", "120000", "20m", "FT8")
 	if ok, _ := r.Eligible(ft8, []*store.QSO{ft8}); ok {
 		t.Fatal("FT8 still let in after switching include_digital off")
@@ -69,7 +76,7 @@ func TestIncludeDigital(t *testing.T) {
 }
 
 func TestEligibleFirstContactOnly(t *testing.T) {
-	r := &Rules{FirstContactOnly: true}
+	r := fco(&Rules{})
 	// Two QSOs with DL1AB: q1 newer, q2 older.
 	q1 := qso("DL1AB", "20240102", "130000", "20m", "SSB")
 	q2 := qso("DL1AB", "20240101", "120000", "20m", "SSB")
@@ -93,7 +100,7 @@ func TestEligibleFirstContactOnly(t *testing.T) {
 }
 
 func TestEligibleOverride(t *testing.T) {
-	r := &Rules{FirstContactOnly: true, OverrideMarker: "QSL!"}
+	r := fco(&Rules{OverrideMarker: "QSL!"})
 	// A second QSO with DL1AB that has the override marker in notes.
 	q := qso("DL1AB", "20240102", "130000", "20m", "SSB")
 	q.Notes = "memorable QSO - QSL!"
@@ -119,7 +126,7 @@ func TestEligibleAlreadySent(t *testing.T) {
 }
 
 func TestEligibleForNewQSOFirstContact(t *testing.T) {
-	r := &Rules{FirstContactOnly: true}
+	r := fco(&Rules{})
 	// q is the newer QSO; prior is older.
 	q := qso("DL1AB", "20240102", "130000", "20m", "SSB")
 	prior := qso("DL1AB", "20240101", "120000", "20m", "SSB")
@@ -148,7 +155,7 @@ func TestEnqueueAll(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := &Rules{FirstContactOnly: true}
+	r := fco(&Rules{})
 	n, err := r.EnqueueAll(st)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +187,7 @@ func TestEnqueueAllRespectsTerminalStatus(t *testing.T) {
 	_, _, _ = st.UpsertQSO(q)
 	// Manually mark it skipped.
 	_ = st.Enqueue(&store.QueueItem{QSLKey: q.QSLKey, Status: "skipped"})
-	r := &Rules{FirstContactOnly: true}
+	r := fco(&Rules{})
 	n, _ := r.EnqueueAll(st)
 	if n != 0 {
 		t.Fatalf("EnqueueAll should not re-enqueue a skipped QSO; got %d", n)
@@ -196,7 +203,7 @@ func TestEnqueueAllOverride(t *testing.T) {
 	q2.Notes = "memorable QSL!"
 	_, _, _ = st.UpsertQSO(q1)
 	_, _, _ = st.UpsertQSO(q2)
-	r := &Rules{FirstContactOnly: true, OverrideMarker: "QSL!"}
+	r := fco(&Rules{OverrideMarker: "QSL!"})
 	n, _ := r.EnqueueAll(st)
 	// q1 (older) is first-contact -> eligible.
 	// q2 (newer) has override marker -> force-included.
@@ -278,7 +285,7 @@ func TestRepeatContactsQueueUnlessFirstContactOnly(t *testing.T) {
 	if ok, _ := (&Rules{}).Eligible(q2, all); !ok {
 		t.Fatal("by default a repeat contact is queued (the operator decides, with the history in front of them)")
 	}
-	if ok, _ := (&Rules{FirstContactOnly: true}).Eligible(q2, all); ok {
+	if ok, _ := fco(&Rules{}).Eligible(q2, all); ok {
 		t.Fatal("first_contact_only still filters repeat contacts")
 	}
 }
@@ -356,5 +363,90 @@ func TestClublogSentDateIsSent(t *testing.T) {
 	q.QSLSDate = "20260105"
 	if ok, _ := r.Eligible(q, nil); ok {
 		t.Fatal("a QSO with a QSL sent date must not be queued")
+	}
+}
+
+func TestModeGroup(t *testing.T) {
+	for mode, want := range map[string]string{"SSB": GroupPhone, "usb": GroupPhone, "FM": GroupPhone, "DSTAR": GroupPhone,
+		"CW": GroupCW, "RTTY": GroupKeyboard, "PSK31": GroupKeyboard, "SSTV": GroupKeyboard, "FT8": GroupDigital, "JS8": GroupDigital} {
+		if got := ModeGroup(mode); got != want {
+			t.Errorf("ModeGroup(%s) = %s, want %s", mode, got, want)
+		}
+	}
+}
+
+// TestMatrix: every QSO lands in one cell of the filter - the row by mode
+// or satellite, the column by how new the contact is.
+func TestMatrix(t *testing.T) {
+	old := qso("DL1AB", "20240101", "120000", "20m", "SSB")
+	newBand := qso("DL1AB", "20240201", "120000", "40m", "CW")
+	sameBand := qso("DL1AB", "20240301", "120000", "20m", "FT8")
+	sat1 := qso("DL1AB", "20240401", "120000", "70cm", "FT4")
+	sat1.PropMode, sat1.SatName = "SAT", "RS-44"
+	sat2 := qso("DL1AB", "20240501", "120000", "70cm", "SSB")
+	sat2.PropMode, sat2.SatName = "SAT", "RS-44"
+	sat3 := qso("DL1AB", "20240601", "120000", "70cm", "FM")
+	sat3.PropMode, sat3.SatName = "SAT", "QO-100"
+	rtty := qso("DL1AB", "20240701", "120000", "40m", "RTTY")
+	all := []*store.QSO{rtty, sat3, sat2, sat1, sameBand, newBand, old}
+	for _, tc := range []struct {
+		q        *store.QSO
+		row, col string
+	}{
+		{old, GroupPhone, ColNew},
+		{newBand, GroupCW, ColBand},
+		{sameBand, GroupDigital, ColRepeat},
+		{sat1, RowSatellite, ColBand}, // first via RS-44 (worked before on HF)
+		{sat2, RowSatellite, ColRepeat},
+		{sat3, RowSatellite, ColBand},
+		{rtty, GroupKeyboard, ColRepeat}, // 40m worked before (CW)
+	} {
+		row, col := Rows[Row(tc.q)], Cols[Column(tc.q, all)]
+		if row != tc.row || col != tc.col {
+			t.Errorf("%s %s: cell %s/%s, want %s/%s", tc.q.QSODate, tc.q.Mode, row, col, tc.row, tc.col)
+		}
+		// Only that cell ticked: eligible; every other cell: not.
+		var f Filter
+		r := &Rules{}
+		f[Row(tc.q)][Column(tc.q, all)] = true
+		r.SetFilter(f)
+		if ok, reason := r.Eligible(tc.q, all); !ok {
+			t.Errorf("%s: not eligible with its cell ticked (%s)", tc.q.QSODate, reason)
+		}
+		f[Row(tc.q)][Column(tc.q, all)] = false
+		for ri := range Rows {
+			for ci := range Cols {
+				f[ri][ci] = !(ri == Row(tc.q) && ci == Column(tc.q, all))
+			}
+		}
+		r.SetFilter(f)
+		if ok, _ := r.Eligible(tc.q, all); ok {
+			t.Errorf("%s: eligible with its cell unticked", tc.q.QSODate)
+		}
+	}
+}
+
+// TestFilterFrom: qualify.ask, the older switches, and the round trip.
+func TestFilterFrom(t *testing.T) {
+	if FilterFrom(config.QualifyCfg{}) != DefaultFilter {
+		t.Fatal("empty config is not the default filter")
+	}
+	digi := slices.Index(Rows[:], GroupDigital)
+	if f := FilterFrom(config.QualifyCfg{IncludeDigital: true}); !f[digi][2] {
+		t.Fatal("include_digital does not tick the digital row")
+	}
+	f := FilterFrom(config.QualifyCfg{FirstContactOnly: true})
+	for r := range Rows {
+		if want := [3]bool{Rows[r] != GroupDigital, false, false}; f[r] != want {
+			t.Errorf("first_contact_only row %s = %v, want %v", Rows[r], f[r], want)
+		}
+	}
+	ask := map[string][]string{"cw": {"new"}, "digital": {"New", "repeat"}}
+	f = FilterFrom(config.QualifyCfg{Ask: ask, IncludeDigital: false})
+	if f[1] != [3]bool{true, false, false} || f[digi] != [3]bool{true, false, true} || f[0] != DefaultFilter[0] {
+		t.Fatalf("ask %v -> %v", ask, f)
+	}
+	if FilterFrom(config.QualifyCfg{Ask: f.Ask()}) != f {
+		t.Fatal("Ask() does not round-trip")
 	}
 }

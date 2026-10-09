@@ -131,16 +131,19 @@ type ReceiveCfg struct {
 
 type QualifyCfg struct {
 	ExcludeModes []string `yaml:"exclude_modes"`
-	// IncludeDigital lets the digital modes (FT8, FT4, FT2, FST4, JS8, WSPR,
-	// MSK144 - any mode starting with FT, JS8, WSPR, MSK or FST) into the
-	// decision queue. Off by default: they are skipped. It alone decides for
-	// them; ExcludeModes (exact names) covers the other modes.
-	IncludeDigital bool `yaml:"include_digital"`
-	// FirstContactOnly keeps repeat contacts out of the decision queue. Off by
-	// default: repeat contacts are shown with their history instead, and the
-	// operator decides.
-	FirstContactOnly bool   `yaml:"first_contact_only"`
-	OverrideMarker   string `yaml:"override_marker"`
+	// IncludeDigital and FirstContactOnly are the filter of older configs,
+	// read only while Ask is unset: the digital row on or off, and only the
+	// "new" column in every row.
+	IncludeDigital   bool `yaml:"include_digital"`
+	FirstContactOnly bool `yaml:"first_contact_only"`
+	// Ask is the New QSOs filter as a matrix: per row (phone, cw, keyboard,
+	// digital, satellite) the columns that ask for a card - "new" (station
+	// never worked), "band" (worked, not on this band; satellite: not on
+	// this satellite), "repeat". Unset = built from include_digital and
+	// first_contact_only (qualify.FilterFrom).
+	Ask map[string][]string `yaml:"ask"`
+
+	OverrideMarker string `yaml:"override_marker"`
 	// Since limits the decision queue to QSOs on or after this date
 	// (YYYY-MM-DD) so the first Clublog pull does not flood it with years of
 	// history. Empty = the day qslotter first ran; "all" = no cutoff (import
@@ -266,9 +269,13 @@ printer:
 card:
     template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Cards & printer)
 qualify:
-    include_digital: false    # true = FT8/FT4/FT2, FST4, JS8 & co. enter the queue too
     exclude_modes: []         # further modes to skip, exact names
-    first_contact_only: false
+    ask:                      # which QSOs ask for a card: new = station never worked,
+        phone: [new, band, repeat]     # band = not yet on this band (satellite: this satellite)
+        cw: [new, band, repeat]
+        keyboard: [new, band, repeat]  # RTTY, PSK, Olivia, SSTV & co.
+        digital: []                    # FT8, FT4 & co.
+        satellite: [new, band, repeat] # any mode via satellite
     override_marker: "QSL!"
     since: ""                 # "" = from the first start on, "all" = whole log
 store:
