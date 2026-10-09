@@ -708,7 +708,7 @@ button:disabled:hover { background: var(--card); color: var(--ink); }
 #lay-svg text.lay-op.outside { fill: var(--red); }
 #lay-svg .lay-op.shape { fill: none; stroke: #10161e; }
 #lay-svg .lay-op.shape.outside { stroke: var(--red); }
-#lay-svg .lay-ghost { fill: var(--ink-soft); fill-opacity: 0.6; font-family: 'Schibsted Grotesk', sans-serif; font-style: italic; }
+#lay-svg .lay-ghost { fill: var(--ink-soft); fill-opacity: 0.9; font-family: 'Schibsted Grotesk', sans-serif; font-style: italic; }
 #lay-svg .lay-hit { fill: transparent; cursor: move; }
 #lay-svg .lay-hit-stroke { fill: none; stroke: transparent; stroke-width: 2; pointer-events: stroke; cursor: move; }
 #lay-svg .lay-el:hover text.lay-op, #lay-svg .lay-el.sel text.lay-op { fill: var(--blue); }
