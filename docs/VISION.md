@@ -143,7 +143,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
-| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30 and 2026-10-02 (address-only rule); LLM classifier `qpc` (qwen3.5:4b) beat the old heuristic on a fresh blind sample (59% vs 48% fully right) but ties the improved one (71% vs 72%); its distinct value is the note and free-text qslmgr; integration open (roadmap v2) |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30 and 2026-10-02 (address-only rule); LLM classifier `qpc` (qwen3.5:4b) beat the old heuristic on a fresh blind sample (59% vs 48% fully right) but ties the improved one (71% vs 72%); its distinct value is the note and free-text qslmgr; integration open (roadmap v2); Jev-style decision models tried 2026-10-09 and stopped (60-65% at best, no signal as a second opinion - decision log) |
 
 ### 2.6 Invariants carried over
 
@@ -666,6 +666,28 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   the code's flag rule: 189 of 250 against v11's 193, so v11 stays the
   default. bwpc's Ollama hung once for about two hours and recovered by
   itself.
+- **2026-10-09 — Decision models (Jev-style) stopped.** Two decision
+  models behind Ollama `/v1/systemone` (tev1 4B, clef-flash 9B with a
+  16k context) scored 33-36% fully right on the operator's labelled
+  stations against 77-84% for qwen3.5:4b and 85-92% for the heuristic;
+  size and context made no difference. The causes are structural: one
+  probability per question from one pass cannot do a conjunction of
+  fields ("direct named AND a full address": direct answered false in
+  20 of 100 stations), rules asked of the model fail (mqsl/address,
+  DCL, preference only with two routes), and an absent mention scores
+  0.5-0.9 (the plausibility of the route, not what the text says).
+  Layout `text` (spec d2-text) fixes what can be fixed: every question
+  asks only whether the text names something, code composes the rest
+  and the cut per question is fitted on labelled answers (`threshold`
+  in the spec, fitted on qpc/qpc2): tev1 reaches 60% on the 350
+  stations (65 / 58 / 52 / 60%), a logistic layer over all its
+  probabilities (`qpc-lab fit`, held out sample by sample) 65%, with
+  the heuristic's via callsign spliced in 69%. Still 20 points below
+  the chat model and 25 below the heuristic, and as a second opinion it
+  carries no information: it differs from the heuristic on 36% of the
+  stations, and there the heuristic is right in 85% (overall 90%). No
+  further decision-model work; the chat model's distinct value (the
+  note, via from free text) stays with qwen3.5:4b.
 - **2026-10-03 — 100 more stations, operator-reviewed; v13 default.** The
   assistant pre-labelled a fourth sample of 100 (eval/qpc7) and the
   operator reviewed all of them, changing 6 (one more rule came out of

@@ -144,14 +144,12 @@ func (c *Classifier) decide(ctx context.Context, st Station) (Result, error) {
 	}
 	r.Raw = raw
 	r.PromptTokens, r.CompletionTokens = dr.Usage.InputTokens, dr.Usage.OutputTokens
-	c.decision.apply(dr.Answers, &r)
-	if c.v.AddressGuard && r.Status != "" {
-		addressGuard(st, &r)
+	d := c.decision
+	if c.v.FlagRule && !d.FlagRule {
+		d = d.WithThresholds(d.thresholds)
+		d.FlagRule = true
 	}
-	if (c.v.FlagRule || c.decision.FlagRule) && r.Status != "" {
-		flagRule(st, &r)
-		dclRule(st, &r)
-	}
+	d.compose(dr.Answers, st, c.v.AddressGuard, nil, &r)
 	return r, nil
 }
 

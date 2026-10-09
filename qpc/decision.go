@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"os"
@@ -382,6 +383,73 @@ type decisionResponse struct {
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
 	Error json.RawMessage `json:"error"`
+}
+
+// WithThresholds returns a copy of d whose noul cuts are t (every question
+// not in t falls back to routeThreshold).
+func (d *Decision) WithThresholds(t map[string]float64) *Decision {
+	c := *d
+	c.thresholds = map[string]float64{}
+	for k, v := range t {
+		c.thresholds[k] = v
+	}
+	return &c
+}
+
+// Probabilities reads a stored /v1/systemone answer: the noul questions'
+// probabilities and, per choice question, the probability of every option.
+func (d *Decision) Probabilities(raw []byte) (nouls map[string]float64, choices map[string]map[string]float64, err error) {
+	var dr decisionResponse
+	if err := json.Unmarshal(raw, &dr); err != nil {
+		return nil, nil, err
+	}
+	nouls, choices = map[string]float64{}, map[string]map[string]float64{}
+	for q, a := range dr.Answers {
+		if a.Noul != nil {
+			nouls[q] = *a.Noul
+		}
+		if len(a.Probabilities) > 0 {
+			choices[q] = a.Probabilities
+		}
+	}
+	return nouls, choices, nil
+}
+
+// Compose turns a stored /v1/systemone answer into a Result the way Classify
+// does: the spec's layout and cuts, then the address guard (guard) and, for
+// a spec with flags: code, the flag and DCL rules. nouls, when given,
+// replace the answer's noul probabilities first (a fitted layer's output).
+// The lab re-scores stored answers with it (qpc-lab fit).
+func (d *Decision) Compose(raw []byte, st Station, guard bool, nouls map[string]float64) (Result, error) {
+	var dr decisionResponse
+	if err := json.Unmarshal(raw, &dr); err != nil {
+		return Result{}, fmt.Errorf("decode response: %w", err)
+	}
+	r := Result{Call: st.Call, Prompt: d.ID()}
+	d.compose(dr.Answers, st, guard, nouls, &r)
+	return r, nil
+}
+
+func (d *Decision) compose(ans map[string]decisionAnswer, st Station, guard bool, nouls map[string]float64, r *Result) {
+	if len(nouls) > 0 {
+		ans = maps.Clone(ans)
+		for q, p := range nouls {
+			a := ans[q]
+			a.Noul = &p
+			ans[q] = a
+		}
+	}
+	d.apply(ans, r)
+	if r.Status == "" {
+		return
+	}
+	if guard {
+		addressGuard(st, r)
+	}
+	if d.FlagRule {
+		flagRule(st, r)
+		dclRule(st, r)
+	}
 }
 
 // decide posts one request to {baseURL}/systemone.
