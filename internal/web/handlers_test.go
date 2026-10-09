@@ -550,7 +550,7 @@ func TestExportRun(t *testing.T) {
 // TestSettingsShowsBuild: Settings names the running build.
 func TestSettingsShowsBuild(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	if b := get(t, srv.Routes(), "/settings").Body.String(); !strings.Contains(b, `id="build"`) || !strings.Contains(b, "Version ") || !strings.Contains(b, "built ") {
+	if b := get(t, srv.Routes(), "/settings/general").Body.String(); !strings.Contains(b, `id="build"`) || !strings.Contains(b, ">Version<") || !strings.Contains(b, "built ") {
 		t.Fatalf("settings without the build:\n%s", b)
 	}
 }
@@ -852,13 +852,18 @@ func TestStationRefresh(t *testing.T) {
 	if err != nil || si == nil || si.Addr1 != "1 Main St" {
 		t.Fatalf("station after refresh = %+v, %v", si, err)
 	}
-	select {
-	case ev := <-evs:
-		if ev.Type != "station_updated" || ev.Data != "EA8/DL1ABC" {
-			t.Fatalf("event = %+v", ev)
+	// The card rendered above may have started a background lookup of
+	// DL1ABC (its entry is a day old): its event can come first.
+	for got := false; !got; {
+		select {
+		case ev := <-evs:
+			got = ev.Type == "station_updated" && ev.Data == "EA8/DL1ABC"
+			if !got && !(ev.Type == "station_updated" && ev.Data == "DL1ABC") {
+				t.Fatalf("event = %+v", ev)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no station_updated event for EA8/DL1ABC")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("no station_updated event")
 	}
 
 	down.Store(true)
@@ -1129,12 +1134,12 @@ func TestQuitEndpoint(t *testing.T) {
 	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusNotImplemented {
 		t.Fatalf("quit without desktop = %d, want 501", r.Code)
 	}
-	if strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+	if strings.Contains(get(t, h, "/settings/general").Body.String(), "/api/quit") {
 		t.Fatal("settings offers Quit outside the desktop app")
 	}
 	quit := make(chan struct{})
 	srv.Quit = func() { close(quit) }
-	if !strings.Contains(get(t, h, "/settings").Body.String(), "/api/quit") {
+	if !strings.Contains(get(t, h, "/settings/general").Body.String(), "/api/quit") {
 		t.Fatal("settings must offer Quit in the desktop app")
 	}
 	if r := postForm(t, h, "/api/quit", nil); r.Code != http.StatusOK {

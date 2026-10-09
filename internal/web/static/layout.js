@@ -86,9 +86,6 @@
     });
   }
   function sample() { return $('lay-sample') ? $('lay-sample').value : 'long'; }
-  function offsetQuery() {
-    return '&ox=' + encodeURIComponent($('lay-ox').value) + '&oy=' + encodeURIComponent($('lay-oy').value);
-  }
 
   var seq = 0, timer = null;
   function schedule() { clearTimeout(timer); timer = setTimeout(preview, 80); }
@@ -198,6 +195,10 @@
     });
     ops.forEach(function (op) { if (groups[op.field]) drawOp(groups[op.field], op); });
     model.fields.forEach(function (f, i) { if (!groups[i].firstChild) drawGhost(groups[i], f); });
+    model.fields.forEach(function (f, i) {
+      var b = wrapBox(f);
+      if (b) el('rect', { x: b.x, y: b.y, width: b.w, height: b.h, 'class': 'lay-wrapbox' }, groups[i]);
+    });
     drawSelection();
   }
 
@@ -236,6 +237,16 @@
     el('rect', { x: bb.x, y: bb.y, width: Math.max(bb.width, 1), height: Math.max(bb.height, 1), 'class': 'lay-hit' }, g);
   }
 
+  // wrapBox is the area a text with a width may fill: its width, as many
+  // lines as it may wrap onto (null for other fields).
+  function wrapBox(f) {
+    if (isShape(f) || !(f.w_mm > 0)) return null;
+    var size = (f.font_size || 12) * 25.4 / 72, lines = f.lines > 0 ? f.lines : 2;
+    var a = (f.align || 'L').toUpperCase();
+    var x = a === 'C' ? f.x_mm - f.w_mm / 2 : a === 'R' ? f.x_mm - f.w_mm : f.x_mm;
+    return { x: x, y: f.y_mm - 0.65 * size, w: f.w_mm, h: (lines - 1) * 1.2 * size + 1.3 * size };
+  }
+
   function drawSelection() {
     var old = svg.querySelector('.lay-selg');
     if (old) old.remove();
@@ -248,6 +259,10 @@
     var f = model.fields[sel];
     if (isShape(f)) {
       el('rect', { x: f.x_mm + (f.w_mm || 0) - 1, y: f.y_mm + (f.h_mm || 0) - 1, width: 2, height: 2, 'class': 'lay-handle' }, sg);
+    }
+    var wb = wrapBox(f);
+    if (wb) { // drag the right edge: the text's width
+      el('rect', { x: wb.x + wb.w - 1, y: wb.y + wb.h / 2 - 1, width: 2, height: 2, 'class': 'lay-handle lay-handle-w' }, sg);
     }
   }
 
@@ -300,6 +315,15 @@
       if (g) g.setAttribute('transform', tr);
       if (sg) sg.setAttribute('transform', tr);
       showPos(drag.x + drag.dx, drag.y + drag.dy);
+    } else if (!isShape(drag.f)) { // a text's width
+      var tw = Math.max(5, round1(drag.w + drag.dx));
+      var box = g && g.querySelector('.lay-wrapbox');
+      var wb0 = wrapBox(drag.f);
+      if (box && wb0) box.setAttribute('width', tw);
+      var hw = sg && sg.querySelector('.lay-handle');
+      if (hw && wb0) hw.setAttribute('x', wb0.x + tw - 1);
+      var iw = document.querySelector('#lay-props [data-prop="w_mm"]');
+      if (iw) iw.value = tw;
     } else {
       var w = Math.max(0, round1(drag.w + drag.dx)), h = Math.max(0, round1(drag.h + drag.dy));
       if (g) {
@@ -321,6 +345,8 @@
       if (d.mode === 'move') {
         d.f.x_mm = round1(d.x + d.dx);
         d.f.y_mm = round1(d.y + d.dy);
+      } else if (!isShape(d.f)) {
+        d.f.w_mm = Math.max(5, round1(d.w + d.dx));
       } else {
         d.f.w_mm = Math.max(0, round1(d.w + d.dx));
         d.f.h_mm = Math.max(0, round1(d.h + d.dy));
@@ -428,6 +454,7 @@
     i.addEventListener('input', function () {
       var v = num(i.value);
       if (v === null || sel < 0) return;
+      if (prop === 'lines') v = Math.max(1, Math.round(v));
       var f = model.fields[sel];
       change(function () { f[prop] = v; }, 'prop' + sel + prop);
     });
@@ -500,6 +527,8 @@
       pos.appendChild(field(T('Line width (mm)'), numInput('stroke_mm', 0.05, 0.05, 10)));
     } else {
       pos.appendChild(field(T('Size (pt)'), numInput('font_size', 0.5, 4, 72)));
+      pos.appendChild(field(T('Width (mm)'), numInput('w_mm', 0.5, 0, 1000)));
+      pos.appendChild(field(T('Lines'), numInput('lines', 1, 1, 20)));
       pos.appendChild(field(T('Font'), selectInput('font', D.fonts.map(function (n) { return [n, n]; }),
         function (f, v) { f.font = v; })));
       pos.appendChild(field(T('Align'), selectInput('align', [['L', T('left')], ['C', T('centre')], ['R', T('right')]],
@@ -534,7 +563,8 @@
     if (!isShape(f)) {
       var hint = document.createElement('p');
       hint.className = 'muted lay-hint';
-      hint.textContent = T('X is where the text starts (left), its middle (centre) or where it ends (right).');
+      hint.textContent = T('X is where the text starts (left), its middle (centre) or where it ends (right).') + ' ' +
+        T('Width 0: one line up to the card margin. With a width, a longer text wraps onto up to Lines lines, then gets smaller.');
       box.appendChild(hint);
     }
     var acts = document.createElement('p');
@@ -672,13 +702,13 @@
   $('lay-test').addEventListener('click', function () {
     var b = this;
     b.disabled = true;
-    post('/settings/cards/test?name=' + encodeURIComponent(D.id) + '&sample=' + encodeURIComponent(sample()) + offsetQuery(), snapshot(), true)
+    post('/settings/cards/test?name=' + encodeURIComponent(D.id) + '&sample=' + encodeURIComponent(sample()), snapshot(), true)
       .catch(function () { /* toast shown */ })
       .then(function () { b.disabled = false; });
   });
   var pdfURL = null;
   $('lay-pdf').addEventListener('click', function () {
-    post('/settings/cards/pdf?sample=' + encodeURIComponent(sample()) + offsetQuery(), snapshot(), true)
+    post('/settings/cards/pdf?sample=' + encodeURIComponent(sample()), snapshot(), true)
       .then(function (r) { return r.blob(); })
       .then(function (blob) {
         if (pdfURL) URL.revokeObjectURL(pdfURL);
@@ -689,18 +719,6 @@
       }, function () { /* toast shown */ });
   });
   $('lay-pdf-close').addEventListener('click', function () { $('lay-pdfview').hidden = true; });
-  if ($('lay-offset-save')) {
-    $('lay-offset-save').addEventListener('click', function () {
-      post('/settings/cards/offset', new URLSearchParams({ x: $('lay-ox').value, y: $('lay-oy').value }))
-        .catch(function () { /* toast shown */ });
-    });
-  }
-  if ($('lay-media-save')) {
-    $('lay-media-save').addEventListener('click', function () {
-      post('/settings/cards/media', new URLSearchParams({ paper: $('lay-media-paper').value, tray: $('lay-media-tray').value, rotate: $('lay-media-rotate').value }))
-        .catch(function () { /* toast shown */ });
-    });
-  }
 
   // --- the card picture ---
 

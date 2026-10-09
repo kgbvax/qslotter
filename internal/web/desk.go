@@ -517,7 +517,9 @@ func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.config()
-	raw, err := printer.RenderBytes(tmpl, s.cardFieldsFor(cfg, qsos, via, route), printer.RenderOptions{
+	card := s.cardFieldsFor(cfg, qsos, via, route)
+	card.QSLMsg = strings.TrimSpace(r.FormValue("cardnote")) // the note as typed on the card
+	raw, err := printer.RenderBytes(tmpl, card, printer.RenderOptions{
 		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
 	})
 	if err != nil {

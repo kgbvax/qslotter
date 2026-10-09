@@ -76,6 +76,12 @@ func Open(path string) (Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
+	if path == ":memory:" {
+		// Every connection to ":memory:" is a database of its own: one
+		// connection, or a background goroutine (QRZ refresher, print
+		// watcher) would find an empty database without tables.
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping store: %w", err)
 	}
@@ -367,8 +373,14 @@ func (s *SQLiteStore) UpsertQSO(q *QSO) (isNew, changed bool, err error) {
 		qslsdate=excluded.qslsdate, qslrdate=excluded.qslrdate,
 		lotw_qsl_rcvd=excluded.lotw_qsl_rcvd, dxcc=excluded.dxcc,
 		prop_mode=excluded.prop_mode, gridsquare=excluded.gridsquare,
-		operator=excluded.operator, notes=excluded.notes,
-		name=excluded.name, qth=excluded.qth, sat_name=excluded.sat_name, freq_rx=excluded.freq_rx, qslmsg=excluded.qslmsg,
+		operator=excluded.operator,
+		-- Clublog's export carries no NOTES, NAME, QTH or QSLMSG (checked
+		-- 2026-10-06): an empty value never overwrites one the logger sent.
+		notes=CASE WHEN COALESCE(excluded.notes,'')<>'' THEN excluded.notes ELSE qsos.notes END,
+		name=CASE WHEN COALESCE(excluded.name,'')<>'' THEN excluded.name ELSE qsos.name END,
+		qth=CASE WHEN COALESCE(excluded.qth,'')<>'' THEN excluded.qth ELSE qsos.qth END,
+		sat_name=excluded.sat_name, freq_rx=excluded.freq_rx,
+		qslmsg=CASE WHEN COALESCE(excluded.qslmsg,'')<>'' THEN excluded.qslmsg ELSE qsos.qslmsg END,
 		hash=excluded.hash, updated_at=excluded.updated_at,
 		qsl_rcvd_local=CASE WHEN excluded.qsl_rcvd='Y' AND qsos.qsl_rcvd_local='R' THEN NULL ELSE qsos.qsl_rcvd_local END
 	WHERE qsos.hash <> excluded.hash`,

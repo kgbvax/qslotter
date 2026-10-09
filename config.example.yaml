@@ -36,12 +36,12 @@ printer:
                         # (Windows: add a form of the card's size under Print server properties > Forms)
   rotate: 0             # 90 or 270 turns the card on its way to the printer (Windows), if it prints across the card
   tray: ""              # paper source, e.g. "Manual Feed"; "" = the printer's default
-                        # (both chosen under Settings > Card layout on Windows)
+                        # (both chosen under Settings > Cards & printer on Windows)
   offset_mm: [0, 0]     # x, y in mm: shifts every print to make up for the printer's feed
-                        # (measure a test card under Settings > Card layout)
+                        # (measure a test card under Settings > Cards & printer)
 
 card:
-  template: ""          # active card layout: cards/<name>.yaml, edited under Settings > Card layout;
+  template: ""          # active card layout: cards/<name>.yaml, edited under Settings > Cards & printer;
                         # "" = the built-in layout
   # export_dir: exports   # ADIF files for a QSL print service; default: "exports" next to the database
 

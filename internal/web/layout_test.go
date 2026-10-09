@@ -174,7 +174,7 @@ func TestLayoutPageBuiltin(t *testing.T) {
 		t.Error("the built-in layout must offer Save and the picture upload")
 	}
 	// Settings links to it.
-	if !strings.Contains(get(t, h, "/settings").Body.String(), `href="/settings/cards"`) {
+	if !strings.Contains(get(t, h, "/settings/printing").Body.String(), `href="/settings/cards?name=:builtin"`) { // the New layout tile
 		t.Error("settings page does not link the card layout")
 	}
 	_ = srv
@@ -476,8 +476,8 @@ func TestLayoutMedia(t *testing.T) {
 	mp := &mediaPrinter{}
 	srv.printer = mp
 	srv.cfg.Printer.PaperSizeMM = [2]float64{140, 90}
-	body := get(t, h, "/settings/cards").Body.String()
-	for _, want := range []string{"Automatic: QSL 140x90", `<option value="Manual Feed">Manual Feed</option>`, "A4 (210 × 297 mm)"} {
+	body := get(t, h, "/settings/printing").Body.String()
+	for _, want := range []string{"Automatic: QSL 140x90", `<option value="Manual Feed">Manual Feed</option>`, "A4 (210 × 297 mm)", "QSL 140x90"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -489,7 +489,7 @@ func TestLayoutMedia(t *testing.T) {
 	if !strings.Contains(string(disk), `paper: "QSL 140x90"`) || !strings.Contains(string(disk), `tray: "Manual Feed"`) {
 		t.Fatalf("config:\n%s", disk)
 	}
-	body = get(t, h, "/settings/cards").Body.String()
+	body = get(t, h, "/settings/printing").Body.String()
 	if !strings.Contains(body, `<option value="Manual Feed" selected>`) {
 		t.Error("the saved tray is not selected")
 	}
@@ -501,7 +501,7 @@ func TestLayoutMedia(t *testing.T) {
 	}
 	// A tray the printer lacks is said; none of the card's size too.
 	srv.cfg.Printer.Tray, srv.cfg.Printer.Paper, srv.cfg.Printer.PaperSizeMM = "Tray 9", "", [2]float64{150, 100}
-	body = get(t, h, "/settings/cards").Body.String()
+	body = get(t, h, "/settings/printing").Body.String()
 	for _, want := range []string{"no paper or tray Tray 9", "no paper of 150 × 100 mm", "Automatic (none of 150 × 100 mm)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
@@ -512,12 +512,12 @@ func TestLayoutMedia(t *testing.T) {
 	missing := map[string]bool{}
 	i18n.Default.OnMissing = func(lang, text string) { missing[text] = true }
 	defer func() { i18n.Default.OnMissing = nil }()
-	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	requestDE(t, h, http.MethodGet, "/settings/printing", nil)
 	srv.cfg.Printer.PaperSizeMM = [2]float64{140, 90}
-	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	requestDE(t, h, http.MethodGet, "/settings/printing", nil)
 	requestDE(t, h, http.MethodPost, "/settings/cards/media", url.Values{"paper": {""}, "tray": {""}})
 	srv.printer = &failingMedia{}
-	requestDE(t, h, http.MethodGet, "/settings/cards", nil)
+	requestDE(t, h, http.MethodGet, "/settings/printing", nil)
 	for text := range missing {
 		t.Errorf("no German for %q", text)
 	}
@@ -688,5 +688,19 @@ func TestLayoutOwnCopy(t *testing.T) {
 	r = sendJSON(t, h, "/settings/cards/save?create=1&auto=1&from=%3Abuiltin", template.Default(), "de-DE,de;q=0.9")
 	if !strings.Contains(r.Body.String(), `"name":"Meine Karte"`) {
 		t.Fatalf("German own copy: %s", r.Body)
+	}
+}
+
+// TestPaperLabel: the size is added only to a paper name that lacks one.
+func TestPaperLabel(t *testing.T) {
+	for in, want := range map[printer.Media]string{
+		{Name: "A4 (210 x 297 mm)", WMM: 210, HMM: 297}:           "A4 (210 x 297 mm)",
+		{Name: "10 x 15 cm (4 x 6 Zoll)", WMM: 101.6, HMM: 152.4}: "10 x 15 cm (4 x 6 Zoll)",
+		{Name: "A4", WMM: 210, HMM: 297}:                          "A4 (210 × 297 mm)",
+		{Name: "QSL", WMM: 90, HMM: 140}:                          "QSL (90 × 140 mm)",
+	} {
+		if got := paperLabel(in); got != want {
+			t.Errorf("paperLabel(%q) = %q, want %q", in.Name, got, want)
+		}
 	}
 }

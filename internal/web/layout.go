@@ -212,7 +212,8 @@ var layoutJSStrings = []string{
 	"Network error - is the qslotter server running?", "Error", "Discard the unsaved changes?",
 	"X is where the text starts (left), its middle (centre) or where it ends (right).",
 	"The printer is set up for %s x %s mm paper (printer.paper_size_mm in the config file), this card is %s x %s mm.",
-	"Only on satellite cards", "satellite cards",
+	"Only on satellite cards", "satellite cards", "Lines",
+	"Width 0: one line up to the card margin. With a width, a longer text wraps onto up to Lines lines, then gets smaller.",
 	"For a satellite column and its heading: an HF card leaves them out.",
 }
 
@@ -263,9 +264,7 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		Labels: map[string]string{}, Strings: map[string]string{}, Fonts: template.Fonts, Margin: printer.FitMarginMM,
 		Paper: cfg.Printer.PaperSizeMM, CanSave: s.cfgPath != ""}
 	for _, n := range template.CardFieldNames() {
-		if n != "qslmsg" { // nothing fills it
-			data.Card = append(data.Card, catField{n, s.tr(r, fieldLabels[n])})
-		}
+		data.Card = append(data.Card, catField{n, s.tr(r, fieldLabels[n])})
 	}
 	for _, n := range template.RowFieldNames() {
 		data.Row = append(data.Row, catField{n, s.tr(r, fieldLabels[n])})
@@ -290,10 +289,9 @@ func (s *Server) pageCards(w http.ResponseWriter, r *http.Request) {
 		"NoConfig": s.cfgPath == "",
 		"Data":     data,
 		"Samples":  s.sampleChoices(r),
-		"OffsetX":  cfg.Printer.OffsetMM[0],
-		"OffsetY":  cfg.Printer.OffsetMM[1],
+		"OffsetX":  fmtMM(cfg.Printer.OffsetMM[0]),
+		"OffsetY":  fmtMM(cfg.Printer.OffsetMM[1]),
 		"Printer":  cfg.Printer.Name,
-		"Media":    s.printerMedia(cfg),
 		"HasImage": data.Image != "",
 		"Created":  r.URL.Query().Get("created") == "1" && entry.Editable,
 	})
@@ -340,7 +338,7 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 				"Wagga Wagga NSW 2650", "Australia"},
 			Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59", RSTRcvd: "57", Freq: "14.250"}}}
 	case "sat":
-		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name,
+		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name, QSLMsg: "Tnx for my first RS-44 QSO!",
 			MyQTH: cfg.Station.QTH, Route: "B", Rows: []printer.QSORow{{QSODate: "20240615", TimeOn: "1842", Band: "70cm", Mode: "FM",
 				RSTSent: "59", RSTRcvd: "59", Freq: "145.850", SatName: "RS-44", FreqRX: "435.640"}}}
 	case "long", "":
@@ -358,13 +356,15 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 				if strings.HasPrefix(c.Route, "M") {
 					via = c.MgrPrefill
 				}
-				return s.cardFieldsFor(cfg, qsos, via, c.Route)
+				card := s.cardFieldsFor(cfg, qsos, via, c.Route)
+				card.QSLMsg = c.Note // the card note the Desk offers
+				return card
 			}
 		}
 	}
 	card := printer.CardFields{Call: "VP2V/DL9ET", Name: "Hans-Joachim Müller-Lüdenscheidt", QTH: "Garmisch-Partenkirchen",
 		MyCall: myCall, MyName: cmpOr(cfg.Station.Name, "Ingomar Otter"), MyQTH: cmpOr(cfg.Station.QTH, "Bad Tölz, JN57"),
-		Via: "KC4AAA", Route: "MD"}
+		Via: "KC4AAA", Route: "MD", QSLMsg: "Thanks for the nice QSO on 2190 m - hope to work you again, 73!"}
 	long := []printer.QSORow{
 		{QSODate: "20241231", TimeOn: "235959", Band: "2190m", Mode: "OLIVIA", RSTSent: "59+20", RSTRcvd: "599", Freq: "0.1375"},
 		{QSODate: "20240615", TimeOn: "000000", Band: "70cm", Mode: "SSB", RSTSent: "59", RSTRcvd: "59", Freq: "435.645",
@@ -693,6 +693,10 @@ func (s *Server) postCardsActivate(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusInternalServerError, "saving config: %s", err.Error())
 			return
 		}
+	}
+	if r.FormValue("back") == tabPrinting {
+		http.Redirect(w, r, settingsTabPath(tabPrinting), http.StatusSeeOther)
+		return
 	}
 	s.redirectCards(w, r, id)
 }
@@ -1036,7 +1040,7 @@ func (s *Server) printerMedia(cfg *config.Config) *mediaData {
 		d.Papers = append(d.Papers, mediaChoice{d.Paper, d.Paper, true})
 	}
 	for _, m := range res.papers {
-		d.Papers = append(d.Papers, mediaChoice{m.Name, fmt.Sprintf("%s (%s × %s mm)", m.Name, fmtMM(m.WMM), fmtMM(m.HMM)),
+		d.Papers = append(d.Papers, mediaChoice{m.Name, paperLabel(m),
 			d.Paper != "" && ok && m.ID == sel.ID})
 	}
 	tray, ok := printer.PickTray(res.trays, d.Tray)
@@ -1048,6 +1052,19 @@ func (s *Server) printerMedia(cfg *config.Config) *mediaData {
 		d.Trays = append(d.Trays, mediaChoice{m.Name, m.Name, d.Tray != "" && ok && m.ID == tray.ID})
 	}
 	return d
+}
+
+// hasSize: a paper name that already says its size ("A4 (210 x 297 mm)",
+// "10 x 15 cm"), as many drivers name their papers.
+var hasSize = regexp.MustCompile(`\d\s*[x×]\s*\d`)
+
+// paperLabel is a paper in the select: its name, plus the size in mm when
+// the name does not say it.
+func paperLabel(m printer.Media) string {
+	if hasSize.MatchString(m.Name) {
+		return m.Name
+	}
+	return fmt.Sprintf("%s (%s × %s mm)", m.Name, fmtMM(m.WMM), fmtMM(m.HMM))
 }
 
 // postCardsMedia stores the paper, tray and turn (paper=, tray=, rotate=;
@@ -1103,31 +1120,11 @@ func (s *Server) htmxCardsTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	cfg := s.config()
-	pdfPath := printer.TempPDFPath()
-	defer func() {
-		if err := os.Remove(pdfPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			log.Printf("test card: removing %s: %v", pdfPath, err)
-		}
-	}()
 	name := cmpOr(r.URL.Query().Get("name"), tmpl.Name)
 	if name == builtinLayout {
 		name = s.tr(r, "Built-in layout")
 	}
-	card := s.sampleCard(r.URL.Query().Get("sample"), tmpl)
-	card.Rows = card.Rows[:min(len(card.Rows), printer.MaxRows(tmpl))] // one card
-	if err := printer.Render(pdfPath, tmpl, card, printer.RenderOptions{
-		OffsetXMM: x, OffsetYMM: y, Ruler: true, Label: s.testCardLabel(r, name, x, y),
-	}); err != nil {
-		s.fail(w, r, http.StatusInternalServerError, "rendering the test card: %s", err.Error())
-		return
-	}
-	if _, err := s.printer.PrintPDF(pdfPath, cfg.Printer.Name, printOptions(cfg)); err != nil {
-		s.fail(w, r, http.StatusBadGateway, "printing the test card: %s", err.Error())
-		return
-	}
-	s.notice(w, r, "Test card sent to the printer.")
-	w.WriteHeader(http.StatusNoContent)
+	s.printTestCard(w, r, tmpl, name, r.URL.Query().Get("sample"), x, y)
 }
 
 // htmxCardsPDF answers the posted layout with the sample ?sample= as a PDF

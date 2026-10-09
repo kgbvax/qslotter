@@ -135,7 +135,7 @@ Windows through SumatraPDF's silent print, elsewhere through `lp`. Set
 `printer.name` to pin a printer; otherwise the system default is used.
 Card defaults: 140 × 90 mm.
 
-**Settings > Card layout** edits the template visually: upload a scan of
+**Settings > Cards & printer** edits the template visually: upload a scan of
 your pre-printed card, drag the fields (call, name, date, band, ... plus
 fixed text, lines and boxes) into its boxes and see exactly what prints,
 long names shrunk or cut. Layouts are kept in `cards/` next to

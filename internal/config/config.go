@@ -103,7 +103,7 @@ type PrinterCfg struct {
 	// Paper is the printer's paper (form) the cards print on, by the
 	// driver's name or number; empty = the one of paper_size_mm. Tray is
 	// the paper source (e.g. the manual feed); empty = the driver's
-	// default. Both are chosen under Settings > Card layout on Windows.
+	// default. Both are chosen under Settings > Cards & printer on Windows.
 	Paper string `yaml:"paper"`
 	Tray  string `yaml:"tray"`
 	// Rotate turns the card by 90 or 270 degrees on its way to the
@@ -262,9 +262,9 @@ qrz:
 printer:
     name: ""                  # empty = system default
     paper_size_mm: [140, 90]
-    offset_mm: [0, 0]         # x, y: shifts every print (Settings > Card layout)
+    offset_mm: [0, 0]         # x, y: shifts every print (Settings > Cards & printer)
 card:
-    template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Card layout)
+    template: ""              # active layout, e.g. cards/stock.yaml; "" = built-in (Settings > Cards & printer)
 qualify:
     include_digital: false    # true = FT8/FT4/FT2, FST4, JS8 & co. enter the queue too
     exclude_modes: []         # further modes to skip, exact names

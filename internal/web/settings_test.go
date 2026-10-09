@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -162,13 +163,67 @@ func TestSettingsIncludeDigital(t *testing.T) {
 	}
 }
 
-// TestSettingsPullButton: the Clublog section offers a pull with its status.
-func TestSettingsPullButton(t *testing.T) {
+// TestSettingsTabs: three tabs, each with its own sections; the Clublog
+// section shows the sync state and leaves pulling to the Log page.
+func TestSettingsTabs(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	body := get(t, srv.Routes(), "/settings").Body.String()
-	for _, want := range []string{`hx-post="/sync/pull"`, `id="settings-sync"`, "never pulled"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("settings page lacks %q", want)
+	h := srv.Routes()
+	for path, want := range map[string][]string{
+		"/settings":          {`name="qrz_username"`, `name="clublog_api_key"`, "never pulled", `href="/log"`, `<input type="hidden" name="tab" value="connections">`},
+		"/settings/printing": {"Prints the cards", `href="/settings/cards?name=%3abuiltin"`, `<svg class="cardsvg"`, `action="/settings/printer"`, `hx-post="/settings/testcard"`, `name="station_name"`},
+		"/settings/general":  {`name="ui_language"`, `name="qualify_filter_digital"`, `id="build"`, "Version"},
+	} {
+		r := get(t, h, path)
+		if r.Code != 200 {
+			t.Fatalf("%s = %d", path, r.Code)
 		}
+		for _, w := range want {
+			if !strings.Contains(r.Body.String(), w) {
+				t.Errorf("%s lacks %q", path, w)
+			}
+		}
+		if strings.Contains(r.Body.String(), `hx-post="/sync/pull"`) {
+			t.Errorf("%s offers a pull: that is the Log page's", path)
+		}
+	}
+}
+
+// TestSettingsSaveTab: a tab's form writes only its own fields - saving the
+// language leaves the station and the credentials alone.
+func TestSettingsSaveTab(t *testing.T) {
+	cfgFile := filepath.Join(t.TempDir(), "config.yaml")
+	src := "qrz:\n  username: keepme\nstation:\n  name: Ingo\n  qth: Bavaria\n"
+	if err := os.WriteFile(cfgFile, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv, err := New(cfg, st, events.New(), cfgFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.validateFn = func(*config.Config) (i18n.Msg, i18n.Msg) {
+		t.Fatal("credentials checked on the General tab")
+		return i18n.Msg{}, i18n.Msg{}
+	}
+	h := srv.Routes()
+	r := postForm(t, h, "/settings/save", url.Values{"tab": {"general"}, "ui_language": {"de"}, "qualify_filter_digital": {"1"}})
+	if r.Code != http.StatusSeeOther || r.Header().Get("Location") != "/settings/general?saved=1" {
+		t.Fatalf("save = %d %q", r.Code, r.Header().Get("Location"))
+	}
+	got := srv.config()
+	if got.UI.Language != "de" || got.QRZ.Username != "keepme" || got.Station.Name != "Ingo" {
+		t.Fatalf("after saving General: %+v %+v %+v", got.UI, got.QRZ, got.Station)
+	}
+	r = postForm(t, h, "/settings/save", url.Values{"tab": {"printing"}, "station_name": {"Ingomar"}, "station_qth": {"Lengerich"}})
+	if r.Code != http.StatusSeeOther || srv.config().Station.QTH != "Lengerich" || srv.config().UI.Language != "de" || srv.config().QRZ.Username != "keepme" {
+		t.Fatalf("after saving the station: %d %+v", r.Code, srv.config())
 	}
 }
