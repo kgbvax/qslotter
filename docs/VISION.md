@@ -687,7 +687,10 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   carries no information: it differs from the heuristic on 36% of the
   stations, and there the heuristic is right in 85% (overall 90%). No
   further decision-model work; the chat model's distinct value (the
-  note, via from free text) stays with qwen3.5:4b.
+  note, via from free text) stays with qwen3.5:4b. The decision-model
+  code (variant kind `decision`, the specs, `bio_focus`, `qpc-lab fit`)
+  was removed the same day; the runs stay in `eval/*/runs/tev1-*` and
+  `clef-*`, the analysis in commits cc223aa and b1ac434.
 - **2026-10-03 — 100 more stations, operator-reviewed; v13 default.** The
   assistant pre-labelled a fourth sample of 100 (eval/qpc7) and the
   operator reviewed all of them, changing 6 (one more rule came out of

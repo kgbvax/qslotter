@@ -14,25 +14,19 @@ import (
 // cmd/qpc-lab holds defaults plus a list of Variants to compare.
 type Variant struct {
 	Name string `yaml:"name" json:"name,omitempty"`
-	// Kind is "llm" (default, chat completions), "decision" (a Jev-style
-	// decision model behind Ollama's /v1/systemone; Prompt names a decision
-	// spec) or "heuristic" (qslotter's rule-based baseline, only in
-	// cmd/qpc-lab).
+	// Kind is "llm" (default, chat completions) or "heuristic" (qslotter's
+	// rule-based baseline, only in cmd/qpc-lab).
 	Kind    string `yaml:"kind" json:"kind,omitempty"`
 	BaseURL string `yaml:"base_url" json:"base_url,omitempty"` // OpenAI-compatible, e.g. http://localhost:11434/v1
 	APIKey  string `yaml:"api_key" json:"-"`                   // sent as a bearer token if set; ${ENV} is expanded
 	Model   string `yaml:"model" json:"model,omitempty"`
-	// Prompt is a built-in prompt name ("v1") or a path to a template file;
-	// for a decision variant a decision spec name ("d1-split") or YAML path.
+	// Prompt is a built-in prompt name ("v1") or a path to a template file.
 	Prompt      string   `yaml:"prompt" json:"prompt,omitempty"`
 	Temperature *float64 `yaml:"temperature" json:"temperature,omitempty"`
 	Seed        *int     `yaml:"seed" json:"seed,omitempty"`
 	MaxTokens   int      `yaml:"max_tokens" json:"max_tokens,omitempty"`
 	// BioMaxChars caps the bio sent to the model; the rest is cut.
 	BioMaxChars int `yaml:"bio_max_chars" json:"bio_max_chars,omitempty"`
-	// BioFocus reduces a bio longer than BioMaxChars to its sentences about
-	// QSL cards before cutting it (FocusBio), for models with a small context.
-	BioFocus bool `yaml:"bio_focus" json:"bio_focus,omitempty"`
 	// Format is how the answer is constrained: "schema" (JSON schema via
 	// response_format), "json" (any JSON object) or "none" (prompt only).
 	Format string `yaml:"format" json:"format,omitempty"`
@@ -54,14 +48,11 @@ type Variant struct {
 
 // Defaults applied by WithDefaults.
 const (
-	DefaultBaseURL  = "http://localhost:11434/v1"
-	DefaultPrompt   = "v14"
-	DefaultDecision = "d1-split"
-	// DefaultDecisionBioMaxChars fits Tev1's context of about 2,000 tokens.
-	DefaultDecisionBioMaxChars = 1500
-	DefaultMaxTokens           = 512
-	DefaultBioMaxChars         = 6000
-	DefaultTimeout             = 2 * time.Minute
+	DefaultBaseURL     = "http://localhost:11434/v1"
+	DefaultPrompt      = "v14"
+	DefaultMaxTokens   = 512
+	DefaultBioMaxChars = 6000
+	DefaultTimeout     = 2 * time.Minute
 )
 
 // Over returns v with every unset field taken from def. Extra is merged key by
@@ -106,7 +97,6 @@ func (v Variant) Over(def Variant) Variant {
 	}
 	out.AddressGuard = def.AddressGuard || v.AddressGuard
 	out.FlagRule = def.FlagRule || v.FlagRule
-	out.BioFocus = def.BioFocus || v.BioFocus
 	if len(def.Extra) > 0 || len(v.Extra) > 0 {
 		out.Extra = map[string]any{}
 		for k, x := range def.Extra {
@@ -137,17 +127,6 @@ func (v Variant) WithDefaults() Variant {
 	if v.Name == "" {
 		v.Name = v.Model
 	}
-	if v.Kind == "decision" {
-		// No sampling knobs and no answer format: the endpoint scores options.
-		if v.Prompt == "" {
-			v.Prompt = DefaultDecision
-		}
-		if v.BioMaxChars == 0 {
-			v.BioMaxChars = DefaultDecisionBioMaxChars
-		}
-		v.Temperature, v.Seed, v.MaxTokens, v.Format = nil, nil, 0, ""
-		return v
-	}
 	if v.Prompt == "" {
 		v.Prompt = DefaultPrompt
 	}
@@ -172,11 +151,6 @@ func (v Variant) Check() error {
 	switch v.Kind {
 	case "llm":
 	case "heuristic":
-		return nil
-	case "decision":
-		if v.Model == "" {
-			return fmt.Errorf("variant %q: no model", v.Name)
-		}
 		return nil
 	default:
 		return fmt.Errorf("variant %q: unknown kind %q", v.Name, v.Kind)

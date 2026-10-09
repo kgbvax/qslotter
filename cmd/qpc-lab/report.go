@@ -251,15 +251,6 @@ func writeRunDetail(w io.Writer, r *run) {
 	switch v.Kind {
 	case "heuristic":
 		fmt.Fprintln(w, "internal/qsldetermine mapped to qpc answers (no note).")
-	case "decision":
-		bio := "cut"
-		if v.BioFocus {
-			bio = "QSL sentences only, then cut"
-		}
-		fmt.Fprintf(w, "Decision model `%s` at %s/systemone, spec `%s`, bio over %d chars: %s (no note, no via).\n",
-			v.Model, v.BaseURL, r.Info.PromptID, v.BioMaxChars, bio)
-		fmt.Fprintf(w, "Confidence (concentration of the probabilities) high or medium: %s of stations, %s of them entirely right. Bio shortened: %d. Input tokens mean/max: %d/%d.\n",
-			pct(m.HighMedCov), pct(m.HighMedAcc), m.Truncated, m.TokensMean, m.TokensMax)
 	default:
 		temp := 0.0
 		if v.Temperature != nil {

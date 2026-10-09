@@ -46,7 +46,6 @@ func main() {
 		"run":     cmdRun,
 		"report":  cmdReport,
 		"compare": cmdCompare,
-		"fit":     cmdFit,
 	}
 	cmd, ok := cmds[os.Args[1]]
 	if !ok {
@@ -58,6 +57,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|notes|run|report|compare|fit [flags]   (-h for flags)")
+	fmt.Fprintln(os.Stderr, "usage: qpc-lab sample|enrich|label|notes|run|report|compare [flags]   (-h for flags)")
 	os.Exit(2)
 }
