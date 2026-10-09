@@ -3,6 +3,7 @@ package qpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +82,7 @@ func TestDecisionApply(t *testing.T) {
 		{split, map[string]decisionAnswer{ // the status decides
 			"status": {Choice: "no-paper", Confidence: 0.2}, "bureau": {Noul: p(0.9)}, "direct": {Noul: p(0.1)}, "oqrs": {Noul: p(0.1)},
 			"preferred": {Choice: "bureau"}, "contribution": {Choice: "not-stated"},
-		}, "no-paper|[]|||low", `preferred "bureau" is not among the routes`},
+		}, "no-paper|[]|||low", ""}, // a preference needs two routes: dropped without a word
 		{single, map[string]decisionAnswer{"answer": {Choice: "bureau+direct", Confidence: 0.85}, "preferred": {Choice: "none"}, "contribution": {Choice: "not-needed"}},
 			"paper|[bureau direct]||not-needed|high", ""},
 		{single, map[string]decisionAnswer{"answer": {Choice: "unclear"}}, "unclear|[]|||low", ""},
@@ -179,5 +180,73 @@ func TestDecisionHTTPError(t *testing.T) {
 	c, _ := New(Variant{Kind: "decision", BaseURL: srv.URL, Model: "tev9"})
 	if _, err := c.Classify(context.Background(), Station{Call: "ZZ1AA"}); err == nil || err.Error() != `HTTP 404: model "tev9" not found` {
 		t.Errorf("error: %v", err)
+	}
+}
+
+// Layout "text" (d2-text): the model only reads the text; code composes the
+// status from the routes and the refusal, hides the flags and applies the
+// flag rule, the DCL rule and the address guard.
+func TestDecisionTextLayout(t *testing.T) {
+	d := mustDecision(t, "d2-text")
+	if d.Layout != "text" || !d.FlagRule {
+		t.Fatalf("d2-text: %+v", d)
+	}
+	for _, c := range []struct {
+		ans  map[string]decisionAnswer
+		want string
+	}{
+		{map[string]decisionAnswer{"refused": {Noul: p(0.1)}, "bureau": {Noul: p(0.9)}, "direct": {Noul: p(0.85)}, "oqrs": {Noul: p(0.1)},
+			"preferred": {Choice: "direct"}}, "paper|[bureau direct]|direct||"},
+		// Below the fitted cut (direct 0.8) a route is not named.
+		{map[string]decisionAnswer{"refused": {Noul: p(0.1)}, "bureau": {Noul: p(0.9)}, "direct": {Noul: p(0.7)}, "oqrs": {Noul: p(0.1)},
+			"preferred": {Choice: "direct"}}, "paper|[bureau]|||"},
+		{map[string]decisionAnswer{"refused": {Noul: p(0.9)}, "bureau": {Noul: p(0.1)}, "direct": {Noul: p(0.2)}, "oqrs": {Noul: p(0.1)}}, "no-paper|[]|||"},
+		// A refusal next to an OQRS offer: the route wins.
+		{map[string]decisionAnswer{"refused": {Noul: p(0.8)}, "bureau": {Noul: p(0.1)}, "direct": {Noul: p(0.1)}, "oqrs": {Noul: p(0.9)}}, "paper|[oqrs]|||"},
+		{map[string]decisionAnswer{"refused": {Noul: p(0.2)}, "bureau": {Noul: p(0.1)}, "direct": {Noul: p(0.2)}, "oqrs": {Noul: p(0.1)}}, "unknown|[]|||"},
+	} {
+		var r Result
+		d.apply(c.ans, &r)
+		got := fmt.Sprintf("%s|%s|%s|%s|%s", r.Status, fmtRoutes(r.Routes), r.Preferred, r.Contribution, r.ParseError)
+		if got != c.want {
+			t.Errorf("got %s, want %s", got, c.want)
+		}
+	}
+	if (&Decision{}).FlagRule {
+		t.Fatal("zero value")
+	}
+	if _, err := parseDecision([]byte("flags: maybe\nquestions:\n  refused: {type: noul}\n  bureau: {type: noul}\n  direct: {type: noul}\n  oqrs: {type: noul}")); err == nil || !strings.Contains(err.Error(), "flags") {
+		t.Errorf("flags: maybe: %v", err)
+	}
+	if _, err := parseDecision([]byte("questions:\n  refused: {type: noul}\n  status: {type: choice, criteria: {paper: x}}\n  bureau: {type: noul}\n  direct: {type: noul}\n  oqrs: {type: noul}")); err == nil || !strings.Contains(err.Error(), "either") {
+		t.Errorf("refused and status: %v", err)
+	}
+
+	var body map[string]json.RawMessage
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		json.Unmarshal(b, &body)
+		io.WriteString(w, `{"model":"tev1","answers":{"refused":{"type":"noul","noul":0.1},"bureau":{"type":"noul","noul":0.2},"direct":{"type":"noul","noul":0.1},"oqrs":{"type":"noul","noul":0.1}},"usage":{"input_tokens":500}}`)
+	}))
+	defer srv.Close()
+	c, err := New(Variant{Kind: "decision", BaseURL: srv.URL + "/v1", Model: "tev1", Prompt: "d2-text", AddressGuard: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing in the text: the flag rule decides (mqsl 1, full address = direct).
+	r, err := c.Classify(context.Background(), Station{Call: "ZZ1AA", MQSL: "1", Addr1: "Street 1", Addr2: "Town", Bio: "I like antennas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != Paper || fmtRoutes(r.Routes) != "[direct]" || !strings.Contains(r.Guard, "flag rule") {
+		t.Errorf("flag rule: %+v", r)
+	}
+	if s := string(body["state"]); strings.Contains(s, "mqsl") || !strings.Contains(s, `"QRZ postal address":"full (street and city)"`) {
+		t.Errorf("the model saw the flags: %s", s)
+	}
+	// DCL in the text: bureau too.
+	r, _ = c.Classify(context.Background(), Station{Call: "ZZ2BB", Bio: "Logs go to DCL and LoTW"})
+	if r.Status != Paper || fmtRoutes(r.Routes) != "[bureau]" {
+		t.Errorf("dcl rule: %+v", r)
 	}
 }

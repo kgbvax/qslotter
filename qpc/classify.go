@@ -148,6 +148,10 @@ func (c *Classifier) decide(ctx context.Context, st Station) (Result, error) {
 	if c.v.AddressGuard && r.Status != "" {
 		addressGuard(st, &r)
 	}
+	if (c.v.FlagRule || c.decision.FlagRule) && r.Status != "" {
+		flagRule(st, &r)
+		dclRule(st, &r)
+	}
 	return r, nil
 }
 

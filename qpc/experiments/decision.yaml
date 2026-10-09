@@ -14,3 +14,7 @@ variants:
   - {name: tev1-split-focus, prompt: d1-split, bio_focus: true}
   - {name: tev1-single, prompt: d1-single}
   - {name: tev1-single-focus, prompt: d1-single, bio_focus: true}
+  # d2: text-only questions, the status composed in code, flag and DCL rule
+  # in code, direct without a full address dropped (2026-10-09).
+  - {name: tev1-d2, prompt: d2-text, address_guard: true}
+  - {name: tev1-d2-focus, prompt: d2-text, address_guard: true, bio_focus: true}

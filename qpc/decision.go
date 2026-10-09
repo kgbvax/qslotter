@@ -34,8 +34,15 @@ import (
 //	              ("bureau+direct")                         - layout "single"
 //	status        choice over the statuses, with            - layout "split"
 //	bureau, direct, oqrs  noul each: is the route accepted?
+//	refused       noul: does the text refuse paper cards?   - layout "text":
+//	              no status question; the routes and this   (split without
+//	              compose the status in code                 status)
 //	preferred     choice: none or a route (optional)
 //	contribution  choice: required, not-needed, not-stated (optional)
+//
+// A spec with a top-level "flags: code" hides the QRZ flags from the model
+// and applies LABELS.md rule 6 in code (the flag rule), like a prompt with
+// {{define "flags"}}code{{end}}: the model only reads what the text says.
 
 //go:embed decisions/*.yaml
 var builtinDecisions embed.FS
@@ -47,11 +54,27 @@ const routeThreshold = 0.5
 type Decision struct {
 	Name   string // file name without extension
 	Hash   string // first 8 hex digits of the SHA-256 of the file
-	Layout string // "single" or "split"
+	Layout string // "single", "split" or "text"
+	// FlagRule: the model does not see the QRZ flags; code applies the
+	// flag rule when the text says nothing ("flags: code" in the spec).
+	FlagRule bool
 	// questions is the "questions" object as JSON, in the file's order (the
 	// order the model sees them in).
 	questions json.RawMessage
 	options   map[string][]string // choice question -> option names
+	// thresholds: the probability from which a noul question counts as true
+	// ("threshold" in the question, default routeThreshold). Small decision
+	// models answer an absent mention with 0.5-0.7, so the cut is per
+	// question and fitted on labelled data.
+	thresholds map[string]float64
+}
+
+// threshold returns the cut for noul question q.
+func (d *Decision) threshold(q string) float64 {
+	if t, ok := d.thresholds[q]; ok {
+		return t
+	}
+	return routeThreshold
 }
 
 // ID identifies the exact spec a result came from.
@@ -94,7 +117,16 @@ func parseDecision(src []byte) (*Decision, error) {
 	if qs == nil || qs.Kind != yaml.MappingNode || len(qs.Content) == 0 {
 		return nil, fmt.Errorf("no questions")
 	}
-	d := &Decision{options: map[string][]string{}}
+	d := &Decision{options: map[string][]string{}, thresholds: map[string]float64{}}
+	if f := mapValue(doc.Content[0], "flags"); f != nil {
+		switch f.Value {
+		case "code":
+			d.FlagRule = true
+		case "model":
+		default:
+			return nil, fmt.Errorf("flags: %q (want code or model)", f.Value)
+		}
+	}
 	types := map[string]string{}
 	for i := 0; i+1 < len(qs.Content); i += 2 {
 		name, q := qs.Content[i].Value, qs.Content[i+1]
@@ -103,6 +135,13 @@ func parseDecision(src []byte) (*Decision, error) {
 			return nil, fmt.Errorf("question %q: no type", name)
 		}
 		types[name] = t.Value
+		if th := mapValue(q, "threshold"); th != nil {
+			var v float64
+			if err := th.Decode(&v); err != nil || t.Value != "noul" || v <= 0 || v >= 1 {
+				return nil, fmt.Errorf("question %q: threshold must be a number between 0 and 1 on a noul question", name)
+			}
+			d.thresholds[name] = v
+		}
 		if t.Value == "choice" {
 			c := mapValue(q, "criteria")
 			if c == nil || c.Kind != yaml.MappingNode {
@@ -128,29 +167,37 @@ func parseDecision(src []byte) (*Decision, error) {
 	}
 	for name := range types {
 		switch name {
-		case "answer", "status", "bureau", "direct", "oqrs", "preferred", "contribution":
+		case "answer", "status", "refused", "bureau", "direct", "oqrs", "preferred", "contribution":
 		default:
-			return nil, fmt.Errorf("question %q: unknown (want answer, status, bureau, direct, oqrs, preferred, contribution)", name)
+			return nil, fmt.Errorf("question %q: unknown (want answer, status, refused, bureau, direct, oqrs, preferred, contribution)", name)
 		}
 	}
 	_, single := types["answer"]
 	_, split := types["status"]
+	_, text := types["refused"]
 	switch {
-	case single && !split:
+	case single && !split && !text:
 		d.Layout = "single"
-	case split && !single:
+	case (split || text) && !single:
 		d.Layout = "split"
+		if text {
+			d.Layout = "text"
+			if split {
+				return nil, fmt.Errorf("want either a status question or a refused question")
+			}
+		}
 		for _, r := range AllRoutes {
 			if _, ok := types[string(r)]; !ok {
-				return nil, fmt.Errorf("layout split: no %q question", r)
+				return nil, fmt.Errorf("layout %s: no %q question", d.Layout, r)
 			}
 		}
 	default:
-		return nil, fmt.Errorf("want either an answer question or a status question")
+		return nil, fmt.Errorf("want either an answer, a status or a refused question")
 	}
 	for _, err := range []error{
 		want("answer", "choice", func(o string) bool { s, _ := parseAnswerOption(o); return s != "" }),
 		want("status", "choice", func(o string) bool { return Status(o).Valid() }),
+		want("refused", "noul", nil),
 		want("bureau", "noul", nil),
 		want("direct", "noul", nil),
 		want("oqrs", "noul", nil),
@@ -249,8 +296,10 @@ func nodeJSON(n *yaml.Node) (json.RawMessage, error) {
 }
 
 // decisionState is the station as the decision model sees it: plain-language
-// keys, since there is no system prompt to explain the QRZ fields.
-func decisionState(st Station, bio string) json.RawMessage {
+// keys, since there is no system prompt to explain the QRZ fields. Without
+// the flags (flags: code) the model sees only the text and whether there is
+// a postal address.
+func decisionState(st Station, bio string, flags bool) json.RawMessage {
 	flag := func(v string) string {
 		switch strings.TrimSpace(v) {
 		case "1":
@@ -277,12 +326,16 @@ func decisionState(st Station, bio string) json.RawMessage {
 		{"station", st.Call},
 		{"country", or(st.Country, "not stated")},
 		{"qslmgr (QSL manager or QSL instructions)", or(st.QSLMgr, "(empty)")},
-		{"mqsl (will return paper QSL)", flag(st.MQSL)},
-		{"eqsl (accepts eQSL)", flag(st.EQSL)},
-		{"lotw (uses LoTW)", flag(st.LoTW)},
-		{"QRZ postal address", addr},
-		{"bio", or(bio, "(no bio)")},
 	}
+	if flags {
+		fields = append(fields,
+			[2]string{"mqsl (will return paper QSL)", flag(st.MQSL)},
+			[2]string{"eqsl (accepts eQSL)", flag(st.EQSL)},
+			[2]string{"lotw (uses LoTW)", flag(st.LoTW)})
+	}
+	fields = append(fields,
+		[2]string{"QRZ postal address", addr},
+		[2]string{"bio", or(bio, "(no bio)")})
 	var b bytes.Buffer
 	b.WriteByte('{')
 	for i, f := range fields {
@@ -301,7 +354,7 @@ func decisionState(st Station, bio string) json.RawMessage {
 
 // decisionRequest returns the /v1/systemone request body for st.
 func (d *Decision) request(model string, st Station, bio string, extra map[string]any) ([]byte, error) {
-	body := map[string]json.RawMessage{"state": decisionState(st, bio), "questions": d.questions}
+	body := map[string]json.RawMessage{"state": decisionState(st, bio, !d.FlagRule), "questions": d.questions}
 	m, _ := json.Marshal(model)
 	body["model"] = m
 	for k, v := range extra {
@@ -377,28 +430,36 @@ func decide(ctx context.Context, hc *http.Client, baseURL, apiKey string, body [
 func (d *Decision) apply(ans map[string]decisionAnswer, r *Result) {
 	var problems, ev []string
 	main := "status"
-	if d.Layout == "single" {
+	switch d.Layout {
+	case "single":
 		main = "answer"
+	case "text":
+		main = "refused"
 	}
 	a, ok := ans[main]
-	if !ok || a.Choice == "" {
+	if !ok || (main != "refused" && a.Choice == "") || (main == "refused" && a.Noul == nil) {
 		r.ParseError = "no " + main + " in the answer"
 		return
 	}
-	ev = append(ev, fmt.Sprintf("%s %s", main, probs(a.Probabilities)))
+	if main != "refused" {
+		ev = append(ev, fmt.Sprintf("%s %s", main, probs(a.Probabilities)))
+	}
 	switch d.Layout {
 	case "single":
 		r.Status, r.Routes = parseAnswerOption(a.Choice)
 		if r.Status == "" {
 			problems = append(problems, fmt.Sprintf("unknown answer %q", a.Choice))
 		}
-	case "split":
+	case "split", "text":
 		st := Status(a.Choice)
-		if !st.Valid() {
+		if d.Layout == "split" && !st.Valid() {
 			r.ParseError = fmt.Sprintf("unknown status %q", a.Choice)
 			return
 		}
 		var parts []string
+		if d.Layout == "text" {
+			parts = append(parts, fmt.Sprintf("refused %.2f", *a.Noul))
+		}
 		best, bestP := Route(""), -1.0
 		for _, rt := range AllRoutes {
 			x, ok := ans[string(rt)]
@@ -407,7 +468,7 @@ func (d *Decision) apply(ans map[string]decisionAnswer, r *Result) {
 				continue
 			}
 			parts = append(parts, fmt.Sprintf("%s %.2f", rt, *x.Noul))
-			if *x.Noul >= routeThreshold {
+			if *x.Noul >= d.threshold(string(rt)) {
 				r.Routes = append(r.Routes, rt)
 			}
 			if *x.Noul > bestP {
@@ -415,13 +476,30 @@ func (d *Decision) apply(ans map[string]decisionAnswer, r *Result) {
 			}
 		}
 		ev = append(ev, strings.Join(parts, " "))
+		if d.Layout == "text" {
+			// The text decides: a route named = paper, a refusal with no
+			// route = no paper, neither = unknown (the flag rule may follow).
+			switch {
+			case len(r.Routes) > 0:
+				st = Paper
+			case *a.Noul >= d.threshold("refused"):
+				st = NoPaper
+			default:
+				st = Unknown
+			}
+			// Confidence: how far the deciding answers are from the cut.
+			a.Confidence = math.Abs(*a.Noul-d.threshold("refused")) * 2
+			if bestP >= 0 {
+				a.Confidence = math.Min(a.Confidence, math.Abs(bestP-d.threshold(string(best)))*2)
+			}
+		}
 		r.Status = st
 		switch {
 		case st != Paper:
 			r.Routes = nil // the status decides; route answers only count for paper
 		case len(r.Routes) == 0 && best != "":
 			r.Routes = []Route{best}
-			problems = append(problems, fmt.Sprintf("paper but no route at %.1f, took the likeliest (%s)", routeThreshold, best))
+			problems = append(problems, fmt.Sprintf("paper but no route at %.2f, took the likeliest (%s)", d.threshold(string(best)), best))
 		case len(r.Routes) == 0:
 			r.Status = ""
 			problems = append(problems, "paper without routes")
@@ -431,9 +509,13 @@ func (d *Decision) apply(ans map[string]decisionAnswer, r *Result) {
 	if p, ok := ans["preferred"]; ok {
 		ev = append(ev, "preferred "+probs(p.Probabilities))
 		if rt := Route(p.Choice); rt.Valid() {
-			if HasRoute(r.Routes, rt) {
+			switch {
+			case len(r.Routes) < 2:
+				// LABELS.md: a preference counts with two or more routes;
+				// decision models name the only route as preferred.
+			case HasRoute(r.Routes, rt):
 				r.Preferred = rt
-			} else {
+			default:
 				problems = append(problems, fmt.Sprintf("preferred %q is not among the routes", p.Choice))
 			}
 		}

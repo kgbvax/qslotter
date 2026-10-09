@@ -1,0 +1,13 @@
+# clef-flash (Ollama library, 9.1B, decision capability, 16k context): the
+# same decision specs as Tev1, but with room for the whole bio.
+defaults:
+  kind: decision
+  base_url: http://localhost:11434/v1
+  model: "clef-flash"
+  bio_max_chars: 6000
+  timeout: 3m
+
+variants:
+  - {name: clef-split, prompt: d1-split}
+  - {name: clef-single, prompt: d1-single}
+  - {name: clef-d2, prompt: d2-text, address_guard: true}
