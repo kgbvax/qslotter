@@ -110,7 +110,7 @@ func TestIsRowFieldSatellite(t *testing.T) {
 			t.Errorf("IsRowField(%q) = false, want true", name)
 		}
 	}
-	if len(RowFieldNames()) != 9 || len(CardFieldNames()) != 8 {
+	if len(RowFieldNames()) != 9 || len(CardFieldNames()) != 10 {
 		t.Fatalf("field catalogs = %v / %v", RowFieldNames(), CardFieldNames())
 	}
 }

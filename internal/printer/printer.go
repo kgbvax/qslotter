@@ -39,8 +39,14 @@ type CardFields struct {
 	MyQTH                                   string // station.qth (field my_qth)
 	// Via is the manager callsign for a manager card ("" otherwise); the
 	// template field "via" prints "via <CALL>" when set, nothing otherwise.
-	Via  string
-	Rows []QSORow
+	Via string
+	// Route is how the card is sent - D direct, B bureau, MD / MB via a
+	// manager direct / bureau; the template field "route" prints it.
+	Route string
+	// Address is the station's postal address, one line each; only set for
+	// a card sent direct (Route D): the template field "address" prints it.
+	Address []string
+	Rows    []QSORow
 }
 
 // QSOFields is the data of a one-QSO card (see RenderPDF).
@@ -421,6 +427,16 @@ func layout(tmpl *template.Template, card CardFields, rows []QSORow, measure mea
 			}
 			continue
 		}
+		if f.Text == "" && strings.EqualFold(f.Name, "address") {
+			size := f.FontSize
+			if size == 0 {
+				size = 12
+			}
+			for n, line := range card.Address {
+				place(i, -1, f, f.Y+float64(n)*ptToMM(size)*addressLineFactor, line)
+			}
+			continue
+		}
 		val := f.Text
 		if val == "" {
 			val = cardValue(f.Name, card)
@@ -610,9 +626,15 @@ func cardValue(name string, c CardFields) string {
 		if v := strings.TrimSpace(c.Via); v != "" {
 			return "via " + strings.ToUpper(v)
 		}
+	case "route":
+		return strings.ToUpper(strings.TrimSpace(c.Route))
 	}
 	return ""
 }
+
+// addressLineFactor is the line spacing of the "address" field, times the
+// font size.
+const addressLineFactor = 1.2
 
 // rowValue is the value of a once-per-QSO field.
 func rowValue(name string, r QSORow) string {

@@ -226,15 +226,22 @@
 
   // drawGhost marks a field that prints nothing on this sample (e.g. "via"
   // on a card without a manager), so it can still be seen and moved.
+  // The address field shows an example address of four lines (line spacing
+  // as in printer.addressLineFactor).
+  var GHOST_ADDRESS = ['Hans Mustermann', 'Musterstrasse 12', '12345 Musterstadt', 'Germany'];
   function drawGhost(g, f) {
     var size = (f.font_size || 12) * 25.4 / 72;
     var anchor = { C: 'middle', R: 'end' }[(f.align || 'L').toUpperCase()] || 'start';
-    var t = el('text', { x: f.x_mm, y: f.y_mm + 0.3 * size, 'font-size': size, 'text-anchor': anchor, 'class': 'lay-ghost' }, g);
-    t.textContent = '‹' + label(f) + '›';
-    var title = el('title', {}, t);
-    title.textContent = T('no value on this sample');
-    var bb = t.getBBox();
-    el('rect', { x: bb.x, y: bb.y, width: Math.max(bb.width, 1), height: Math.max(bb.height, 1), 'class': 'lay-hit' }, g);
+    var lines = !f.text && f.name === 'address' ? GHOST_ADDRESS : ['‹' + label(f) + '›'];
+    lines.forEach(function (line, n) {
+      var t = el('text', { x: f.x_mm, y: f.y_mm + n * size * 1.2 + 0.3 * size, 'font-size': size, 'text-anchor': anchor,
+        'class': 'lay-ghost' }, g);
+      t.textContent = line;
+      var title = el('title', {}, t);
+      title.textContent = T('no value on this sample');
+      var bb = t.getBBox();
+      el('rect', { x: bb.x, y: bb.y, width: Math.max(bb.width, 1), height: Math.max(bb.height, 1), 'class': 'lay-hit' }, g);
+    });
   }
 
   // wrapBox is the area a text with a width may fill: its width, as many

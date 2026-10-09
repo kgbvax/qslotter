@@ -62,7 +62,10 @@ type Field struct {
 	// Name is the placeholder to substitute. Once per card:
 	//   call, name, qth, my_call, my_name, my_qth (station.qth),
 	//   qslmsg (the QSO's ADIF QSLMSG; on a card for several QSOs the newest),
-	//   via (prints "via <manager call>" on a manager card, nothing otherwise)
+	//   via (prints "via <manager call>" on a manager card, nothing otherwise),
+	//   address (the station's postal address, one line under the other
+	//   from y_mm, only on a card sent direct - not via a manager),
+	//   route (D, B, MD or MB: how the card is sent, to sort the cards)
 	// Once per QSO row (see Template.Rows):
 	//   qso_date, time_on, band, mode, rst_sent, rst_rcvd, freq, sat_name, freq_rx
 	// Any other name (e.g. "text") prints only its Text.
@@ -138,7 +141,7 @@ const (
 )
 
 // cardFieldNames are the field names drawn once per card, in menu order.
-var cardFieldNames = []string{"call", "name", "qth", "my_call", "my_name", "my_qth", "via", "qslmsg"}
+var cardFieldNames = []string{"call", "name", "qth", "my_call", "my_name", "my_qth", "via", "address", "route", "qslmsg"}
 
 // rowFieldNames are the field names drawn once per QSO row, in menu order.
 var rowFieldNames = []string{"qso_date", "time_on", "band", "mode", "rst_sent", "rst_rcvd", "freq", "sat_name", "freq_rx"}
@@ -174,7 +177,7 @@ func IsRowField(name string) bool {
 }
 
 // IsCardField reports whether name is a once-per-card data field (call,
-// name, qth, my_call, my_name, my_qth, via, qslmsg).
+// name, qth, my_call, my_name, my_qth, via, address, route, qslmsg).
 func IsCardField(name string) bool {
 	return cardFields[strings.ToLower(name)]
 }

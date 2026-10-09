@@ -255,6 +255,40 @@ func TestLayoutVia(t *testing.T) {
 	}
 }
 
+// TestLayoutAddressAndRoute: the address prints one line under the other,
+// the route flag prints as it is, and both stay empty on a card without.
+func TestLayoutAddressAndRoute(t *testing.T) {
+	tmpl := &template.Template{Fields: []template.Field{
+		{Name: "address", X: 4, Y: 40, FontSize: 10},
+		{Name: "route", X: 120, Y: 6},
+	}}
+	card := CardFields{Route: "md", Address: []string{"Hans", "Str. 1", "Berlin"}}
+	ops := layout(tmpl, card, testRows(1), fixedWidth)
+	if len(ops) != 4 {
+		t.Fatalf("ops = %+v, want 3 address lines and the route", ops)
+	}
+	for n, text := range card.Address {
+		if ops[n].Text != text || ops[n].Field != 0 || ops[n].X != 4 {
+			t.Errorf("line %d = %+v, want %q at x 4", n, ops[n], text)
+		}
+		want := 40 + float64(n)*ptToMM(10)*addressLineFactor
+		if math.Abs(ops[n].Y-want) > 1e-9 {
+			t.Errorf("line %d at y %v, want %v", n, ops[n].Y, want)
+		}
+	}
+	if ops[3].Text != "MD" {
+		t.Errorf("route = %q, want MD", ops[3].Text)
+	}
+	if ops := layout(tmpl, CardFields{}, testRows(1), fixedWidth); len(ops) != 0 {
+		t.Errorf("card without route and address: ops = %+v, want none", ops)
+	}
+	// A fixed text on an address field is printed as it is.
+	tmpl.Fields[0].Text = "c/o"
+	if ops := layout(tmpl, card, testRows(1), fixedWidth); len(ops) != 2 || ops[0].Text != "c/o" {
+		t.Errorf("fixed text ops = %+v", ops)
+	}
+}
+
 // fpdfWidth measures with the real core-font metrics, in cp1252 like
 // buildPDF.
 func fpdfWidth() measureFunc {
@@ -554,7 +588,7 @@ func TestPreview(t *testing.T) {
 			want = 0 // no satellite QSO on this card
 		case template.IsRowField(f.Name):
 			want = 3
-		case f.Name == "via" || f.Name == "my_name" || f.Name == "qslmsg":
+		case f.Name == "via" || f.Name == "my_name" || f.Name == "qslmsg" || f.Name == "address" || f.Name == "route":
 			want = 0 // no value on this card
 		}
 		if count[i] != want {

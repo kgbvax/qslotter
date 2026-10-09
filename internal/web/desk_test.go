@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -326,5 +327,36 @@ func TestResearchBadgesPortableIsSeparate(t *testing.T) {
 	b := get(t, h, "/decide?key="+url.QueryEscape(key)).Body.String()
 	if !strings.Contains(b, "under other calls of this station (DL1ABC/P) - separate card(s)") || strings.Contains(b, "could cover") {
 		t.Fatalf("portable badge:\n%s", b)
+	}
+}
+
+// TestCardAddress: a card sent direct carries the station's postal address
+// (the Desk's block, one line each); any other route carries none.
+func TestCardAddress(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL1ABC", Name: "Hans Schmidt", Attn: "OM Hans", Addr1: "Str. 1",
+		Addr2: "Berlin", State: "BE", Zip: "10115", Country: "Germany"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutStation(&store.StationInfo{Callsign: "DL2XYZ", Name: "Nobody"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Hans Schmidt", "OM Hans", "Str. 1", "Berlin", "BE 10115", "Germany"}
+	if got := srv.cardAddress("D", "DL1ABC", "x"); !slices.Equal(got, want) {
+		t.Errorf("direct address = %q, want %q", got, want)
+	}
+	for _, route := range []string{"B", "MD", "MB", ""} {
+		if got := srv.cardAddress(route, "DL1ABC", "x"); got != nil {
+			t.Errorf("route %q address = %q, want none", route, got)
+		}
+	}
+	for _, call := range []string{"DL2XYZ", "DL9NOPE"} { // no address on file, unknown station
+		if got := srv.cardAddress("D", call, "x"); got != nil {
+			t.Errorf("%s address = %q, want none", call, got)
+		}
+	}
+	card := srv.cardFieldsFor(srv.config(), []*store.QSO{{Call: "DL1ABC", QSODate: "20240101"}}, "", "D")
+	if card.Route != "D" || len(card.Address) != 6 {
+		t.Errorf("card = route %q, address %q", card.Route, card.Address)
 	}
 }
