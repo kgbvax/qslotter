@@ -1,0 +1,21 @@
+# The gate test on a fresh sample (qpc-lab sample -exclude <first dataset>):
+# the heuristic against the best prompts from rounds 1-3, none of which were
+# written with these stations in view.
+defaults:
+  base_url: http://localhost:11434/v1
+  temperature: 0
+  max_tokens: 768
+  bio_max_chars: 6000
+  format: schema
+  timeout: 3m
+  extra:
+    reasoning_effort: none
+
+variants:
+  - {name: heuristic, kind: heuristic}
+  - {name: qwen3.5-4b-v4, model: "qwen3.5:4b", prompt: v4}
+  - {name: qwen3.5-4b-v5, model: "qwen3.5:4b", prompt: v5}
+  - {name: gemma4-e4b-v4, model: "gemma4:e4b", prompt: v4}
+  - {name: qwen3.5-4b-v6, model: "qwen3.5:4b", prompt: v6}
+  - {name: qwen3.5-4b-v7, model: "qwen3.5:4b", prompt: v7}
+  - {name: qwen3.5-4b-v8, model: "qwen3.5:4b", prompt: v8}

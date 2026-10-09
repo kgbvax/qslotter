@@ -1,0 +1,21 @@
+# The same variants on the shack PC's Ollama (bwpc), reachable on the LAN,
+# so the laptop is free. Same model and settings as fresh.yaml; only the
+# endpoint differs.
+defaults:
+  base_url: http://bwpc.local:11434/v1
+  temperature: 0
+  max_tokens: 768
+  bio_max_chars: 6000
+  format: schema
+  timeout: 3m
+  extra:
+    reasoning_effort: none
+
+variants:
+  - {name: qwen3.5-4b-v9, model: "qwen3.5:4b", prompt: v9}
+  - {name: qwen3.5-4b-v8, model: "qwen3.5:4b", prompt: v8}
+  - {name: qwen3.5-4b-v10, model: "qwen3.5:4b", prompt: v10}
+  - {name: qwen3.5-4b-v11, model: "qwen3.5:4b", prompt: v11}
+  - {name: qwen3.5-4b-v12, model: "qwen3.5:4b", prompt: v12}
+  - {name: qwen3.5-4b-v13, model: "qwen3.5:4b", prompt: v13}
+  - {name: qwen3.5-4b-v14, model: "qwen3.5:4b", prompt: v14}

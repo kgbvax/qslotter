@@ -1,0 +1,48 @@
+Decide whether and how this station wants to receive a paper QSL card, using only what its QRZ record and bio say.
+
+Answer:
+- status: paper, no-paper, unknown or unclear (below).
+- routes: with status paper, every route the station accepts for paper cards: bureau, direct, oqrs. Empty for the other statuses.
+- preferred: the route the station says it prefers ("direct preferred", "bureau if possible"), only when it accepts two or more routes; empty with a single route (the note may still say it) and when it states no preference.
+- via: the callsign the card is routed via, if any (below).
+- contribution: does the station ask for something in return for a card - return postage (SAE/SASE, IRC, green stamps), money ("2 USD", "4 EUR"), PayPal, an OQRS fee or a donation? "required", "not-needed" when it says so explicitly ("no SASE needed", "free of charge"), or empty when the record does not say.
+- note: a few English words summing up anything the station says about how or when to send paper cards: preferences, conditions, requirements ("direct preferred", "only if no electronic QSL possible", "EME QSOs only", "no cards for FT8 QSOs", "SAE + 2 USD", "PayPal for postage"). Summarize, do not copy the station's text. Empty if it says nothing of the kind.
+
+Status:
+- paper: the station accepts paper cards on at least one usable route; routes lists them.
+- no-paper: the station refuses paper cards: explicitly ("NO QSL", "no paper", "LoTW only", "eQSL only", "no bureau, no direct"), or mqsl = 0 with no paper route offered anywhere (rule 7).
+- unknown: the record says nothing about paper QSL cards and has no full postal address (rule 6).
+- unclear: the record asks for paper cards but no usable route is given: a via callsign with no route, or direct as the only route but no postal address.
+
+Routes:
+- bureau: via the QSL bureau ("buro", "Büro", "bureau", "QSL via buro").
+- direct: by post to the station's postal address ("direct", "direkt", "SAE", "SASE", "IRC", "green stamps"). Needs a full postal address, see rule 5.
+- oqrs: requested through an online QSL request service ("OQRS", Club Log OQRS, a web request form). A bureau or direct card that is only sent on an OQRS request ("Direct via OQRS", "use clublog request for bureau or direct QSLs", "direct QSL requests: 3 USD through OQRS") is oqrs, not bureau or direct; bureau and direct are listed only where you send your own card that way.
+
+Via:
+- The callsign the card is routed via: a QSL manager ("QSL via EA5GL", "QSL manager: IK2DUW", a callsign in the qslmgr field) or the operator's home call named for a portable or special call ("EA8/DL1ABC: QSL via DL1ABC").
+- Empty when the card goes to the station itself. The station's own callsign is never a via.
+- Uppercase callsign only, no extra words.
+
+Rules:
+1. Only the QRZ data counts, not outside knowledge.
+2. Paper cards accepted in the text but no route given ("QSL welcome", "QSL OK", "100% QSL"), and no via callsign: status paper, routes bureau.
+3. A via callsign with no route stated: unclear. If routes are stated for the via ("QSL via IK2DUW direct only"), list them; return postage or money named for it ("via F5MFV (4 EUR or PayPal & SAE)") means direct.
+4. List every route the station accepts, not just one. "Only" or "no bureau" limit the routes ("no bureau" alone names no route: rules 6 and 7 decide, so mqsl 0 = no-paper); "preferred" or "if possible" name the preferred route and belong in the note. A route the station allows only under a condition ("direct only if electronic QSL fails") is still listed, with the condition in the note.
+5. Direct needs a full postal address (at least street and city, a P.O. box with city counts), in the QRZ postal address or written in the bio; a city alone is not enough. Without one, leave direct out of the routes; if no route is left: unclear. This rule is about cards to the station itself: for a via callsign the address is on that callsign's own record, so it does not apply.
+6. Nothing about QSL cards in qslmgr or the bio: the mqsl flag and the postal address decide, the eqsl and lotw flags do not.
+   - full postal address and mqsl 1 or empty: status paper, routes direct.
+   - mqsl 0: no-paper.
+   - no full postal address: mqsl 1: routes bureau; mqsl empty: unknown.
+6a. DCL (the DARC Community Logbook) mentioned anywhere makes the station a DARC member: bureau is a route too, on top of whatever else applies (unless the bureau is refused).
+7. mqsl = 0 means "will not return paper QSL". With mqsl = 0 and no paper route offered in qslmgr or the bio: no-paper, whatever eqsl and lotw say. A route offered in the text wins over mqsl = 0.
+8. LoTW, eQSL, Club Log matching or QRZ logbook confirmations are not paper routes; mentioning them does not change rules 6 and 7, also when qslmgr lists nothing else ("LoTW, eQSL, Club Log": mqsl decides). Only an explicit "eQSL only" / "LoTW only" refuses paper.
+9. The qslmgr field may hold free text instead of a callsign ("VIA BUREAU", "DIRECT ONLY"); read it like the bio.
+10. The bio may be written in any language; the note is always in English.
+11. contribution is about what the station asks for, not about the route: set it whenever a contribution is asked for or waived, also for a manager or OQRS. Kind and amount ("SAE + 2 USD") also go into the note.
+
+QRZ fields:
+- qslmgr: QSL manager or QSL instructions, free text.
+- mqsl: 1 = will return paper QSL, 0 = will not, empty = not stated.
+- eqsl: 1 = accepts eQSL. lotw: 1 = uses LoTW. Neither is a paper route.
+- postal address: street, city, state, zip and country as published on QRZ. Owners may leave parts empty or hide it.

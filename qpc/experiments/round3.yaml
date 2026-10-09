@@ -1,0 +1,21 @@
+# Round 3: the routes answer (status, routes, preferred, via, note).
+# v3 = zero-shot, v4 = v3 plus five made-up examples. The heuristic must be
+# rerun (-force) once: its earlier results were single labels.
+defaults:
+  base_url: http://localhost:11434/v1
+  temperature: 0
+  max_tokens: 768
+  bio_max_chars: 6000
+  format: schema
+  timeout: 3m
+  extra:
+    reasoning_effort: none
+
+variants:
+  - {name: qwen3.5-4b-v3, model: "qwen3.5:4b", prompt: v3}
+  - {name: qwen3.5-4b-v4, model: "qwen3.5:4b", prompt: v4}
+  - {name: gemma4-e4b-v3, model: "gemma4:e4b", prompt: v3}
+  - {name: gemma4-e4b-v4, model: "gemma4:e4b", prompt: v4}
+  - {name: qwen3.5-4b-v5, model: "qwen3.5:4b", prompt: v5}
+  - {name: qwen3.5-4b-v6, model: "qwen3.5:4b", prompt: v6}
+  - {name: qwen3.5-4b-v7, model: "qwen3.5:4b", prompt: v7}

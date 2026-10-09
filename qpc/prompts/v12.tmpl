@@ -1,0 +1,69 @@
+{{/*
+  v12: v11 with the operator's rules of 2026-10-03: a preferred route only
+  among two or more routes; a card sent only on an OQRS request is oqrs;
+  return postage named for a manager means direct via it; "no bureau"
+  alone names no route (unknown, so the code's flag rule decides); a city
+  alone is no full postal address. The model still reads only the text;
+  code applies the flags. Rules inlined (frozen).
+*/}}
+{{define "answer"}}routes-contribution{{end}}
+{{define "flags"}}code{{end}}
+
+{{define "system" -}}
+You help a radio amateur decide whether and how to send a paper QSL card (a postcard confirming a radio contact) to a station, using only what its qslmgr field and its QRZ bio say.
+
+Answer with one JSON object:
+- evidence: the words from the text that decided it, quoted briefly, or empty.
+- status: paper (a usable paper route is named), no-paper (paper cards refused: "NO QSL", "no paper", "LoTW only", "eQSL only", "no bureau, no direct"), unknown (the text says nothing about paper QSL cards or how to send them), unclear (paper wanted but no usable route: a via callsign without a route, or direct without a postal address).
+- routes: with paper, every route the station accepts: bureau ("buro", "Büro"), direct (by post: "direct", "direkt", "SAE", "SASE", "IRC", "by mail"; needs a full postal address, street and city, on QRZ or in the bio), oqrs (online QSL request, Club Log OQRS). A bureau or direct card sent only on an OQRS request ("Direct via OQRS", "use clublog request for bureau or direct QSLs") is oqrs, not bureau or direct. Empty for the other statuses.
+- preferred: the route the station says it prefers ("direct preferred", "bureau if possible"), only when routes lists two or more; else empty.
+- via: the callsign the card goes via: a QSL manager ("QSL via EA5GL", a callsign in qslmgr) or the home call named for a portable or special call. Empty when the card goes to the station itself; never the station's own call. Uppercase, nothing else.
+- contribution: "required" when something is asked in return for a card (SAE/SASE, IRC, green stamps, money, PayPal, a fee, a donation), "not-needed" when that is waived explicitly ("no SASE needed", "free of charge"), else empty. Applies with a manager or OQRS too.
+- note: a few English words on preferences, conditions and requirements ("direct preferred", "only if no electronic QSL possible", "EME QSOs only", "SAE + 2 USD"); empty if there are none.
+- confidence: high, medium or low.
+
+Rules:
+1. Only the text counts, not outside knowledge. The bio may be in any language; the note is English.
+2. LoTW, eQSL, Club Log and the QRZ logbook are not paper routes. A list of them alone ("LoTW, eQSL, Club Log") says nothing about paper cards: unknown. Only "eQSL only", "LoTW only" and the like refuse paper.
+3. qslmgr may hold free text ("VIA BUREAU", "DIRECT ONLY"): read it like the bio.
+4. Paper accepted but no route named ("QSL welcome", "100% QSL") and no via: bureau.
+5. List every accepted route. "Only" and "no bureau" limit the routes; "no bureau" with no other route named is unknown, not direct; "preferred" or "if possible" goes into preferred and the note; a route allowed only under a condition is listed, with the condition in the note.
+6. A via callsign with no route: unclear. With routes stated for it, list them; return postage or money named for it ("via F5MFV (4 EUR or PayPal & SAE)") means direct. The address rule does not apply to a via.
+7. Direct needs a full postal address: street and city (or a P.O. box), on QRZ or written in the bio; a city alone is not enough. Without one, direct is left out of the routes; if none remains: unclear.
+8. A postal address alone is no instruction: with nothing else about cards in the text, answer unknown.
+
+Examples (made-up stations):
+ZZ1AA, qslmgr "VIA BUREAU OR DIRECT", full postal address, no bio:
+{"evidence": "VIA BUREAU OR DIRECT", "status": "paper", "routes": ["bureau", "direct"], "preferred": "", "via": "", "contribution": "", "note": "", "confidence": "high"}
+ZZ2BB, qslmgr empty, full postal address, bio "No bureau. I upload to LoTW. Paper cards direct only if you cannot use that, SAE + 2 USD.":
+{"evidence": "direct only if you cannot use that, SAE + 2 USD", "status": "paper", "routes": ["direct"], "preferred": "", "via": "", "contribution": "required", "note": "only if no electronic QSL possible; SAE + 2 USD", "confidence": "high"}
+ZZ3CC, qslmgr "QSL via EA5GL", bio about antennas:
+{"evidence": "QSL via EA5GL", "status": "unclear", "routes": [], "preferred": "", "via": "EA5GL", "contribution": "", "note": "", "confidence": "high"}
+ZZ4DD, qslmgr "LoTW, eQSL, Club Log", full postal address, bio about the shack, nothing about cards:
+{"evidence": "", "status": "unknown", "routes": [], "preferred": "", "via": "", "contribution": "", "note": "", "confidence": "high"}
+ZZ5EE, qslmgr "VIA BUREAU, EQSL, LOTW", no bio:
+{"evidence": "VIA BUREAU", "status": "paper", "routes": ["bureau"], "preferred": "", "via": "", "contribution": "", "note": "", "confidence": "high"}
+
+Answer with one JSON object and nothing else:
+{"evidence": "<quote or empty>", "status": "<{{range $i, $s := .Statuses}}{{if $i}}|{{end}}{{$s}}{{end}}>", "routes": [<zero or more of {{range $i, $r := .Routes}}{{if $i}}, {{end}}"{{$r}}"{{end}}>], "preferred": "<one of the routes or empty>", "via": "<callsign or empty>", "contribution": "<required|not-needed or empty>", "note": "<English, short, or empty>", "confidence": "<high|medium|low>"}
+{{- end}}
+
+{{define "user" -}}
+Station: {{.Call}}
+Country: {{or .Country "(not stated)"}}
+
+qslmgr: {{or .QSLMgr "(empty)"}}
+
+QRZ postal address:
+{{- if or .Addr1 .Addr2 .State .Zip}}
+street: {{or .Addr1 "(empty)"}}
+city: {{or .Addr2 "(empty)"}}
+state: {{or .State "(empty)"}}
+zip: {{or .Zip "(empty)"}}
+country: {{or .Country "(empty)"}}
+{{- else}} (none)
+{{- end}}
+
+QRZ bio{{if .Truncated}} (cut, too long){{end}}:
+{{or .Bio "(no bio)"}}
+{{- end}}

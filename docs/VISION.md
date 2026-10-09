@@ -48,8 +48,10 @@ where it stands today.
   (signals with their quoted words) and suggests only from that (2026-10-02).
   It informs yes/no in the Inbox and preselects the route at the Desk when QRZ
   states one (B4, partial). "Other
-  sources" beyond QRZ (LLM bio interpretation) sits behind the `qsl-eval`
-  gate (roadmap v2).
+  sources" beyond QRZ (LLM bio interpretation): the `qpc` classifier beat
+  the old heuristic but trails the heuristic as improved 2026-10-02..03
+  (decision log); its own value is the note (preferences, conditions,
+  requirements) and free-text qslmgr fields. Not integrated (roadmap v2).
 - **Synchronous and asynchronous mode** — prepare cards at the desk after
   each QSO, or in a batch later. Done in the 2026-09-30 build, reshaped
   2026-10-01: synchronous = written now in the Inbox (A3, bureau or direct);
@@ -143,7 +145,7 @@ radio. Here the route is chosen.
 | # | Requirement | Status |
 |---|---|---|
 | E1 | Phone app (the operator's idea): photograph the back of an incoming card and process it directly, with as few key presses as possible. What is extracted (proposal: call/date/band/mode) and how it is booked is open. | roadmap v2 |
-| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30; LLM stays behind the `qsl-eval` gate (roadmap v2) |
+| E2 | Explore ("vielleicht", "interesting how this could be done"): whether a simple, cheap language model can read QRZ free text - e.g. "please QSL via ..." in the manager field - to help the route decision. How, and at what cost, is open. | heuristic improved 2026-09-30 and 2026-10-02 (address-only rule); LLM classifier `qpc` (qwen3.5:4b) beat the old heuristic on a fresh blind sample (59% vs 48% fully right) but ties the improved one (71% vs 72%); its distinct value is the note and free-text qslmgr; integration open (roadmap v2); Jev-style decision models tried 2026-10-09 and stopped (60-65% at best, no signal as a second opinion - decision log) |
 | E3 | **Future (operator, 2026-10-02):** once the QSL analysis ("qpc") is integrated, the "QSO in progress" box also **summarizes that information** for the call in progress, so the card / no card decision can be made from the box. What the analysis delivers and how it is condensed is open until it exists. | roadmap v2 |
 
 ### 2.6 Invariants carried over
@@ -187,10 +189,18 @@ radio. Here the route is chosen.
   mind, at the Desk (B6). It means *no paper card* for any reason
   (electronic-only, refused, or the operator's choice), not a silent no-op:
   `desired_method=N`, status `skipped`, reopenable from Done.
-- LLM-based determination (`internal/llmqsl`, `cmd/qsl-eval`, local Ollama)
-  stays an offline calibration effort. If it beats the heuristic on the eval
-  set it may become a second suggestion source; it does not enter the app
-  before that gate.
+- LLM-based determination (`qpc`: classifier library, backend `cmd/qpcd`,
+  eval harness `cmd/qpc-lab`; any OpenAI-compatible endpoint, local Ollama)
+  beat the heuristic on a fresh, operator-labelled sample, until the
+  operator's address-only rule went into the heuristic as well; since then
+  both get about 72% of stations fully right, failing on different ones
+  (decision log). Its distinct value is the note (preferences, conditions,
+  requirements) and free-text qslmgr fields; whether that is worth a second
+  suggestion source - shown with its evidence quote, never acted on - is
+  open. Not wired into the app. Answer: status (paper, no-paper, unknown,
+  unclear), every accepted route (bureau, direct, oqrs), the preferred route,
+  a via callsign (manager or home call) and an English note; rules in
+  `qpc/LABELS.md`.
 
 ## 4. Fulfillment: print or handwrite
 
@@ -347,9 +357,9 @@ Remaining gaps (v2 / later):
 - Windows exe icon/version embedding: config ready in `winres/winres.json`;
   the one-step `go run github.com/tc-hib/go-winres@latest make` is left to
   the operator.
-- `qsl-eval`, `qsl-eval.jsonl`, and `ww` in the repo root are scratch output
-  from the method-determination calibration effort; they are not shipped
-  artifacts.
+- `qsl-eval`, `qsl-eval.jsonl`, and `ww` in the repo root are leftovers of
+  the retired `qsl-eval` tool; calibration data now lives in the git-ignored
+  `eval/` directory. None of it is a shipped artifact.
 - Everything in section 8 marked v2.
 
 ## 8. Roadmap
@@ -397,7 +407,9 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
 15. CouchDB store backend + migration command.
 16. Phone app: photograph incoming cards, OCR, book with minimal taps (E1).
 17. LLM route suggestion from QRZ free text, at low cost, behind the eval
-    gate (only if `qsl-eval` shows it beats the heuristic) (E2).
+    gate (only if `qpc-lab` shows it beats the heuristic) (E2). 2026-10-02:
+    beat the old heuristic, ties the improved one; open whether its notes
+    and free-text reading justify integration (qwen3.5:4b via `qpcd`).
 
 ## 9. Decision log
 
@@ -558,6 +570,187 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   Risks accepted: glaze is young (v0.0.x, one maintainer) and uses an
   undocumented WebView2 export - mitigated by the browser fallback and a
   backend that only loads a URL.
+- **2026-10-02 — LLM route classifier `qpc` replaces `llmqsl`/`qsl-eval`.**
+  The old tool never produced a result. `qpc` is a standalone package and
+  backend (`cmd/qpcd`, OpenAI-compatible API) that imports nothing from
+  `internal/`; `cmd/qpc-lab` samples real stations, takes blind manual labels
+  and compares model x prompt variants with the heuristic. Labels are a route
+  plus a separate via callsign; a manager with no stated route is `unclear`
+  (the manager's own instructions are a later phase). Direct needs a full
+  postal address (QRZ or bio); without one the next accepted route, else
+  `unclear` - the model sees the address, and a code check (`address_guard`)
+  is compared as a variant. First model choice: `qwen3.5:4b` (multilingual,
+  JSON schema), thinking off.
+- **2026-10-02 — qpc answers with all accepted routes, not one.** Labelling
+  showed that stations offering bureau and direct often state a preference
+  or a condition ("direct only if no electronic QSL possible"). The answer is
+  now status + every accepted route + the station's preferred route + an
+  English note (preferences, conditions, requirements); choosing among the
+  accepted routes is the operator's (later: qslotter's) decision, not the
+  classifier's. The "cheapest route" rule is gone from the classifier.
+- **2026-10-02 — qpc passed the gate (narrowly).** Two random samples of
+  100 stations from the log, labelled blind by the operator. On the first,
+  the prompts were developed (v1-v5) and qwen3.5:4b + v5 reached 69% fully
+  right vs 60% for the heuristic - optimistic, tuned there. On the second,
+  fresh sample (no prompt written after seeing it): qwen3.5:4b + v5 59%
+  fully right (status, every route, preferred, via) vs heuristic 48%
+  (discordant 18:7, McNemar p = 0.04); status 74% vs 61% (p = 0.004), route
+  set 71% vs 66%. gemma4:e4b, qwen3.5:2b, ministral-3:3b and llama3.1:8b
+  were worse; giving the model the postal address and a code check for
+  "direct without address" changed nothing; a hybrid (heuristic when sure,
+  else LLM) scored below the LLM alone. The model's confidence is not
+  informative (83 "high", 55 right). Remaining errors: no-paper vs unknown
+  for bare mqsl = 0 records, bureau added where only direct is stated,
+  verbose notes. 41% of answers have at least one field wrong, so qpc can
+  only suggest. About 2.5 s per station on an M2 Pro.
+- **2026-10-02 — Address-only records: direct (heuristic and qpc).** When a
+  QRZ record says nothing about QSL in qslmgr or the bio, the operator's
+  rule decides: mqsl 0 -> no paper; a full postal address (street + city)
+  with mqsl 1 or empty -> direct; without one, mqsl 1 -> bureau, mqsl empty
+  -> unknown; eqsl/lotw flags do not matter. `qsldetermine` follows it, so
+  the Desk now preselects direct for such stations (was bureau for mqsl 1,
+  nothing for mqsl empty) and the Inbox sees "no paper" for mqsl 0 alone
+  (was only with eqsl/lotw). Cached station info keeps the old suggestion
+  until its next refresh. `qpc/LABELS.md` rule 6 and prompt v6 carry it;
+  prompts v1-v5 are frozen with the rules they were evaluated with.
+- **2026-10-02 — With that rule the heuristic catches up with qpc.** Labels
+  re-checked under the rule (18 stations changed over both samples, applied
+  mechanically to records with nothing about QSL - this slightly favours
+  the heuristic, which implements exactly that rule). Fresh sample: heuristic
+  72% fully right (was 48%), qwen3.5:4b + v6 71% (discordant 14:13, no
+  difference); first sample 75% vs 77%. They fail on different stations
+  (both wrong: 15). Split by what the heuristic based its answer on, qpc is
+  better on free-text qslmgr fields (+3 on each sample), the heuristic on
+  flags/address-only records; "qpc for free-text qslmgr, heuristic
+  otherwise" - chosen on the first sample - gives 75% on the fresh one, not
+  significant. qpc's distinct value is the note, which the heuristic cannot
+  produce.
+- **2026-10-02 — A contribution flag next to the note.** The most common
+  note content (18 of the operator's 34 notes) is what a station asks in
+  return for a card: SAE/SASE, IRC, green stamps, money, PayPal, a fee. It
+  becomes a discrete flag, `contribution` = required / not-needed / not
+  stated (kind and amount stay in the note), answered by qpc (prompt v7) and
+  detected by keywords in `qsldetermine` (qslmgr and card-related bio
+  sentences, with negations). The app computes it but does not store or show
+  it yet; the Desk could flag it next to a direct route. Result on both
+  samples (23 stations asking, labels reviewed): the keyword heuristic
+  finds 20, qwen3.5:4b (v7) 12, neither raises a false alarm; the flag is
+  right on 98% of stations for the heuristic, 92-95% for qwen. The
+  negation patterns were tightened after seeing these samples, so the
+  heuristic's numbers are somewhat optimistic. Asking qwen for the flag
+  cost it about 3 points on the main answer (v6 71% -> v7 68% fully right
+  on the fresh sample) - the heuristic is the better source for the flag.
+- **2026-10-02 — Third sample, unlabelled: heuristic vs qpc.** 200 more
+  stations (`qpc-lab compare`): the heuristic and qwen3.5:4b (v7) give the
+  same status, routes and via on 70%. On the two labelled samples such
+  agreement was right 91% of the time, while a disagreement was a coin toss
+  (heuristic right 25, qwen 22, neither 15 of 62), so agreement is the
+  useful confidence signal, not either classifier alone. The comparison
+  exposed a heuristic bug: "no bureau" was read as "so direct" even in
+  "No Buro, No Direct" or "NO Paper NO Bureau"; fixed (refusals first),
+  which took the heuristic to 75% fully right on the fresh sample (was 72%;
+  qwen v7 68%) and the third-sample agreement to 72%. qwen's typical slip
+  there: mqsl 0 overriding an explicit "VIA BUREAU" in qslmgr (rule 7).
+- **2026-10-02 — Jev-style decision model (tev1:4b) is far behind.** qpc can
+  now ask decision models through Ollama's `/v1/systemone` (variant kind
+  `decision`, specs in `qpc/decisions`; no note, no via). tev1:4b, a
+  Qwen3.5-4B fine-tune for scored choices, gets the status about as often
+  as the others (75-80%) but the routes badly: fully right 31-34% with
+  status plus a true/false per route (d1-split), 15-21% with one choice
+  over the whole answer (d1-single), against 75% for the heuristic and
+  68-76% for qwen3.5:4b (v7) on the same labelled samples. It does not
+  apply the conditional rules (address only = direct; "no bureau"), picks
+  bureau for most direct-only stations (split) or bureau+direct for
+  nearly everything (single), and names a preferred route where none is
+  stated. Keeping only a long bio's QSL sentences changed little. ~2.5 s
+  a station. Not pursued unless a stronger decision model appears.
+- **2026-10-02 — Prompt v8: the same rules at half the size.** v7's system
+  prompt was about 2,450 tokens (rules, definitions, nine examples, a
+  "common mistakes" list) against ~250 for the station itself. v8 folds the
+  definitions into the answer description, keeps five examples and drops
+  the mistakes list: ~1,350 fixed tokens. qwen3.5:4b is not worse with it,
+  if anything better: fully right 77% / 71% on the two labelled samples
+  (v7: 76% / 68%), status 87% / 90% (v7: 83% / 81%). v8 is the default
+  prompt; its rules are inlined, so a LABELS.md edit no longer changes it.
+- **2026-10-02 — Heuristic: managers with a lead-in, SASE = direct.** The
+  third-sample comparison with qwen v8 showed `qsldetermine` missing
+  managers written "QSL MGR EA5GL", "QSL VIA EC1DD" or "QSL Manager:
+  EA7FTR" in qslmgr, taking the station's own call as its manager ("QSL
+  via PD3JWB (bureau)" on PD3JWB), and not reading "LOTW or SASE" as
+  direct. Fixed; on the labelled samples the heuristic is now fully right
+  on 75% / 77% (status, routes and via: 78% vs qwen v8 76%), and it agrees
+  with qwen v8 on 76% of the third sample (was 74%).
+- **2026-10-02 — A list of electronic services is no refusal.** Operator's
+  rule: when qslmgr lists only electronic services ("LoTW, eQSL, Club
+  Log"), mqsl and the postal address decide as if nothing were said
+  (LABELS.md rule 8); only an explicit "eQSL only" / "LoTW only" refuses
+  paper. `qsldetermine` used to read such a list as no paper. Changing it
+  also exposed three bio-reading faults the old shortcut had hidden
+  ("direction"/"directive" read as direct, "I don't answer paper QSL
+  cards", "bureau ... no longer"), all fixed, plus "ONLY VIA EB7DX" as a
+  manager. Three labels were brought in line with the rule (SP8QC/P,
+  A61BG, UT5RB). Status, routes and via right on the labelled samples:
+  heuristic 81%, qwen3.5:4b v8 78%; fully right 78% / 80% against 79% / 72%.
+- **2026-10-03 — A clean 50-station holdout: still level.** 50 stations
+  drawn after all tuning (none of the 400 seen before), labelled blind:
+  fully right heuristic 76%, qwen3.5:4b v8 74%; status, routes and via
+  76% vs 82%. Over all 250 labelled stations (status, routes, via):
+  heuristic 80%, qwen v8 79%; when they agree (198) they are right 91% of
+  the time. The heuristic's misses here: OQRS, which it never answers (3
+  of 12), managers named in the bio, missed refusals; qwen's: a preferred
+  route where none is stated (4).
+- **2026-10-03 — The heuristic reads OQRS.** `qsldetermine` sets
+  `Result.OQRS` when qslmgr or the bio offers an OQRS / Club Log request
+  ("no OQRS" excluded); it joins the other routes, is a route of its own
+  when nothing else is named (the flags and address no longer decide
+  then), and turns "No cards needed! If you need one, use Club Log OQRS"
+  from a refusal into an OQRS card. Computed, not yet stored or shown by
+  the app (Method stays B/D/M). On the labelled samples it fixed 5
+  stations and broke 1 (9A7YY, whose label leaves out the OQRS its bio
+  offers); fully right now heuristic 80% / 82% / 80% against qwen v8
+  80% / 72% / 74%. Still missed: the labelling convention that a card
+  "requested via OQRS" for bureau or direct is an OQRS route only.
+- **2026-10-03 — Heuristic round 3; prompt v9 rejected; bwpc runs qpc.**
+  The heuristic now reads postal wording ("VIA MAIL", "to the above
+  address", "P.O.Box"), a DARC DOK as bureau, managers inside free text
+  ("ALL QSL's via N4GNR Direct Only", "via bureau DL8KAC") and in the bio
+  with their routes, email-only refusals, and routes only from the bio's
+  sentences about cards: status, routes and via right on 212 of the
+  operator's 250 labelled stations (was 205); fully right 85% / 82% / 84%
+  on samples 1, 2 and the holdout. A 60-station sample labelled by the
+  assistant (eval/qpc5, not reviewed by the operator) gives 87%. Tried and
+  dropped: adding the bio's routes to a qslmgr text (3 fixed, 6 broken)
+  and dropping direct without a full QRZ address (breaks 3 operator labels
+  that do not follow LABELS rule 5). Prompt v9 (the rules as an ordered
+  procedure: refusal, routes named, then flags and address) lost to v8 on
+  all three operator samples (78/71/70% vs 80/72/74%), won only on the
+  assistant's sample: v8 stays the default. qpc runs fine on bwpc's
+  Ollama (LAN, `qpc/experiments/bwpc.yaml`), about 1.5 s a station
+  against 2.5-3 s on the laptop.
+- **2026-10-03 — Prompt v11: the model reads the text, code applies the
+  flags.** Rewording the mqsl/address rules for qwen3.5:4b only moved its
+  errors around: v9 (an ordered procedure) turned mqsl 0 + address into
+  direct, v10 (mqsl first) let mqsl 0 overrule "VIA BUREAU" - both lost to
+  v8. v11 hides mqsl/eqsl/lotw from the model; it answers "unknown" when
+  qslmgr and the bio say nothing about cards, and the classifier then
+  applies LABELS.md rule 6 itself (the prompt declares it). Fully right on
+  the operator's 250 labelled stations: v11 193, v8 189, heuristic 209;
+  v11 also wins on both assistant-labelled samples (87% / 80% vs 82% /
+  78%) and runs in ~1.4 s a station on bwpc. v11 is the default prompt.
+  The heuristic still leads.
+- **2026-10-03 — The operator's labelling rules; prompt v12 tried.** Five
+  answers settled what the labels contradicted (LABELS.md: direct needs a
+  full address on QRZ or in the bio; preferred only among two or more
+  routes; a card sent only on an OQRS request is OQRS; postage named for a
+  manager means direct via it; "no bureau" alone with mqsl 0 is no paper).
+  14 labels were brought in line. The heuristic follows them and is now
+  fully right on 91% / 85% / 84% of the operator's samples (218 of 250)
+  and 92% / 93% of the assistant's two samples. v12 (v11 plus the five
+  rules) gained on preferred routes, managers and OQRS but started
+  answering "bureau" for address-only records instead of leaving them to
+  the code's flag rule: 189 of 250 against v11's 193, so v11 stays the
+  default. bwpc's Ollama hung once for about two hours and recovered by
+  itself.
 - **2026-10-04/05 — Verified print jobs (superseded 2026-10-06).** On a
   branch, qslotter followed each print job in CUPS (IPP) and marked the card
   sent only when the job completed, with a per-job print list (Retry / "It
@@ -576,3 +769,38 @@ background loop, batch actions; the two-queue rebuild of 2026-09-30):
   Out of scope: envelope/label printing, per-row shapes, perspective
   correction of a skewed scan (it is stretched to the card), fonts beyond the
   PDF core three.
+- **2026-10-09 — Decision models (Jev-style) stopped.** Two decision
+  models behind Ollama `/v1/systemone` (tev1 4B, clef-flash 9B with a
+  16k context) scored 33-36% fully right on the operator's labelled
+  stations against 77-84% for qwen3.5:4b and 85-92% for the heuristic;
+  size and context made no difference. The causes are structural: one
+  probability per question from one pass cannot do a conjunction of
+  fields ("direct named AND a full address": direct answered false in
+  20 of 100 stations), rules asked of the model fail (mqsl/address,
+  DCL, preference only with two routes), and an absent mention scores
+  0.5-0.9 (the plausibility of the route, not what the text says).
+  Layout `text` (spec d2-text) fixes what can be fixed: every question
+  asks only whether the text names something, code composes the rest
+  and the cut per question is fitted on labelled answers (`threshold`
+  in the spec, fitted on qpc/qpc2): tev1 reaches 60% on the 350
+  stations (65 / 58 / 52 / 60%), a logistic layer over all its
+  probabilities (`qpc-lab fit`, held out sample by sample) 65%, with
+  the heuristic's via callsign spliced in 69%. Still 20 points below
+  the chat model and 25 below the heuristic, and as a second opinion it
+  carries no information: it differs from the heuristic on 36% of the
+  stations, and there the heuristic is right in 85% (overall 90%). No
+  further decision-model work; the chat model's distinct value (the
+  note, via from free text) stays with qwen3.5:4b. The decision-model
+  code (variant kind `decision`, the specs, `bio_focus`, `qpc-lab fit`)
+  was removed the same day; the runs stay in `eval/*/runs/tev1-*` and
+  `clef-*`, the analysis in commits cc223aa and b1ac434.
+- **2026-10-03 — 100 more stations, operator-reviewed; v13 default.** The
+  assistant pre-labelled a fourth sample of 100 (eval/qpc7) and the
+  operator reviewed all of them, changing 6 (one more rule came out of
+  it: DCL mentioned = DARC member = bureau too, LABELS.md 6a). With the
+  day's fixes the heuristic is fully right on 310 of the operator's 350
+  labelled stations (89%): 91 / 85 / 84 / 92% per sample. qwen3.5:4b
+  with v13 (v11's split - the model reads the text, code applies the
+  flags - plus the operator's rules) gets 280 (80%), v11 276, so v13 is
+  the default prompt; the heuristic still leads by about 9 points.
+  bwpc's ROCm GPU wedged twice (model load hanging); a reboot fixed it.
