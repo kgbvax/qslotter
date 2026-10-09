@@ -504,9 +504,12 @@ func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
 		}
 		qsos = append(qsos, q)
 	}
-	via := ""
-	if rt, err := routeFrom(r, keys[0]); err == nil && rt.Method == "M" {
-		via = rt.Manager
+	via, route := "", ""
+	if rt, err := routeFrom(r, keys[0]); err == nil {
+		route = routeCode(rt.Method, rt.Via)
+		if rt.Method == "M" {
+			via = rt.Manager
+		}
 	}
 	tmpl, err := s.cardTemplate()
 	if err != nil {
@@ -514,7 +517,7 @@ func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.config()
-	raw, err := printer.RenderBytes(tmpl, cardFieldsFor(cfg, qsos, via), printer.RenderOptions{
+	raw, err := printer.RenderBytes(tmpl, s.cardFieldsFor(cfg, qsos, via, route), printer.RenderOptions{
 		OffsetXMM: cfg.Printer.OffsetMM[0], OffsetYMM: cfg.Printer.OffsetMM[1],
 	})
 	if err != nil {
@@ -530,7 +533,7 @@ func (s *Server) htmxWorkPreview(w http.ResponseWriter, r *http.Request) {
 // row per QSO, oldest first, the newest non-empty name and QTH (as on the
 // Desk), via = the manager of a manager card ("" otherwise). The layout
 // editor's sample from a Desk card is built the same way.
-func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.CardFields {
+func (s *Server) cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via, route string) printer.CardFields {
 	qsos = slices.Clone(qsos)
 	sort.SliceStable(qsos, func(i, j int) bool {
 		if qsos[i].QSODate != qsos[j].QSODate {
@@ -538,7 +541,7 @@ func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.Ca
 		}
 		return qsos[i].TimeOn < qsos[j].TimeOn
 	})
-	card := printer.CardFields{MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, MyQTH: cfg.Station.QTH, Via: via}
+	card := printer.CardFields{MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, MyQTH: cfg.Station.QTH, Via: via, Route: route}
 	if len(qsos) > 0 {
 		card.Call = qsos[0].Call
 	}
@@ -548,5 +551,27 @@ func cardFieldsFor(cfg *config.Config, qsos []*store.QSO, via string) printer.Ca
 		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
 			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq, SatName: q.SatName, FreqRX: q.FreqRX})
 	}
+	card.Address = s.cardAddress(route, card.Call, card.Name)
 	return card
+}
+
+// cardAddress is the postal address printed on a card sent direct (route D,
+// not via a manager): the Desk's address block, one line each, from the
+// cached QRZ entry; nil for any other route or without an address.
+func (s *Server) cardAddress(route, call, name string) []string {
+	if route != "D" {
+		return nil
+	}
+	info, _ := s.store.GetStation(call)
+	if info == nil || info.NotFound || (info.Addr1 == "" && info.Addr2 == "" && info.Country == "") {
+		return nil
+	}
+	var lines []string
+	for _, l := range []string{cmpOr(info.Name, name), info.Attn, info.Addr1, info.Addr2,
+		strings.TrimSpace(info.State + " " + info.Zip), info.Country} {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
 }

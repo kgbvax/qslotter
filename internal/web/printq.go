@@ -104,7 +104,8 @@ func (s *Server) printCards(status string) ([]*PrintCard, error) {
 // cardFields is what is printed on one card.
 func (s *Server) cardFields(c *PrintCard) printer.CardFields {
 	cfg := s.config()
-	card := printer.CardFields{Call: c.QSOs[0].Call, MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, QSLMsg: c.Note}
+	card := printer.CardFields{Call: c.QSOs[0].Call, MyCall: cfg.Clublog.Call, MyName: cfg.Station.Name, QSLMsg: c.Note,
+		Route: c.Route}
 	if strings.HasPrefix(c.Route, "M") {
 		card.Via = c.Manager
 	}
@@ -114,6 +115,7 @@ func (s *Server) cardFields(c *PrintCard) printer.CardFields {
 		card.Rows = append(card.Rows, printer.QSORow{QSODate: q.QSODate, TimeOn: q.TimeOn, Band: q.Band,
 			Mode: q.Mode, RSTSent: q.RSTSent, RSTRcvd: q.RSTRcvd, Freq: q.Freq})
 	}
+	card.Address = s.cardAddress(c.Route, c.QSOs[0].Call, card.Name)
 	return card
 }
 

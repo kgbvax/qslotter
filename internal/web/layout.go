@@ -180,6 +180,7 @@ type catField struct {
 var fieldLabels = map[string]string{
 	"call": "Callsign", "name": "Name", "qth": "QTH", "my_call": "My callsign", "my_name": "My name",
 	"my_qth": "My QTH", "via": "via manager", "qslmsg": "QSL message",
+	"address": "Address (direct)", "route": "Route (D, B, MD, MB)",
 	"qso_date": "Date", "time_on": "Time (UTC)", "band": "Band", "mode": "Mode", "rst_sent": "RST sent",
 	"rst_rcvd": "RST rcvd", "freq": "Frequency", "sat_name": "Satellite", "freq_rx": "RX frequency",
 }
@@ -304,6 +305,7 @@ func (s *Server) sampleChoices(r *http.Request) []sampleChoice {
 	out := []sampleChoice{
 		{"long", s.tr(r, "Sample: long names, a full card, via manager, satellite")},
 		{"short", s.tr(r, "Sample: one short QSO")},
+		{"direct", s.tr(r, "Sample: direct, long address")},
 		{"sat", s.tr(r, "Sample: a satellite QSO")},
 	}
 	cards, err := s.deskCards(false)
@@ -328,11 +330,18 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 	switch sample {
 	case "short":
 		return printer.CardFields{Call: "DL1ABC", Name: "Hans", QTH: "Berlin", MyCall: myCall, MyName: cfg.Station.Name,
-			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB",
+			MyQTH: cfg.Station.QTH, Route: "D", Address: []string{"Hans Schmidt", "Musterstr. 12", "10115 Berlin", "Germany"},
+			Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB",
 				RSTSent: "59", RSTRcvd: "57", Freq: "14.250"}}}
+	case "direct":
+		return printer.CardFields{Call: "VK2ABC/P", Name: "Christopher Montgomery-Smith", QTH: "Wagga Wagga", MyCall: myCall,
+			MyName: cfg.Station.Name, MyQTH: cfg.Station.QTH, Route: "D",
+			Address: []string{"Christopher Montgomery-Smith", "c/o The Wagga Wagga Amateur Radio Club", "123 Very Long Street Name South",
+				"Wagga Wagga NSW 2650", "Australia"},
+			Rows: []printer.QSORow{{QSODate: "20240101", TimeOn: "1200", Band: "20m", Mode: "SSB", RSTSent: "59", RSTRcvd: "57", Freq: "14.250"}}}
 	case "sat":
 		return printer.CardFields{Call: "EA4XYZ", Name: "Carlos", QTH: "Madrid", MyCall: myCall, MyName: cfg.Station.Name,
-			MyQTH: cfg.Station.QTH, Rows: []printer.QSORow{{QSODate: "20240615", TimeOn: "1842", Band: "70cm", Mode: "FM",
+			MyQTH: cfg.Station.QTH, Route: "B", Rows: []printer.QSORow{{QSODate: "20240615", TimeOn: "1842", Band: "70cm", Mode: "FM",
 				RSTSent: "59", RSTRcvd: "59", Freq: "145.850", SatName: "RS-44", FreqRX: "435.640"}}}
 	case "long", "":
 	default:
@@ -349,13 +358,13 @@ func (s *Server) sampleCard(sample string, tmpl *template.Template) printer.Card
 				if strings.HasPrefix(c.Route, "M") {
 					via = c.MgrPrefill
 				}
-				return cardFieldsFor(cfg, qsos, via)
+				return s.cardFieldsFor(cfg, qsos, via, c.Route)
 			}
 		}
 	}
 	card := printer.CardFields{Call: "VP2V/DL9ET", Name: "Hans-Joachim Müller-Lüdenscheidt", QTH: "Garmisch-Partenkirchen",
 		MyCall: myCall, MyName: cmpOr(cfg.Station.Name, "Ingomar Otter"), MyQTH: cmpOr(cfg.Station.QTH, "Bad Tölz, JN57"),
-		Via: "KC4AAA"}
+		Via: "KC4AAA", Route: "MD"}
 	long := []printer.QSORow{
 		{QSODate: "20241231", TimeOn: "235959", Band: "2190m", Mode: "OLIVIA", RSTSent: "59+20", RSTRcvd: "599", Freq: "0.1375"},
 		{QSODate: "20240615", TimeOn: "000000", Band: "70cm", Mode: "SSB", RSTSent: "59", RSTRcvd: "59", Freq: "435.645",

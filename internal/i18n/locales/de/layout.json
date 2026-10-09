@@ -138,5 +138,8 @@
   "Not turned": "Nicht gedreht",
   "90° clockwise": "90° im Uhrzeigersinn",
   "90° counter-clockwise": "90° gegen den Uhrzeigersinn",
-  "The card can be turned by 0, 90 or 270 degrees.": "Die Karte kann um 0, 90 oder 270 Grad gedreht werden."
+  "The card can be turned by 0, 90 or 270 degrees.": "Die Karte kann um 0, 90 oder 270 Grad gedreht werden.",
+  "Address (direct)": "Adresse (direkt)",
+  "Route (D, B, MD, MB)": "Weg (D, B, MD, MB)",
+  "Sample: direct, long address": "Beispiel: direkt, lange Adresse"
 }
