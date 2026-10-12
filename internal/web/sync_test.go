@@ -161,6 +161,36 @@ func TestSyncPushButton(t *testing.T) {
 	}
 }
 
+// TestSyncStatusKeepsBothTimes: a push must not blank "last pull" (and a pull
+// not "last push"); each button's answer shows both.
+func TestSyncStatusKeepsBothTimes(t *testing.T) {
+	srv, st, key := newTestServer(t)
+	f := &fakeClublog{}
+	f.install(t, srv)
+	h := srv.Routes()
+
+	if err := st.SetQSLSentLocal(key, "B"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := postForm(t, h, "/sync/pull", nil); rec.Code != 200 {
+		t.Fatalf("pull = %d %q", rec.Code, rec.Body.String())
+	}
+	rec := postForm(t, h, "/sync/push", nil)
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, "last push:") || !strings.Contains(body, "last pull:") || strings.Contains(body, "never") {
+		t.Errorf("push after pull = %d %q, want both times", rec.Code, body)
+	}
+
+	if err := st.SetQSLSentLocal(key, "D"); err != nil {
+		t.Fatal(err)
+	}
+	rec = postForm(t, h, "/sync/pull", nil)
+	body = rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, "last pull:") || !strings.Contains(body, "last push:") || strings.Contains(body, "never") {
+		t.Errorf("pull after push = %d %q, want both times", rec.Code, body)
+	}
+}
+
 // TestEventsStream: /events greets, relays broker events as SSE and
 // unsubscribes when the window goes away.
 func TestEventsStream(t *testing.T) {

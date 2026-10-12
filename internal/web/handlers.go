@@ -883,8 +883,7 @@ func (s *Server) htmxSyncPull(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	last, _ := s.store.MetaGet("clublog_last_pull_at")
-	s.render(w, r, "sync_status.html", map[string]any{"LastPull": last, "PullErr": ""})
+	s.render(w, r, "sync_status.html", s.syncStatus())
 }
 
 func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
@@ -898,8 +897,15 @@ func (s *Server) htmxSyncPush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	last, _ := s.store.MetaGet("clublog_last_push_at")
-	s.render(w, r, "sync_status.html", map[string]any{"LastPush": last, "PushErr": ""})
+	s.render(w, r, "sync_status.html", s.syncStatus())
+}
+
+// syncStatus is the data of sync_status.html: both timestamps, whichever
+// button was pressed (a pull must not blank "last push" and vice versa).
+func (s *Server) syncStatus() map[string]any {
+	lastPull, _ := s.store.MetaGet("clublog_last_pull_at")
+	lastPush, _ := s.store.MetaGet("clublog_last_push_at")
+	return map[string]any{"LastPull": lastPull, "LastPush": lastPush}
 }
 
 // --- helpers ---
